@@ -48,7 +48,10 @@
         "max_tokens":     { "type": "integer", "minimum": 1 },
         "response_format":{ "type": "string", "enum": ["text", "json"] },
         "system_prompt":  { "type": "string" },
-        "role":           { "type": "string" }
+        "role":           { "type": "string" },
+        "routing_map":    { "type": "object", "additionalProperties": { "type": "string" } },
+        "score_field":    { "type": "string" },
+        "strategy":       { "type": "string", "enum": ["max_numeric", "truthy"] }
       }
     },
 

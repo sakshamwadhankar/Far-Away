@@ -53,6 +53,9 @@ class NodeConfig(BaseModel):
     response_format: Literal["text", "json"] | None = None
     system_prompt: str | None = None
     role: str | None = None
+    routing_map: dict[str, str] | None = None
+    score_field: str | None = Field(default="score")
+    strategy: Literal["max_numeric", "truthy"] | None = Field(default="max_numeric")
 
 
 class Node(BaseModel):

@@ -53,6 +53,7 @@ from neuralflow.endpoints.cloud import CloudEndpoint
 from neuralflow.scheduler.engine import EndpointRegistry
 from neuralflow.scheduler.events import WS_TERMINAL_EVENTS
 from neuralflow.scheduler.runner import PipelineRunner
+from neuralflow.state.sqlite import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,16 @@ def _global_registry() -> dict[str, ModelEndpoint]:
         return app.state.endpoint_registry  # type: ignore[return-value]
     return {}
 
+
+def _global_state_manager() -> StateManager:
+    """Return the global StateManager or test override."""
+    if hasattr(app.state, "state_manager"):
+        return app.state.state_manager
+    import os
+    from pathlib import Path
+    db_dir = Path(os.path.expanduser("~/.neuralflow"))
+    db_dir.mkdir(parents=True, exist_ok=True)
+    return StateManager(str(db_dir / "neuralflow.db"))
 
 # ---------------------------------------------------------------------------
 # GET /health  (no auth — liveness probe used by Electron after spawn)
@@ -202,6 +213,7 @@ async def start_run(body: RunRequest) -> RunResponse:
         registry=endpoint_registry,
         budget_usd=body.budget_usd,
         budget_wall_clock_seconds=body.budget_wall_clock_seconds,
+        state_manager=_global_state_manager(),
     )
 
     run_registry.create(run_id, runner, queue)
@@ -250,6 +262,24 @@ async def stop_run(run_id: str) -> StopResponse:
         )
     runner.stop()
     return StopResponse(run_id=run_id, halted=True)
+
+
+# ---------------------------------------------------------------------------
+# GET /runs/{run_id}/trace  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/runs/{run_id}/trace",
+    dependencies=[Depends(verify_token)],
+)
+async def get_run_trace(run_id: str) -> dict[str, Any]:
+    """Return the full execution trace from SQLite."""
+    sm = _global_state_manager()
+    trace = sm.get_full_trace(run_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Run not found in trace database.")
+    return trace
 
 
 # ---------------------------------------------------------------------------

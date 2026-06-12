@@ -356,9 +356,10 @@ class _BudgetCheckingEndpoint:
 
     async def generate(self, req: GenRequest):  # type: ignore[override]
         runner = self._registry._runner
+        estimated = self._wrapped.estimate_cost(req)
+        runner._total_tokens_in += estimated.tokens_in
+
         if self._budget_usd is not None:
-            estimated = self._wrapped.estimate_cost(req)
-            runner._total_tokens_in += estimated.tokens_in
             if runner._cumulative_cost + estimated.usd > self._budget_usd:
                 self._registry.budget_exceeded = True
                 self._registry.exceeded_at_node = self.id
@@ -369,7 +370,8 @@ class _BudgetCheckingEndpoint:
                 # Raise so the scheduler stops — will be caught as PipelineCancelled
                 from neuralflow.scheduler.engine import PipelineCancelled
                 raise PipelineCancelled(self._cancel.reason)
-            runner._cumulative_cost += estimated.usd
+        
+        runner._cumulative_cost += estimated.usd
 
         async for token in self._wrapped.generate(req):
             yield token

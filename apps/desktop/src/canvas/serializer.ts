@@ -113,3 +113,32 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
 
   return { nodes, edges };
 }
+
+export function scrubSecrets(pipeline: Pipeline): Pipeline {
+  // Phase 3 Rule: "export SCRUBS secrets"
+  // In v2 schema, secrets are not stored in the pipeline JSON directly.
+  // They are resolved via keychain at runtime using endpoint_ref.
+  // We perform a deep clone to ensure no accidental ephemeral secret keys are exported.
+  const scrubbed = JSON.parse(JSON.stringify(pipeline));
+  
+  // Explicitly remove anything that looks like a secret if it accidentally made it in
+  if (scrubbed.endpoints) {
+    for (const ref in scrubbed.endpoints) {
+      delete scrubbed.endpoints[ref].api_key;
+      delete scrubbed.endpoints[ref].token;
+    }
+  }
+
+  // Also strip any custom node configs that might be mislabeled
+  if (scrubbed.nodes) {
+    for (const node of scrubbed.nodes) {
+      if (node.config) {
+        delete node.config.api_key;
+        delete node.config.secret;
+        delete node.config.token;
+      }
+    }
+  }
+
+  return scrubbed;
+}

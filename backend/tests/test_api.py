@@ -273,3 +273,100 @@ async def test_models_endpoint(client: AsyncClient) -> None:
     assert "endpoint_id" in m
     assert "max_context" in m
     assert "json_mode" in m
+
+
+@pytest.mark.asyncio
+async def test_get_trace_after_completion(client: AsyncClient) -> None:
+    # 1. Start run
+    run_resp = await client.post(
+        "/pipelines/run", json={"pipeline": PIPELINE}, headers=AUTH
+    )
+    assert run_resp.status_code == 202
+    run_id = run_resp.json()["run_id"]
+
+    # 2. Wait for completion via WS
+    events = await _ws_events(run_id)
+    types = [e["event"] for e in events]
+    assert "run_completed" in types
+
+    # 3. Fetch trace
+    trace_resp = await client.get(f"/runs/{run_id}/trace", headers=AUTH)
+    assert trace_resp.status_code == 200
+    trace = trace_resp.json()
+    
+    assert "run" in trace
+    assert trace["run"]["status"] == "completed"
+    assert trace["run"]["run_id"] == run_id
+    
+    assert "nodes" in trace
+    assert len(trace["nodes"]) > 0
+    
+    model_node = next((n for n in trace["nodes"] if n["node_id"] == "model_node"), None)
+    assert model_node is not None
+    assert "outputs" in model_node
+    
+    assert "loops" in trace
+
+
+def test_default_db_path() -> None:
+    from neuralflow.api.main import _global_state_manager, app
+    import os
+    from pathlib import Path
+    
+    # Ensure no override
+    if hasattr(app.state, "state_manager"):
+        del app.state.state_manager
+        
+    sm = _global_state_manager()
+    expected_dir = Path(os.path.expanduser("~/.neuralflow"))
+    assert sm.db_path == expected_dir / "neuralflow.db"
+
+
+@pytest.mark.asyncio
+async def test_cost_divergence_on_retries(client: AsyncClient) -> None:
+    call_count = 0
+
+    def dynamic_response(req) -> str:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return "This is prose, not json."
+        else:
+            return '{"key": "value"}'
+
+    from neuralflow.api.main import app
+    from neuralflow.endpoints.mock import MockEndpoint
+    
+    app.state.endpoint_registry = {
+        "mock:json_repair": MockEndpoint(id="mock:json_repair", response_fn=dynamic_response)
+    }
+    
+    import copy
+    pipeline = copy.deepcopy(PIPELINE)
+    pipeline["nodes"][1]["endpoint_ref"] = "mock:json_repair"
+    pipeline["nodes"][1]["config"]["response_format"] = "json"
+    pipeline["endpoints"]["mock:json_repair"] = {"kind": "mock"}
+
+    run_resp = await client.post("/pipelines/run", json={"pipeline": pipeline}, headers=AUTH)
+    assert run_resp.status_code == 202
+    run_id = run_resp.json()["run_id"]
+
+    events = await _ws_events(run_id)
+    
+    node_done_events = [e for e in events if e.get("event") == "node_done" and e.get("node_id") == "model_node"]
+    assert len(node_done_events) == 1
+    node_cost = node_done_events[0]["cost_usd"]
+    
+    # Should reflect two attempts of approx 0.001 each
+    assert node_cost >= 0.002
+
+    run_completed = next((e for e in events if e.get("event") == "run_completed"), None)
+    assert run_completed is not None
+    assert run_completed["total_cost_usd"] == node_cost
+
+    trace_resp = await client.get(f"/runs/{run_id}/trace", headers=AUTH)
+    trace = trace_resp.json()
+    model_node = next(n for n in trace["nodes"] if n["node_id"] == "model_node")
+    
+    assert model_node["cost"] == node_cost
+    assert trace["run"]["cost"] == node_cost

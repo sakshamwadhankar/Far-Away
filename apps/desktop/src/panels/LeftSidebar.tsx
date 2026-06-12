@@ -7,8 +7,8 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'model', label: 'Model Node', defaultData: { endpoint_ref: 'ep_mock', inputs: [{ name: 'prompt', type: 'text' }], outputs: [{ name: 'response', type: 'text' }], config: { temperature: 0.7, max_tokens: 2048, response_format: 'text' } } },
   { type: 'output', label: 'Output Node', defaultData: { inputs: [{ name: 'response', type: 'text' }] } },
   { type: 'loop', label: 'Loop (Subgraph)', defaultData: {} },
-  { type: 'judge', label: 'Judge Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'decision', type: 'boolean' }], role: 'judge' } },
-  { type: 'router', label: 'Router Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'branch_a', type: 'text' }, { name: 'branch_b', type: 'text' }] } },
+  { type: 'judge', label: 'Judge Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'decision', type: 'boolean' }], role: 'judge', config: { score_field: 'verified', strategy: 'truthy' } } },
+  { type: 'router', label: 'Router Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'branch_a', type: 'text' }, { name: 'branch_b', type: 'text' }], config: { routing_map: { "true": "branch_a", "false": "branch_b" } } } },
   { type: 'transform', label: 'Transform Node', defaultData: { inputs: [{ name: 'in', type: 'json' }], outputs: [{ name: 'out', type: 'json' }] } },
 ];
 

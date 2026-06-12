@@ -232,3 +232,45 @@ class StateManager:
         finally:
             conn.close()
         return state
+
+    def get_full_trace(self, run_id: str) -> dict[str, Any] | None:
+        """Fetch the full trace for a run."""
+        conn = self._get_conn()
+        try:
+            run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            if not run:
+                return None
+            
+            nodes = conn.execute("SELECT * FROM node_executions WHERE run_id = ?", (run_id,)).fetchall()
+            loops = conn.execute("SELECT * FROM loop_iterations WHERE run_id = ?", (run_id,)).fetchall()
+            
+            # Helper to parse JSON fields safely
+            def _parse_json(val: str | None) -> Any:
+                if val is None:
+                    return None
+                try:
+                    return json.loads(val)
+                except json.JSONDecodeError:
+                    return val
+
+            parsed_nodes = []
+            for n in nodes:
+                d = dict(n)
+                d["inputs"] = _parse_json(d.pop("inputs_json", None))
+                d["outputs"] = _parse_json(d.pop("outputs_json", None))
+                parsed_nodes.append(d)
+
+            parsed_loops = []
+            for l in loops:
+                d = dict(l)
+                d["inputs"] = _parse_json(d.pop("inputs_json", None))
+                d["outputs"] = _parse_json(d.pop("outputs_json", None))
+                parsed_loops.append(d)
+
+            return {
+                "run": dict(run),
+                "nodes": parsed_nodes,
+                "loops": parsed_loops,
+            }
+        finally:
+            conn.close()

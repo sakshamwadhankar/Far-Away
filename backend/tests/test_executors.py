@@ -92,6 +92,39 @@ async def test_judge_executor(registry: EndpointRegistry, mock_emitter: MockEmit
     assert outputs["best"]["score"] == 0.9
 
 
+async def test_judge_executor_truthy(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    node = Node(
+        id="judge_truthy", 
+        type="judge", 
+        outputs=[Port(name="best", type="json")],
+        config=NodeConfig(score_field="verified", strategy="truthy")
+    )
+    inputs = {
+        "cand1": {"text": "A", "verified": False},
+        "cand2": {"text": "B", "verified": True},
+        "cand3": {"text": "C", "verified": False},
+    }
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = JudgeExecutor()
+    outputs = await executor.execute(ctx)
+    
+    assert outputs["best"]["text"] == "B"
+    assert outputs["best"]["verified"] is True
+
+
+async def test_judge_executor_raises_on_no_match(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    node = Node(id="judge_fail", type="judge", outputs=[Port(name="best", type="json")])
+    inputs = {
+        "cand1": {"text": "A"},  # no score field
+    }
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = JudgeExecutor()
+    with pytest.raises(ValueError, match="Judge found no candidate"):
+        await executor.execute(ctx)
+
+
 async def test_router_executor(registry: EndpointRegistry, mock_emitter: MockEmitter):
     node = Node(
         id="router1", 
@@ -101,7 +134,7 @@ async def test_router_executor(registry: EndpointRegistry, mock_emitter: MockEmi
             Port(name="branch_false", type="text"),
         ]
     )
-    inputs = {"condition": "true", "text": "payload"}
+    inputs = {"condition": "branch_true", "text": "payload"}
     ctx = make_ctx(node, inputs, registry, mock_emitter)
     
     executor = RouterExecutor()
@@ -109,6 +142,61 @@ async def test_router_executor(registry: EndpointRegistry, mock_emitter: MockEmi
     
     assert outputs["branch_true"] == "payload"
     assert outputs["branch_false"] is None
+
+
+async def test_router_executor_exact_match(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    node = Node(
+        id="router_exact", 
+        type="router", 
+        outputs=[
+            Port(name="branch_true", type="text"),
+            Port(name="branch_false", type="text"),
+        ]
+    )
+    inputs = {"condition": "branch_true", "text": "payload"}
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = RouterExecutor()
+    outputs = await executor.execute(ctx)
+    
+    assert outputs["branch_true"] == "payload"
+    assert outputs["branch_false"] is None
+
+
+async def test_router_executor_routing_map(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    node = Node(
+        id="router_map", 
+        type="router", 
+        outputs=[
+            Port(name="branch_a", type="text"),
+            Port(name="branch_b", type="text"),
+        ],
+        config=NodeConfig(routing_map={"true": "branch_a", "false": "branch_b"})
+    )
+    inputs = {"condition": "true", "text": "payload"}
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = RouterExecutor()
+    outputs = await executor.execute(ctx)
+    
+    assert outputs["branch_a"] == "payload"
+    assert outputs["branch_b"] is None
+
+
+async def test_router_executor_raises_on_no_match(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    node = Node(
+        id="router_fail", 
+        type="router", 
+        outputs=[
+            Port(name="branch_true", type="text"),
+        ]
+    )
+    inputs = {"condition": "unknown", "text": "payload"}
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = RouterExecutor()
+    with pytest.raises(ValueError, match="matched no valid output port"):
+        await executor.execute(ctx)
 
 
 async def test_transform_executor(registry: EndpointRegistry, mock_emitter: MockEmitter):
@@ -125,6 +213,23 @@ async def test_transform_executor(registry: EndpointRegistry, mock_emitter: Mock
     outputs = await executor.execute(ctx)
     
     assert outputs["out"] == "Result is: foo + bar"
+
+
+async def test_transform_executor_sandbox(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    # This payload tries to access the MRO chain, which should be blocked by SandboxedEnvironment
+    malicious_template = "{{ ''.__class__.__mro__[1].__subclasses__() }}"
+    node = Node(
+        id="transform_bad",
+        type="transform",
+        config=NodeConfig(system_prompt=malicious_template),
+        outputs=[Port(name="out", type="text")]
+    )
+    ctx = make_ctx(node, {}, registry, mock_emitter)
+    
+    executor = TransformExecutor()
+    from jinja2.exceptions import SecurityError
+    with pytest.raises(SecurityError):
+        await executor.execute(ctx)
 
 
 async def test_model_executor_text_mode(mock_emitter: MockEmitter):

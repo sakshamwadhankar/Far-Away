@@ -1,0 +1,140 @@
+import { useEffect, useState } from 'react';
+
+interface TraceModalProps {
+  runId: string;
+  backendPort: number | null;
+  backendToken: string | null;
+  onClose: () => void;
+}
+
+export default function TraceModal({ runId, backendPort, backendToken, onClose }: TraceModalProps) {
+  const [trace, setTrace] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchTrace() {
+      if (!backendPort) {
+        setError('Backend not connected');
+        setLoading(false);
+        return;
+      }
+      try {
+        const port = backendPort || 8000;
+        const token = backendToken || 'test-token';
+        const res = await fetch(`http://127.0.0.1:${port}/runs/${runId}/trace`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to fetch trace: ${await res.text()}`);
+        }
+        const data = await res.json();
+        setTrace(data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchTrace();
+  }, [runId, backendPort, backendToken]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        zIndex: 50,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <div
+        style={{
+          width: '80%',
+          height: '80%',
+          backgroundColor: '#1e1e1e',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          overflow: 'hidden',
+          border: '1px solid #444',
+        }}
+      >
+        <div style={{ padding: '16px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', backgroundColor: '#252526' }}>
+          <h2 style={{ margin: 0, color: '#fff' }}>Post-Run Trace: {runId}</h2>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#aaa', fontSize: '20px', cursor: 'pointer' }}>&times;</button>
+        </div>
+        
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1, color: '#ccc', fontFamily: 'monospace' }}>
+          {loading && <p>Loading trace...</p>}
+          {error && <p style={{ color: 'red' }}>{error}</p>}
+          {trace && (
+            <div>
+              <h3>Run Record</h3>
+              <pre style={{ backgroundColor: '#111', padding: '12px', borderRadius: '4px' }}>
+                {JSON.stringify(trace.run, null, 2)}
+              </pre>
+
+              <h3>Node Executions ({trace.nodes?.length})</h3>
+              {trace.nodes?.map((node: any, idx: number) => (
+                <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
+                  <strong>Node ID:</strong> {node.node_id} <br />
+                  <strong>Cost:</strong> ${node.cost} | <strong>Tokens:</strong> {node.tokens_in} in, {node.tokens_out} out <br />
+                  {node.error && <div style={{ color: 'red' }}><strong>Error:</strong> {node.error}</div>}
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <strong>Inputs:</strong>
+                      <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                        {JSON.stringify(node.inputs, null, 2)}
+                      </pre>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <strong>Outputs:</strong>
+                      <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                        {JSON.stringify(node.outputs, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <h3>Loop Iterations ({trace.loops?.length})</h3>
+              {trace.loops?.length > 0 ? (
+                trace.loops.map((loop: any, idx: number) => (
+                  <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
+                    <strong>Loop ID:</strong> {loop.loop_id} | <strong>Iteration:</strong> {loop.iteration}
+                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        <strong>Inputs:</strong>
+                        <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                          {JSON.stringify(loop.inputs, null, 2)}
+                        </pre>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <strong>Outputs:</strong>
+                        <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                          {JSON.stringify(loop.outputs, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p>No loop iterations.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

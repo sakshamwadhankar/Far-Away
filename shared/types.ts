@@ -42,6 +42,9 @@ export interface NodeConfig {
   response_format?: "text" | "json";
   system_prompt?: string;
   role?: string;
+  routing_map?: Record<string, string>;
+  score_field?: string;
+  strategy?: "max_numeric" | "truthy";
 }
 
 export interface Node {
