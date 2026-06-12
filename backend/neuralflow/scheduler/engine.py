@@ -126,6 +126,7 @@ class EventKind(StrEnum):
 
     NODE_STARTED = "node_started"
     NODE_DONE = "node_done"
+    NODE_ERROR = "node_error"
     TOKEN = "token"
     LOOP_ITERATION = "loop_iteration"
     RUN_HALTED = "run_halted"
@@ -377,50 +378,58 @@ class Scheduler:
           - output: passes through input values
           - model:  calls endpoint.generate() and concatenates tokens
         """
-        self._check_cancel()
+        try:
+            self._check_cancel()
 
-        node = self._get_node(node_id)
+            node = self._get_node(node_id)
 
-        await self._emit(SchedulerEvent(
-            kind=EventKind.NODE_STARTED,
-            node_id=node_id,
-            data={"type": node.type},
-        ))
-
-        if node.type == "input":
-            if node_id not in self._state:
-                raise RuntimeError(
-                    f"Input node '{node_id}' has no initial "
-                    "values in state. Provide them in "
-                    "initial_inputs."
-                )
             await self._emit(SchedulerEvent(
-                kind=EventKind.NODE_DONE,
+                kind=EventKind.NODE_STARTED,
                 node_id=node_id,
-                data={"outputs": self._state[node_id]},
+                data={"type": node.type},
             ))
-            return
 
-        if node.type == "output":
-            outputs = self._gather_inputs_for_node(node_id)
-            self._state[node_id] = outputs
+            if node.type == "input":
+                if node_id not in self._state:
+                    raise RuntimeError(
+                        f"Input node '{node_id}' has no initial "
+                        "values in state. Provide them in "
+                        "initial_inputs."
+                    )
+                await self._emit(SchedulerEvent(
+                    kind=EventKind.NODE_DONE,
+                    node_id=node_id,
+                    data={"outputs": self._state[node_id]},
+                ))
+                return
+
+            if node.type == "output":
+                outputs = self._gather_inputs_for_node(node_id)
+                self._state[node_id] = outputs
+                await self._emit(SchedulerEvent(
+                    kind=EventKind.NODE_DONE,
+                    node_id=node_id,
+                    data={"outputs": outputs},
+                ))
+                return
+
+            if node.type == "model":
+                await self._execute_model_node(node_id)
+                return
+
+            # For unsupported node types in Phase 2, raise explicitly
+            raise NotImplementedError(
+                f"Node type '{node.type}' is not yet supported "
+                "by the scheduler. "
+                "Supported types in Phase 2: input, output, model."
+            )
+        except Exception as exc:
             await self._emit(SchedulerEvent(
-                kind=EventKind.NODE_DONE,
+                kind=EventKind.NODE_ERROR,
                 node_id=node_id,
-                data={"outputs": outputs},
+                data={"error": str(exc)},
             ))
-            return
-
-        if node.type == "model":
-            await self._execute_model_node(node_id)
-            return
-
-        # For unsupported node types in Phase 2, raise explicitly
-        raise NotImplementedError(
-            f"Node type '{node.type}' is not yet supported "
-            "by the scheduler. "
-            "Supported types in Phase 2: input, output, model."
-        )
+            raise
 
     async def _execute_model_node(self, node_id: str) -> None:
         """Execute a model node via the endpoint registry."""

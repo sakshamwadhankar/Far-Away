@@ -29,6 +29,9 @@ export default defineConfig({
       // Start the FastAPI backend
       command: 'cd ../../backend && .venv\\Scripts\\python.exe -m uvicorn neuralflow.api.main:app --port 8000',
       url: 'http://127.0.0.1:8000/health',
+      env: {
+        NEURALFLOW_ALLOW_MOCK_ENDPOINT: '1'
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,
     }

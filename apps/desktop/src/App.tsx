@@ -103,6 +103,9 @@ export default function App() {
         } else if (data.event === 'run_completed' || data.event === 'run_stopped' || data.event === 'budget_exceeded') {
           setIsRunning(false);
           ws.close();
+        } else if (data.event === 'token' || data.event === 'loop_iteration' || data.event === 'run_halted') {
+          // TODO (Phase 3): Wire up these events for budget monitor, kill switch UI, and text streaming
+          console.log(`[Phase 3 TODO] Received unused event ${data.event}:`, data);
         }
       };
       

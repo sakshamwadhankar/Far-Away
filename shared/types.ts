@@ -117,7 +117,8 @@ export type EndpointKind =
   | "anthropic"
   | "google"
   | "openai_compatible"
-  | "ollama";
+  | "ollama"
+  | "mock";
 
 /**
  * Endpoint descriptor stored in the pipeline file.

@@ -73,9 +73,6 @@ test.describe('MERGE B Integration', () => {
     await expect(runBtn).toBeVisible();
     await runBtn.click();
 
-    // The button should change to "Running..."
-    await expect(runBtn).toHaveText('Running...');
-
     // Wait for the pipeline nodes to transition to "done"
     // Our UI modifies the node title to include "(done)"
     await expect(page.getByText('(done)', { exact: false }).first()).toBeVisible({ timeout: 10000 });

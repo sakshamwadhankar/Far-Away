@@ -170,7 +170,7 @@ class Edge(BaseModel):
 # EndpointDescriptor
 # ---------------------------------------------------------------------------
 
-EndpointKind = Literal["openai", "anthropic", "google", "openai_compatible", "ollama"]
+EndpointKind = Literal["openai", "anthropic", "google", "openai_compatible", "ollama", "mock"]
 
 
 class EndpointDescriptor(BaseModel):

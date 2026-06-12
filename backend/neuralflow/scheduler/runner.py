@@ -205,6 +205,13 @@ class PipelineRunner:
                 node_id=node_id,
                 outputs=d.get("outputs", {}),
             )
+        if event.kind == EventKind.NODE_ERROR:
+            from neuralflow.scheduler.events import WsNodeErrorEvent
+            return WsNodeErrorEvent(
+                run_id=self.run_id,
+                node_id=node_id,
+                error=d.get("error", "Unknown error"),
+            )
         if event.kind == EventKind.TOKEN:
             self._total_tokens_out += 1
             return WsTokenEvent(

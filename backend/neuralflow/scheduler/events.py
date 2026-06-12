@@ -96,10 +96,19 @@ class WsRunStoppedEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
+class WsNodeErrorEvent(BaseModel):
+    event: Literal["node_error"] = "node_error"
+    run_id: str
+    node_id: str
+    error: str
+    timestamp_ms: int = Field(default_factory=_now_ms)
+
+
 WsEvent = Union[
     WsNodeStartedEvent,
     WsTokenEvent,
     WsNodeDoneEvent,
+    WsNodeErrorEvent,
     WsLoopIterationEvent,
     WsRunHaltedEvent,
     WsRunCompletedEvent,

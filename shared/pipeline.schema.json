@@ -36,7 +36,7 @@
 
     "EndpointKind": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama"],
+      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama", "mock"],
       "description": "Supported model endpoint kinds in R0."
     },
 

@@ -174,8 +174,13 @@ async def start_run(body: RunRequest) -> RunResponse:
                     base_url=descriptor.base_url,
                 )
             elif descriptor.kind == "mock":
+                if os.environ.get("NEURALFLOW_ALLOW_MOCK_ENDPOINT") != "1":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Mock endpoints are disabled in this environment.",
+                    )
                 from neuralflow.endpoints.mock import MockEndpoint
-                run_endpoints[ref] = MockEndpoint(name=descriptor.model or "mock-model")
+                run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             else:
                 raise HTTPException(
                     status_code=422,
