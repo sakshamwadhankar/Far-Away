@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import ReactFlow, { Background, Controls, MiniMap, useReactFlow, OnNodesChange, OnEdgesChange, Connection, Edge, Node } from 'reactflow';
 import PipelineNode, { PipelineNodeData } from './nodes/PipelineNode';
 
@@ -79,7 +79,7 @@ export default function Canvas({ nodes, edges, onNodesChange, onEdgesChange, onC
       >
         <Background color="#ccc" gap={16} />
         <Controls />
-        <MiniMap nodeStrokeColor={(n) => '#666'} nodeColor={(n) => '#222'} />
+        <MiniMap nodeStrokeColor={(_n) => '#666'} nodeColor={(_n) => '#222'} />
       </ReactFlow>
     </div>
   );

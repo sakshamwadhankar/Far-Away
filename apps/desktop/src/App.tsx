@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNodesState, useEdgesState, Connection, Edge, addEdge } from 'reactflow';
 import Canvas from './canvas/Canvas';
 import LeftSidebar from './panels/LeftSidebar';
 import RightPanel from './panels/RightPanel';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
-import { Node as RFNode } from 'reactflow';
+
 
 export default function App() {
   const [backendPort, setBackendPort] = useState<number | null>(null);

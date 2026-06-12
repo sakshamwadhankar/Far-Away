@@ -1,5 +1,5 @@
 import React from 'react';
-import type { NodeType, Port } from '@shared/types';
+import type { NodeType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 
 const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<PipelineNodeData> }[] = [

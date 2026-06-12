@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import App from './App';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import * as reactflow from 'reactflow';
 
 // We need to spy on addEdge to see if it was called

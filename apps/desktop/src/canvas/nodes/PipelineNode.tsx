@@ -1,4 +1,3 @@
-import React from 'react';
 import { Handle, Position } from 'reactflow';
 import type { Node as SchemaNode, Port, PortType } from '@shared/types';
 

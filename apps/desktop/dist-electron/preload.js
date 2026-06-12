@@ -1,7 +1,1 @@
-"use strict";
-const electron = require("electron");
-electron.contextBridge.exposeInMainWorld("electron", {
-  onBackendReady: (callback) => {
-    electron.ipcRenderer.on("backend-ready", (_event, data) => callback(data));
-  }
-});
+let e=require("electron");e.contextBridge.exposeInMainWorld(`electron`,{onBackendReady:t=>{e.ipcRenderer.on(`backend-ready`,(e,n)=>t(n))}});

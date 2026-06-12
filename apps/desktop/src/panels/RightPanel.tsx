@@ -1,4 +1,3 @@
-import React from 'react';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { Node as RFNode } from 'reactflow';
 
