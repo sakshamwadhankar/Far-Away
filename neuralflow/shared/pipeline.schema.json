@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neuralflow.app/schemas/pipeline/v2",
+  "title": "NeuralFlow Pipeline",
+  "description": "Schema v2 for a NeuralFlow pipeline file. Loops are subgraphs, ports are typed, no secrets or device pins are stored. Fields will be fully specified in Phase 1 (P1 task).",
+  "type": "object",
+  "required": ["schema_version", "id", "name", "version", "nodes", "edges", "endpoints"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "2.0",
+      "description": "Pipeline format version. Must be '2.0' for schema v2."
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique pipeline identifier (UUID v4)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable pipeline name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of this pipeline file (e.g. '1.0.0')."
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Ordered list of nodes in the pipeline graph. Fully specified in Phase 1.",
+      "items": {
+        "type": "object",
+        "description": "Node definition — full schema filled in Phase 1."
+      }
+    },
+    "loops": {
+      "type": "array",
+      "description": "Loop subgraph definitions. Fully specified in Phase 1.",
+      "items": {
+        "type": "object",
+        "description": "Loop definition — full schema filled in Phase 1."
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Directed edges between node ports. Fully specified in Phase 1.",
+      "items": {
+        "type": "object",
+        "description": "Edge definition — full schema filled in Phase 1."
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "description": "Named endpoint registry. Keys are endpoint_ref strings used by model nodes. No secrets stored here — keys resolved at run time from OS keychain. Fully specified in Phase 1.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Endpoint descriptor — full schema filled in Phase 1."
+      }
+    }
+  },
+  "additionalProperties": false
+}
