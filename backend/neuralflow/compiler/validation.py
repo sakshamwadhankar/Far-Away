@@ -213,6 +213,31 @@ def _check_port_type_compatibility(pipeline: Pipeline) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Rule 3 (additional): Loop body node validation
+# ---------------------------------------------------------------------------
+
+
+class InvalidLoopBodyError(PipelineValidationError):
+    """Raised when a loop body references a node ID not in the pipeline."""
+
+
+def _check_loop_bodies(pipeline: Pipeline) -> None:
+    """
+    Validate that every node ID in every loop's body list exists in the
+    pipeline's nodes. Catches typos at compile time.
+    """
+    node_ids = {n.id for n in pipeline.nodes}
+    for loop in pipeline.loops:
+        for body_node_id in loop.body:
+            if body_node_id not in node_ids:
+                raise InvalidLoopBodyError(
+                    f"Loop '{loop.id}' references node '{body_node_id}' "
+                    f"in its body, but no node with that ID exists. "
+                    f"Available node IDs: {sorted(node_ids)}."
+                )
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -228,6 +253,8 @@ def validate_pipeline(pipeline: Pipeline) -> None:
     Rules:
       1. Main graph is acyclic (CyclicGraphError).
       2. All edge port types are compatible (PortTypeMismatchError, UnknownPortError, UnknownNodeError).
+      3. All loop body node IDs exist in the pipeline (InvalidLoopBodyError).
     """
     _check_acyclic(pipeline)
     _check_port_type_compatibility(pipeline)
+    _check_loop_bodies(pipeline)
