@@ -740,3 +740,99 @@ def test_cancel_token_raises_after_cancel() -> None:
     assert token.reason == "test reason"
     with pytest.raises(PipelineCancelled, match="test reason"):
         token.check()
+
+
+# ---------------------------------------------------------------------------
+# Test 13: Budget Cap Verification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_budget_cap_halts_pipeline() -> None:
+    """
+    Verify that PipelineRunner enforcing a strict USD budget cap halts execution
+    and emits WsBudgetExceededEvent when the estimate_cost exceeds the cap.
+    """
+    from neuralflow.scheduler.runner import PipelineRunner
+    from neuralflow.endpoints.base import Cost
+    from neuralflow.scheduler.events import WsBudgetExceededEvent
+
+    class ExpensiveMockEndpoint(MockEndpoint):
+        def estimate_cost(self, req: Any) -> Cost:
+            # Each call costs $10.00
+            return Cost(usd=10.0, tokens_in=1000, tokens_out=10)
+
+    endpoint = ExpensiveMockEndpoint(
+        id="mock:expensive",
+        predefined_text="I am too expensive",
+    )
+    registry = EndpointRegistry({"mock:expensive": endpoint})
+
+    expensive_pipeline = {
+        "schema_version": "2.0",
+        "id": "budget-test-pipe",
+        "name": "Budget Pipe",
+        "version": "1.0.0",
+        "nodes": [
+            {
+                "id": "in",
+                "type": "input",
+                "outputs": [{"name": "prompt", "type": "text"}],
+            },
+            {
+                "id": "model_1",
+                "type": "model",
+                "endpoint_ref": "mock:expensive",
+                "inputs": [{"name": "input", "type": "text"}],
+                "outputs": [{"name": "output", "type": "text"}],
+            },
+            {
+                "id": "model_2",
+                "type": "model",
+                "endpoint_ref": "mock:expensive",
+                "inputs": [{"name": "input", "type": "text"}],
+                "outputs": [{"name": "output", "type": "text"}],
+            },
+            {
+                "id": "out",
+                "type": "output",
+                "inputs": [{"name": "result", "type": "text"}],
+            },
+        ],
+        "edges": [
+            {"from": "in.prompt", "to": "model_1.input"},
+            {"from": "model_1.output", "to": "model_2.input"},
+            {"from": "model_2.output", "to": "out.result"},
+        ],
+        "endpoints": {
+            "mock:expensive": {"kind": "openai"},
+        },
+    }
+
+    dag = compile(expensive_pipeline)
+    
+    runner = PipelineRunner(
+        run_id="run-budget-123",
+        dag=dag,
+        registry=registry,
+        budget_usd=15.0,  # Cap at $15
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    
+    await runner.run(queue)
+    
+    events = []
+    while not queue.empty():
+        evt = await queue.get()
+        if evt is not None:
+            events.append(evt)
+            
+    budget_events = [e for e in events if isinstance(e, WsBudgetExceededEvent)]
+    assert len(budget_events) == 1
+    
+    # model_1 costs $10 (passes, cumulative $10)
+    # model_2 costs $10 (fails, $20 > $15)
+    assert budget_events[0].cumulative_cost_usd == 10.0
+    assert budget_events[0].node_id == "mock:expensive"
+    assert runner._cancel.is_cancelled is True
+    assert "Budget exceeded" in runner._cancel.reason

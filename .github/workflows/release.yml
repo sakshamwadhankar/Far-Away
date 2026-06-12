@@ -1,0 +1,77 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+
+      - name: Install Backend Dependencies
+        working-directory: backend
+        run: poetry install --no-interaction --no-root
+
+      - name: Install PyInstaller
+        working-directory: backend
+        run: poetry run pip install pyinstaller
+
+      - name: Build Backend Executable (PyInstaller)
+        working-directory: packaging
+        run: |
+          poetry run pyinstaller pyinstaller.spec --distpath dist --workpath build
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Frontend Dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Run Electron Builder
+        working-directory: apps/desktop
+        run: npx electron-builder --config ../../packaging/electron-builder.yml
+        env:
+          # Optional: Codesigning credentials for Windows
+          # WIN_SIGN_KEY: ${{ secrets.WIN_SIGN_KEY }}
+          # Optional: Apple credentials for macOS notarization
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
