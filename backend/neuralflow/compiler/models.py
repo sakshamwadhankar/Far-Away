@@ -170,6 +170,8 @@ class Edge(BaseModel):
 # EndpointDescriptor
 # ---------------------------------------------------------------------------
 
+# TODO(R0 Polish Phase): Keep "mock" out of the production schema entirely
+# and inject it dynamically in the test environment to avoid schema pollution.
 EndpointKind = Literal["openai", "anthropic", "google", "openai_compatible", "ollama", "mock"]
 
 
