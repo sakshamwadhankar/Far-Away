@@ -37,8 +37,14 @@ from neuralflow.compiler.validation import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-SCHEMA_PATH = pathlib.Path(__file__).parents[2] / "shared" / "pipeline.schema.json"
+def _get_repo_root() -> pathlib.Path:
+    current = pathlib.Path(__file__).resolve().parent
+    for parent in [current, *current.parents]:
+        if (parent / "shared" / "pipeline.schema.json").exists():
+            return parent
+    raise RuntimeError("Could not find repository root containing shared/pipeline.schema.json")
 
+SCHEMA_PATH = _get_repo_root() / "shared" / "pipeline.schema.json"
 
 def _load_schema() -> dict[str, Any]:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
