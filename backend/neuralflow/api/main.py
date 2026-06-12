@@ -192,12 +192,19 @@ async def start_run(body: RunRequest) -> RunResponse:
                     )
                 from neuralflow.endpoints.mock import MockEndpoint
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
+            elif descriptor.kind == "ollama":
+                from neuralflow.endpoints.ollama import OllamaEndpoint
+                run_endpoints[ref] = OllamaEndpoint(
+                    id=f"ollama:{descriptor.model or 'default'}",
+                    base_url=descriptor.base_url or "http://127.0.0.1:11434/v1",
+                    model=descriptor.model or "qwen2.5:3b",
+                )
             else:
                 raise HTTPException(
                     status_code=422,
                     detail=(
                         f"Unsupported endpoint kind '{descriptor.kind}' for ref '{ref}'. "
-                        "Supported: openai, anthropic, google, openai_compatible."
+                        "Supported: openai, anthropic, google, openai_compatible, ollama."
                     ),
                 )
 

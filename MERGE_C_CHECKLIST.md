@@ -9,9 +9,10 @@ The following end-to-end integration tests have been written using `MockEndpoint
 - **2d. Router routes correctly, raises error on unmatched:** `test_merge_c_2d_router_unmatched_condition` (PASSED)
 - **2e. Serializer scrubSecrets and load back round-trip:** `test_merge_c_2e_serializer_scrub_secrets` (PASSED in Python schema dump) + `scrubSecrets removes api_key, token, and secret fields from pipeline` (PASSED in `serializer.test.ts`)
 
-## ⏳ Deferred (needs real model via Ollama)
-These checks require a genuine model and have been deferred to Phase 4:
-- real network latency / streaming kill on a real 30s call
-- real (not scripted) malformed-JSON repair behavior
-- Judge on genuine model output
-- cost accuracy against a real provider pricing table
+- **D1. Real streaming kill:** `test_ollama_d1_streaming_kill` (PASSED against Ollama qwen2.5:3b)
+- **D2. Real malformed-JSON repair:** `test_ollama_d2_json_repair` (PASSED against Ollama qwen2.5:3b)
+- **D3. Judge on genuine model output:** `test_ollama_d3_d4_judge_and_tokens` (PASSED against Ollama qwen2.5:3b)
+- **D4. Cost accuracy & real token counts:** `test_ollama_d3_d4_judge_and_tokens` (PASSED against Ollama qwen2.5:3b)
+
+## ⏳ Deferred (none)
+All deferred items from Phase 3 have now been verified.
