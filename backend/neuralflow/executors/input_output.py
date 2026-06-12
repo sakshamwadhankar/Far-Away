@@ -25,12 +25,16 @@ class InputExecutor(BaseExecutor):
     """
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
+        from neuralflow.scheduler.engine import EventKind, SchedulerEvent
         ctx.check_cancel()
-        # Input nodes pass their existing seeded state.
-        # But wait, if engine calls gather_inputs, it will get nothing because input nodes have no incoming edges.
-        # So we should actually return what was seeded.
-        # The engine handles input seeding specially. 
-        # But to be safe, if we get called, we just return ctx.inputs.
+        await ctx.emit(SchedulerEvent(
+            kind=EventKind.NODE_DONE,
+            node_id=ctx.node.id,
+            data={
+                "inputs": {},
+                "outputs": ctx.inputs,
+            },
+        ))
         return ctx.inputs
 
 
@@ -41,5 +45,14 @@ class OutputExecutor(BaseExecutor):
     """
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
+        from neuralflow.scheduler.engine import EventKind, SchedulerEvent
         ctx.check_cancel()
+        await ctx.emit(SchedulerEvent(
+            kind=EventKind.NODE_DONE,
+            node_id=ctx.node.id,
+            data={
+                "inputs": ctx.inputs,
+                "outputs": ctx.inputs,
+            },
+        ))
         return ctx.inputs

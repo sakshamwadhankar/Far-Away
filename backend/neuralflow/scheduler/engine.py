@@ -380,13 +380,10 @@ class Scheduler:
 
     async def _execute_node(self, node_id: str) -> None:
         """
-        Execute a single node and store its outputs in state.
-
-        Node types:
-          - input:  outputs already seeded in initial_inputs
-          - output: passes through input values
-          - model:  calls endpoint.generate() and concatenates tokens
+        Execute a single node using its registered executor.
         """
+        from neuralflow.executors import EXECUTOR_REGISTRY, ExecutorContext
+
         try:
             self._check_cancel()
 
@@ -410,46 +407,43 @@ class Scheduler:
                 data={"type": node.type},
             ))
 
-            if node.type == "input":
-                if node_id not in self._state:
-                    raise RuntimeError(
-                        f"Input node '{node_id}' has no initial "
-                        "values in state. Provide them in "
-                        "initial_inputs."
-                    )
-                await self._emit(SchedulerEvent(
-                    kind=EventKind.NODE_DONE,
-                    node_id=node_id,
-                    data={
-                        "inputs": {},
-                        "outputs": self._state[node_id],
-                    },
-                ))
-                return
+            if node.type == "input" and node_id not in self._state:
+                raise RuntimeError(
+                    f"Input node '{node_id}' has no initial "
+                    "values in state. Provide them in "
+                    "initial_inputs."
+                )
 
-            if node.type == "output":
-                outputs = self._gather_inputs_for_node(node_id)
-                self._state[node_id] = outputs
-                await self._emit(SchedulerEvent(
-                    kind=EventKind.NODE_DONE,
-                    node_id=node_id,
-                    data={
-                        "inputs": outputs,
-                        "outputs": outputs,
-                    },
-                ))
-                return
+            if node.type not in EXECUTOR_REGISTRY:
+                raise NotImplementedError(
+                    f"Node type '{node.type}' is not supported. "
+                    f"Available executors: {list(EXECUTOR_REGISTRY.keys())}"
+                )
 
-            if node.type == "model":
-                await self._execute_model_node(node_id)
-                return
+            executor_cls = EXECUTOR_REGISTRY[node.type]
+            executor = executor_cls()
 
-            # For unsupported node types in Phase 2, raise explicitly
-            raise NotImplementedError(
-                f"Node type '{node.type}' is not yet supported "
-                "by the scheduler. "
-                "Supported types in Phase 2: input, output, model."
+            # Gather inputs
+            if node.type != "input":
+                input_values = self._gather_inputs_for_node(node_id)
+            else:
+                input_values = self._state[node_id]
+
+            # Build context
+            ctx = ExecutorContext(
+                node=node,
+                inputs=input_values,
+                registry=self._registry,
+                emit_fn=self._emit,
+                cancel_token=self._cancel,
             )
+
+            # Execute
+            outputs = await executor.execute(ctx)
+            
+            # Store outputs
+            self._state[node_id] = outputs
+
         except Exception as exc:
             await self._emit(SchedulerEvent(
                 kind=EventKind.NODE_ERROR,
@@ -457,97 +451,6 @@ class Scheduler:
                 data={"error": str(exc)},
             ))
             raise
-
-    async def _execute_model_node(self, node_id: str) -> None:
-        """Execute a model node via the endpoint registry."""
-        node = self._get_node(node_id)
-        if node.endpoint_ref is None:
-            raise RuntimeError(
-                f"Model node '{node_id}' has no endpoint_ref."
-            )
-
-        endpoint = self._registry.resolve(node.endpoint_ref)
-
-        # Gather input values
-        input_values = self._gather_inputs_for_node(node_id)
-
-        # Build the generation request from inputs
-        # Concatenate all text inputs into a single user message
-        input_text_parts: list[str] = []
-        for _port_name, value in input_values.items():
-            if isinstance(value, str):
-                input_text_parts.append(value)
-            elif isinstance(value, dict):
-                input_text_parts.append(json.dumps(value))
-            else:
-                input_text_parts.append(str(value))
-
-        combined_input = "\n".join(input_text_parts) if input_text_parts else ""
-
-        messages: list[Message] = []
-        if node.config and node.config.system_prompt:
-            messages.append(
-                Message(role="system", content=node.config.system_prompt)
-            )
-        messages.append(Message(role="user", content=combined_input))
-
-        req = GenRequest(
-            messages=messages,
-            temperature=(
-                node.config.temperature
-                if node.config and node.config.temperature is not None
-                else 0.7
-            ),
-            max_tokens=(
-                node.config.max_tokens
-                if node.config and node.config.max_tokens is not None
-                else 2048
-            ),
-            response_format=(
-                node.config.response_format
-                if node.config and node.config.response_format is not None
-                else "text"
-            ),
-        )
-
-        estimated_cost = endpoint.estimate_cost(req)
-
-        # Stream tokens and concatenate
-        output_text = ""
-        tokens_out = 0
-        async for token in endpoint.generate(req):
-            self._check_cancel()
-            output_text += token.text
-            tokens_out += 1
-            await self._emit(SchedulerEvent(
-                kind=EventKind.TOKEN,
-                node_id=node_id,
-                data={"text": token.text, "index": token.index},
-            ))
-
-        # Store outputs — map to the node's declared output ports
-        outputs: dict[str, Any] = {}
-        for port in node.outputs:
-            if port.type == "json":
-                try:
-                    outputs[port.name] = json.loads(output_text)
-                except json.JSONDecodeError:
-                    outputs[port.name] = output_text
-            else:
-                outputs[port.name] = output_text
-
-        self._state[node_id] = outputs
-        await self._emit(SchedulerEvent(
-            kind=EventKind.NODE_DONE,
-            node_id=node_id,
-            data={
-                "inputs": input_values,
-                "outputs": outputs,
-                "cost_usd": estimated_cost.usd,
-                "tokens_in": estimated_cost.tokens_in,
-                "tokens_out": tokens_out,
-            },
-        ))
 
     def _gather_inputs_for_node(self, node_id: str) -> dict[str, Any]:
         """
