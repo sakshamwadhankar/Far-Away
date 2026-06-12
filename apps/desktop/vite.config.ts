@@ -2,12 +2,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron/simple';
+import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    alias: {
+      '@shared/': path.resolve(__dirname, '../../shared/'),
+    },
+  },
+  resolve: {
+    alias: {
+      '@shared': path.resolve(__dirname, '../../shared'),
+    },
   },
   plugins: [
     react(),
@@ -20,9 +29,10 @@ export default defineConfig({
         // Shortcut of `build.rollupOptions.input`
         input: 'src/preload.ts',
       },
-      // Ployfill the Electron and Node.js built-in modules for Renderer process.
+      // Polyfill the Electron and Node.js built-in modules for Renderer process.
       // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
       renderer: {},
     }),
   ],
 });
+
