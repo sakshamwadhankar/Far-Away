@@ -2,14 +2,197 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://neuralflow.app/schemas/pipeline/v2",
   "title": "NeuralFlow Pipeline",
-  "description": "Schema v2 for a NeuralFlow pipeline file. Loops are subgraphs, ports are typed, no secrets or device pins are stored. Fields will be fully specified in Phase 1 (P1 task).",
+  "description": "Schema v2 for a NeuralFlow pipeline file. Loops are subgraphs, ports are typed, no secrets or device pins stored.",
   "type": "object",
   "required": ["schema_version", "id", "name", "version", "nodes", "edges", "endpoints"],
+  "additionalProperties": false,
+
+  "$defs": {
+    "PortType": {
+      "type": "string",
+      "enum": ["text", "number", "boolean", "json", "image", "audio"],
+      "description": "Allowed data types for node ports."
+    },
+
+    "Port": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Port identifier, unique within the node's input or output list."
+        },
+        "type": { "$ref": "#/$defs/PortType" }
+      }
+    },
+
+    "NodeType": {
+      "type": "string",
+      "enum": ["input", "output", "model", "loop", "judge", "router", "transform"],
+      "description": "Allowed node types in R0."
+    },
+
+    "EndpointKind": {
+      "type": "string",
+      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama"],
+      "description": "Supported model endpoint kinds in R0."
+    },
+
+    "NodeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature":    { "type": "number", "minimum": 0, "maximum": 2 },
+        "max_tokens":     { "type": "integer", "minimum": 1 },
+        "response_format":{ "type": "string", "enum": ["text", "json"] },
+        "system_prompt":  { "type": "string" },
+        "role":           { "type": "string" }
+      }
+    },
+
+    "StopOp": {
+      "type": "string",
+      "enum": ["==", "!=", ">", "<", ">=", "<=", "contains"],
+      "description": "Allowed comparison operators in stop_when conditions. No raw code or eval."
+    },
+
+    "StopCondition": {
+      "type": "object",
+      "required": ["field", "op", "value"],
+      "additionalProperties": false,
+      "description": "Structured stop condition — no raw code or eval permitted.",
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dot-path to the field being tested, e.g. 'verify.output.verified'."
+        },
+        "op": { "$ref": "#/$defs/StopOp" },
+        "value": {
+          "description": "Scalar value to compare against. Must be a primitive (string, number, boolean).",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" }
+          ]
+        }
+      }
+    },
+
+    "OnMax": {
+      "type": "string",
+      "enum": ["return_best", "return_last", "fail"],
+      "description": "Policy when a loop reaches max_iterations without satisfying stop_when."
+    },
+
+    "Node": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique node identifier within this pipeline."
+        },
+        "type": { "$ref": "#/$defs/NodeType" },
+        "endpoint_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key into the top-level endpoints map. Required for 'model' nodes, forbidden on others. No secrets stored here."
+        },
+        "role": {
+          "type": "string",
+          "description": "Semantic role hint (e.g. 'solver', 'verifier', 'judge'). Informational only."
+        },
+        "config": { "$ref": "#/$defs/NodeConfig" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Port" },
+          "description": "Typed input ports."
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Port" },
+          "description": "Typed output ports."
+        }
+      }
+    },
+
+    "Loop": {
+      "type": "object",
+      "required": ["id", "body", "max_iterations", "stop_when", "on_max"],
+      "additionalProperties": false,
+      "description": "A bounded loop subgraph. Must have a finite max_iterations — no infinite loops.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique loop identifier."
+        },
+        "body": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Ordered list of node IDs that form the loop body."
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Hard upper bound on iterations. Enforced by the scheduler as a kill switch."
+        },
+        "stop_when": { "$ref": "#/$defs/StopCondition" },
+        "on_max": { "$ref": "#/$defs/OnMax" }
+      }
+    },
+
+    "Edge": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "description": "Directed edge connecting one node's output port to another node's input port.",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[^.]+\\.[^.]+$",
+          "description": "Source in 'nodeId.portName' format."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[^.]+\\.[^.]+$",
+          "description": "Destination in 'nodeId.portName' format."
+        }
+      }
+    },
+
+    "EndpointDescriptor": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "description": "Endpoint descriptor. No API keys, credentials, or device pins stored here — resolved at runtime from OS keychain.",
+      "properties": {
+        "kind": { "$ref": "#/$defs/EndpointKind" },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional override base URL for openai_compatible or ollama endpoints."
+        },
+        "model": {
+          "type": "string",
+          "description": "Default model name for this endpoint reference."
+        }
+      }
+    }
+  },
+
   "properties": {
     "schema_version": {
       "type": "string",
       "const": "2.0",
-      "description": "Pipeline format version. Must be '2.0' for schema v2."
+      "description": "Pipeline format version. Must be exactly '2.0'."
     },
     "id": {
       "type": "string",
@@ -24,40 +207,28 @@
     "version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of this pipeline file (e.g. '1.0.0')."
+      "description": "Semantic version of this pipeline file, e.g. '1.0.0'."
     },
     "nodes": {
       "type": "array",
-      "description": "Ordered list of nodes in the pipeline graph. Fully specified in Phase 1.",
-      "items": {
-        "type": "object",
-        "description": "Node definition — full schema filled in Phase 1."
-      }
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Node" },
+      "description": "All nodes in the pipeline."
     },
     "loops": {
       "type": "array",
-      "description": "Loop subgraph definitions. Fully specified in Phase 1.",
-      "items": {
-        "type": "object",
-        "description": "Loop definition — full schema filled in Phase 1."
-      }
+      "items": { "$ref": "#/$defs/Loop" },
+      "description": "Loop subgraph definitions. Omit if no loops."
     },
     "edges": {
       "type": "array",
-      "description": "Directed edges between node ports. Fully specified in Phase 1.",
-      "items": {
-        "type": "object",
-        "description": "Edge definition — full schema filled in Phase 1."
-      }
+      "items": { "$ref": "#/$defs/Edge" },
+      "description": "Directed edges between node ports. Format: 'nodeId.portName'."
     },
     "endpoints": {
       "type": "object",
-      "description": "Named endpoint registry. Keys are endpoint_ref strings used by model nodes. No secrets stored here — keys resolved at run time from OS keychain. Fully specified in Phase 1.",
-      "additionalProperties": {
-        "type": "object",
-        "description": "Endpoint descriptor — full schema filled in Phase 1."
-      }
+      "additionalProperties": { "$ref": "#/$defs/EndpointDescriptor" },
+      "description": "Named endpoint registry. Keys are the endpoint_ref values used by model nodes."
     }
-  },
-  "additionalProperties": false
+  }
 }
