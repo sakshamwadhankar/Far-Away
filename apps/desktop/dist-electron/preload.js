@@ -1,1 +1,6 @@
-let e=require("electron");e.contextBridge.exposeInMainWorld(`electron`,{onBackendReady:t=>{e.ipcRenderer.on(`backend-ready`,(e,n)=>t(n))}});
+let electron = require("electron");
+//#region src/preload.ts
+electron.contextBridge.exposeInMainWorld("electron", { onBackendReady: (callback) => {
+	electron.ipcRenderer.on("backend-ready", (_event, data) => callback(data));
+} });
+//#endregion

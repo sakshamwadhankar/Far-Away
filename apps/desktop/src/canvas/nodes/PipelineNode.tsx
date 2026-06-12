@@ -13,22 +13,42 @@ const PORT_COLORS: Record<PortType, string> = {
 // React Flow node data
 export interface PipelineNodeData extends Omit<SchemaNode, 'id'> {
   // We omit ID here because React Flow provides an ID on the wrapping Node object itself
+  status?: 'idle' | 'running' | 'done' | 'error';
 }
 
 export default function PipelineNode({ data, selected }: { data: PipelineNodeData; selected: boolean }) {
-  const { type, role, endpoint_ref, inputs = [], outputs = [] } = data;
+  const { type, role, endpoint_ref, inputs = [], outputs = [], status = 'idle' } = data;
+
+  const getBorderColor = () => {
+    if (selected) return '#3b82f6';
+    switch (status) {
+      case 'running': return '#eab308'; // yellow
+      case 'done': return '#10b981'; // green
+      case 'error': return '#ef4444'; // red
+      default: return '#555';
+    }
+  };
+
+  const getBoxShadow = () => {
+    if (selected) return '0 0 0 1px #3b82f6';
+    if (status === 'running') return '0 0 8px 1px rgba(234, 179, 8, 0.6)';
+    if (status === 'done') return '0 0 8px 1px rgba(16, 185, 129, 0.4)';
+    if (status === 'error') return '0 0 8px 1px rgba(239, 68, 68, 0.6)';
+    return '0 4px 6px -1px rgba(0, 0, 0, 0.5)';
+  };
 
   return (
     <div
       style={{
         background: '#1e1e1e',
-        border: `1px solid ${selected ? '#3b82f6' : '#555'}`,
+        border: `1px solid ${getBorderColor()}`,
         borderRadius: '8px',
         minWidth: '150px',
         color: '#fff',
         fontFamily: 'sans-serif',
         fontSize: '12px',
-        boxShadow: selected ? '0 0 0 1px #3b82f6' : '0 4px 6px -1px rgba(0, 0, 0, 0.5)',
+        boxShadow: getBoxShadow(),
+        transition: 'all 0.2s ease',
       }}
     >
       {/* Header */}
@@ -44,7 +64,14 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
           alignItems: 'center',
         }}
       >
-        <strong style={{ textTransform: 'uppercase' }}>{type}</strong>
+        <strong style={{ textTransform: 'uppercase' }}>
+          {type}
+          {status !== 'idle' && (
+             <span style={{ marginLeft: '6px', fontSize: '10px', color: getBorderColor() }}>
+               ({status})
+             </span>
+          )}
+        </strong>
         {role && <span style={{ color: '#888', fontSize: '10px' }}>{role}</span>}
       </div>
 

@@ -44,11 +44,18 @@ export function toPipelineSchema(
   schemaNodes.forEach((n) => {
     if (n.type === 'model' && n.endpoint_ref) {
       if (!endpoints[n.endpoint_ref]) {
-        // Default mock endpoint for serialization if not registered elsewhere
-        endpoints[n.endpoint_ref] = {
-          kind: 'openai',
-          model: 'gpt-4o-mini',
-        };
+        if (n.endpoint_ref.startsWith('mock:')) {
+          endpoints[n.endpoint_ref] = {
+            kind: 'mock',
+            model: 'default',
+          };
+        } else {
+          // Default mock endpoint for serialization if not registered elsewhere
+          endpoints[n.endpoint_ref] = {
+            kind: 'openai',
+            model: 'gpt-4o-mini',
+          };
+        }
       }
     }
   });

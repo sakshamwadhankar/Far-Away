@@ -56,12 +56,22 @@ from neuralflow.scheduler.runner import PipelineRunner
 
 logger = logging.getLogger(__name__)
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="NeuralFlow Backend",
     version="0.1.0",
     description="Local execution backend for NeuralFlow — bound to 127.0.0.1.",
     docs_url="/docs",
     redoc_url=None,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ---------------------------------------------------------------------------
@@ -163,6 +173,9 @@ async def start_run(body: RunRequest) -> RunResponse:
                     model_name=descriptor.model or "gpt-4o-mini",
                     base_url=descriptor.base_url,
                 )
+            elif descriptor.kind == "mock":
+                from neuralflow.endpoints.mock import MockEndpoint
+                run_endpoints[ref] = MockEndpoint(name=descriptor.model or "mock-model")
             else:
                 raise HTTPException(
                     status_code=422,
