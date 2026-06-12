@@ -216,10 +216,13 @@ class Scheduler:
         self._event_callback = event_callback
         self._cancel = cancel_token
         self._state: dict[str, dict[str, Any]] = {}
-        """Execution state: { node_id: { port_name: value } }"""
+        self._resume_state: dict[str, dict[str, Any]] = {}
+        """State loaded from previous checkpoints."""
 
     async def run(
-        self, initial_inputs: dict[str, Any]
+        self,
+        initial_inputs: dict[str, Any],
+        resume_state: dict[str, dict[str, Any]] | None = None,
     ) -> SchedulerResult:
         """
         Execute the pipeline.
@@ -232,7 +235,13 @@ class Scheduler:
             SchedulerResult with all node outputs and loop histories.
         """
         self._state = {}
+        self._resume_state = {}
         loop_histories: dict[str, list[LoopIterationRecord]] = {}
+
+        if resume_state:
+            self._resume_state = dict(resume_state)
+            for node_id, outputs in resume_state.items():
+                self._state[node_id] = dict(outputs)
 
         # Seed input nodes
         for node_id, ports in initial_inputs.items():
@@ -383,6 +392,18 @@ class Scheduler:
 
             node = self._get_node(node_id)
 
+            if node_id in self._resume_state and node.type != "input":
+                # Node was resumed from a previous checkpoint
+                # Remove it so loop iterations will run normally
+                del self._resume_state[node_id]
+                
+                await self._emit(SchedulerEvent(
+                    kind=EventKind.NODE_DONE,
+                    node_id=node_id,
+                    data={"outputs": self._state[node_id]},
+                ))
+                return
+
             await self._emit(SchedulerEvent(
                 kind=EventKind.NODE_STARTED,
                 node_id=node_id,
@@ -399,7 +420,10 @@ class Scheduler:
                 await self._emit(SchedulerEvent(
                     kind=EventKind.NODE_DONE,
                     node_id=node_id,
-                    data={"outputs": self._state[node_id]},
+                    data={
+                        "inputs": {},
+                        "outputs": self._state[node_id],
+                    },
                 ))
                 return
 
@@ -409,7 +433,10 @@ class Scheduler:
                 await self._emit(SchedulerEvent(
                     kind=EventKind.NODE_DONE,
                     node_id=node_id,
-                    data={"outputs": outputs},
+                    data={
+                        "inputs": outputs,
+                        "outputs": outputs,
+                    },
                 ))
                 return
 
@@ -483,10 +510,15 @@ class Scheduler:
             ),
         )
 
+        estimated_cost = endpoint.estimate_cost(req)
+
         # Stream tokens and concatenate
         output_text = ""
+        tokens_out = 0
         async for token in endpoint.generate(req):
+            self._check_cancel()
             output_text += token.text
+            tokens_out += 1
             await self._emit(SchedulerEvent(
                 kind=EventKind.TOKEN,
                 node_id=node_id,
@@ -508,7 +540,13 @@ class Scheduler:
         await self._emit(SchedulerEvent(
             kind=EventKind.NODE_DONE,
             node_id=node_id,
-            data={"outputs": outputs},
+            data={
+                "inputs": input_values,
+                "outputs": outputs,
+                "cost_usd": estimated_cost.usd,
+                "tokens_in": estimated_cost.tokens_in,
+                "tokens_out": tokens_out,
+            },
         ))
 
     def _gather_inputs_for_node(self, node_id: str) -> dict[str, Any]:

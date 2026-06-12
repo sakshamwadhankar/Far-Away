@@ -45,6 +45,10 @@ class WsNodeDoneEvent(BaseModel):
     run_id: str
     node_id: str
     outputs: dict[str, Any] = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    cost_usd: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
