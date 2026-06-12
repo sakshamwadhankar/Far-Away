@@ -161,7 +161,9 @@ async def test_ollama_d1_streaming_kill(client: AsyncClient) -> None:
 async def test_ollama_d2_json_repair(client: AsyncClient) -> None:
     # D2: Real malformed-JSON repair
     # Verifier is explicitly prompted to write prose, which breaks JSON parsing, triggering repair.
-    pipeline = make_ollama_pipeline("You must write a paragraph of normal text, absolutely NO JSON. Disregard any JSON instructions.")
+    # We set max_tokens=2 so the JSON cuts off mid-generation, guaranteeing a JSONDecodeError.
+    pipeline = make_ollama_pipeline("Generate a very long JSON object.")
+    pipeline["nodes"][2]["config"]["max_tokens"] = 2
     pipeline["nodes"] = pipeline["nodes"][:3]
     pipeline["edges"] = [
         {"from": "in.prompt", "to": "solver.input"},
@@ -176,27 +178,20 @@ async def test_ollama_d2_json_repair(client: AsyncClient) -> None:
     
     # Look at the token events for the verifier to see if attempt > 1 occurred
     verifier_tokens = [e for e in events if e.get("event") == "token" and e.get("node_id") == "verifier"]
-    if not verifier_tokens:
-        print("D2 RUN EVENTS:", events)
-        
-    attempts = set(e.get("attempt") for e in verifier_tokens if "attempt" in e)
+    print("VERIFIER TOKENS:", verifier_tokens[:2])
+    zero_indices = [e for e in verifier_tokens if e.get("index") == 0]
     
-    # It might be 1 if the model ignores the prompt and produces JSON anyway,
-    # but the prompt strongly discourages it.
-    # If it repaired, attempts should include 2 or 3.
-    # We just assert it finished or errored properly.
-    if attempts and max(attempts) > 1:
-        verifier_done = next((e for e in events if e.get("event") == "node_done" and e.get("node_id") == "verifier"), None)
-        if verifier_done:
-            # Successfully repaired!
-            assert "verified" in verifier_done["outputs"]["verified_json"]
-        else:
-            # Failed to repair after max attempts
-            run_error = next(e for e in events if e.get("event") == "run_error")
-            assert "Failed to generate valid JSON" in run_error["error"]
+    # We assert that the model failed the first attempt and retried.
+    assert len(zero_indices) > 1, "The model returned clean JSON on the first try; repair loop was not exercised."
+    
+    verifier_done = next((e for e in events if e.get("event") == "node_done" and e.get("node_id") == "verifier"), None)
+    if verifier_done:
+        # Successfully repaired!
+        assert "verified" in verifier_done["outputs"]["verified_json"]
     else:
-        # Model produced valid JSON on the first try despite the prompt
-        pass
+        # Failed to repair after max attempts
+        run_error = next(e for e in events if e.get("event") == "run_error")
+        assert "Failed to generate valid JSON" in run_error["error"]
 
 
 @pytest.mark.asyncio
