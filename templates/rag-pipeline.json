@@ -1,0 +1,100 @@
+{
+  "schema_version": "2.0",
+  "id": "b693fb91-fed6-4e53-bb73-a3768f4ec94f",
+  "name": "RAG Pipeline",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "query",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "retriever",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "role": "retriever",
+      "config": {
+        "system_prompt": "Retrieve facts for the query."
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "facts",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "generator",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "role": "generator",
+      "config": {
+        "system_prompt": "Use facts to answer."
+      },
+      "inputs": [
+        {
+          "name": "query",
+          "type": "text"
+        },
+        {
+          "name": "facts",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "final_answer",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.query",
+      "to": "retriever.input"
+    },
+    {
+      "from": "in.query",
+      "to": "generator.query"
+    },
+    {
+      "from": "retriever.facts",
+      "to": "generator.facts"
+    },
+    {
+      "from": "generator.answer",
+      "to": "out.final_answer"
+    }
+  ]
+}

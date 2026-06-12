@@ -1,0 +1,188 @@
+{
+  "schema_version": "2.0",
+  "id": "39efbffc-84d0-4308-b6ab-37b29402a890",
+  "name": "Cascade",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "fast_model",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "confidence_check",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "response_format": "json"
+      },
+      "inputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "eval",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "router",
+      "type": "router",
+      "config": {
+        "routing_map": {
+          "High": "pass",
+          "Low": "fail"
+        }
+      },
+      "inputs": [
+        {
+          "name": "condition",
+          "type": "text"
+        },
+        {
+          "name": "data",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "pass",
+          "type": "text"
+        },
+        {
+          "name": "fail",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "transform",
+      "type": "transform",
+      "config": {
+        "system_prompt": "{{ eval.confidence }}"
+      },
+      "inputs": [
+        {
+          "name": "eval",
+          "type": "json"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "confidence_str",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "escalate_model",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "better_answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out_fast",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "id": "out_escalated",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "fast_model.input"
+    },
+    {
+      "from": "in.prompt",
+      "to": "escalate_model.input"
+    },
+    {
+      "from": "fast_model.answer",
+      "to": "confidence_check.answer"
+    },
+    {
+      "from": "confidence_check.eval",
+      "to": "transform.eval"
+    },
+    {
+      "from": "transform.confidence_str",
+      "to": "router.condition"
+    },
+    {
+      "from": "fast_model.answer",
+      "to": "router.data"
+    },
+    {
+      "from": "router.pass",
+      "to": "out_fast.result"
+    },
+    {
+      "from": "router.fail",
+      "to": "escalate_model.input"
+    },
+    {
+      "from": "escalate_model.better_answer",
+      "to": "out_escalated.result"
+    }
+  ]
+}

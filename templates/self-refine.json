@@ -1,0 +1,119 @@
+{
+  "schema_version": "2.0",
+  "id": "1f8e6038-0737-4c20-9c1c-dcbbb10f33ff",
+  "name": "Self-Refine",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "draft",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "critique",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Critique the draft and suggest improvements."
+      },
+      "inputs": [
+        {
+          "name": "draft",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "feedback",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "refine",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Improve the draft based on feedback."
+      },
+      "inputs": [
+        {
+          "name": "draft",
+          "type": "text"
+        },
+        {
+          "name": "feedback",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "final",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "draft.input"
+    },
+    {
+      "from": "draft.text",
+      "to": "critique.draft"
+    },
+    {
+      "from": "draft.text",
+      "to": "refine.draft"
+    },
+    {
+      "from": "critique.feedback",
+      "to": "refine.feedback"
+    },
+    {
+      "from": "refine.final",
+      "to": "out.result"
+    }
+  ]
+}

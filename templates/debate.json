@@ -1,0 +1,122 @@
+{
+  "schema_version": "2.0",
+  "id": "bf57cb8f-5ef9-4fa3-947f-34deacfa1806",
+  "name": "Debate",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "issue",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "arguer_pro",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Argue PRO."
+      },
+      "inputs": [
+        {
+          "name": "issue",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "argument",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "arguer_con",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Argue CON."
+      },
+      "inputs": [
+        {
+          "name": "issue",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "argument",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "judge",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Adjudicate the debate and declare a winner."
+      },
+      "inputs": [
+        {
+          "name": "pro",
+          "type": "text"
+        },
+        {
+          "name": "con",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "verdict",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.issue",
+      "to": "arguer_pro.issue"
+    },
+    {
+      "from": "in.issue",
+      "to": "arguer_con.issue"
+    },
+    {
+      "from": "arguer_pro.argument",
+      "to": "judge.pro"
+    },
+    {
+      "from": "arguer_con.argument",
+      "to": "judge.con"
+    },
+    {
+      "from": "judge.verdict",
+      "to": "out.result"
+    }
+  ]
+}

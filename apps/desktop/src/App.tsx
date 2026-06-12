@@ -6,6 +6,7 @@ import LeftSidebar from './panels/LeftSidebar';
 import RightPanel from './panels/RightPanel';
 import MonitorPanel, { NodeStat } from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
+import OnboardingModal from './panels/OnboardingModal';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
 
@@ -224,9 +225,7 @@ export default function App() {
       try {
         const jsonStr = e.target?.result as string;
         const schema = JSON.parse(jsonStr);
-        const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
-        setNodes(newNodes);
-        setEdges(newEdges);
+        loadPipelineFromJson(schema);
       } catch (err) {
         console.error('Failed to load pipeline', err);
         alert('Invalid pipeline JSON');
@@ -235,9 +234,20 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  const loadPipelineFromJson = (schema: any) => {
+    try {
+      const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
+      setNodes(newNodes);
+      setEdges(newEdges);
+    } catch (err) {
+      console.error('Failed to load pipeline from JSON', err);
+      alert('Invalid pipeline JSON');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-      <LeftSidebar backendPort={backendPort} />
+      <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
           <button onClick={handleSavePipeline} style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Save JSON</button>
@@ -319,6 +329,8 @@ export default function App() {
           onClose={() => setShowTrace(false)} 
         />
       )}
+
+      <OnboardingModal backendPort={backendPort} onLoadTemplate={loadPipelineFromJson} />
     </div>
   );
 }

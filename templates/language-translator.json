@@ -1,0 +1,98 @@
+{
+  "schema_version": "2.0",
+  "id": "7f8e4d73-8ee2-477c-b96f-669d40972dfd",
+  "name": "Language Translator",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "translator",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Translate the text to French."
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "french",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "reviewer",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Review translation for accuracy."
+      },
+      "inputs": [
+        {
+          "name": "original",
+          "type": "text"
+        },
+        {
+          "name": "translated",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "review",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.text",
+      "to": "translator.input"
+    },
+    {
+      "from": "in.text",
+      "to": "reviewer.original"
+    },
+    {
+      "from": "translator.french",
+      "to": "reviewer.translated"
+    },
+    {
+      "from": "reviewer.review",
+      "to": "out.result"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { NodeType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 
@@ -12,18 +12,32 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'transform', label: 'Transform Node', defaultData: { inputs: [{ name: 'in', type: 'json' }], outputs: [{ name: 'out', type: 'json' }] } },
 ];
 
-export default function LeftSidebar({ backendPort }: { backendPort: number | null }) {
+export default function LeftSidebar({ backendPort, backendToken, onLoadTemplate }: { backendPort: number | null, backendToken: string | null, onLoadTemplate?: (schema: any) => void }) {
+  const [templates, setTemplates] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!backendPort || !backendToken) return;
+    fetch(`http://127.0.0.1:${backendPort}/pipelines/templates`, {
+      headers: { 'Authorization': `Bearer ${backendToken}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setTemplates(data);
+      })
+      .catch(e => console.error('Failed to fetch templates', e));
+  }, [backendPort, backendToken]);
+
   const onDragStart = (event: React.DragEvent, nodeType: NodeType, defaultData: Partial<PipelineNodeData>) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, data: defaultData }));
     event.dataTransfer.effectAllowed = 'move';
   };
 
   return (
-    <div style={{ width: 250, borderRight: '1px solid #333', padding: 16, backgroundColor: '#252526', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ width: 250, borderRight: '1px solid #333', padding: 16, backgroundColor: '#252526', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <h3>Node Palette</h3>
       <p style={{ color: '#888', fontSize: '0.9em' }}>Drag nodes to the canvas.</p>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px', flex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
         {NODE_TYPES.map((nt) => (
           <div
             key={nt.type}
@@ -41,6 +55,27 @@ export default function LeftSidebar({ backendPort }: { backendPort: number | nul
             {nt.label}
           </div>
         ))}
+      </div>
+
+      <div style={{ marginTop: '32px' }}>
+        <h3>Template Gallery</h3>
+        <p style={{ color: '#888', fontSize: '0.9em' }}>Click to load template.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+          {templates.map((tpl) => (
+            <div key={tpl.id} style={{ padding: '8px', border: '1px solid #444', borderRadius: '4px', backgroundColor: '#1e1e1e' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '0.9em' }}>{tpl.name}</div>
+              {onLoadTemplate && (
+                <button 
+                  onClick={() => onLoadTemplate(tpl)}
+                  style={{ marginTop: '8px', width: '100%', padding: '4px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '2px', cursor: 'pointer' }}
+                >
+                  Load
+                </button>
+              )}
+            </div>
+          ))}
+          {templates.length === 0 && <div style={{ color: '#888', fontSize: '0.8em' }}>No templates found.</div>}
+        </div>
       </div>
 
       <div style={{ marginTop: 'auto', paddingTop: 20, borderTop: '1px solid #444' }}>

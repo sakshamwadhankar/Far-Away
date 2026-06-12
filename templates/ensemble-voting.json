@@ -1,0 +1,154 @@
+{
+  "schema_version": "2.0",
+  "id": "c7ab7c2f-10e5-4f76-81f7-9fdbd11b1eb1",
+  "name": "Ensemble Voting",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "model_a",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "temperature": 0.2
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "model_b",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "temperature": 0.7
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "model_c",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "temperature": 1.0
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answer",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "aggregator",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Review all 3 answers and provide the best one."
+      },
+      "inputs": [
+        {
+          "name": "a1",
+          "type": "text"
+        },
+        {
+          "name": "a2",
+          "type": "text"
+        },
+        {
+          "name": "a3",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "final",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "model_a.input"
+    },
+    {
+      "from": "in.prompt",
+      "to": "model_b.input"
+    },
+    {
+      "from": "in.prompt",
+      "to": "model_c.input"
+    },
+    {
+      "from": "model_a.answer",
+      "to": "aggregator.a1"
+    },
+    {
+      "from": "model_b.answer",
+      "to": "aggregator.a2"
+    },
+    {
+      "from": "model_c.answer",
+      "to": "aggregator.a3"
+    },
+    {
+      "from": "aggregator.final",
+      "to": "out.result"
+    }
+  ]
+}

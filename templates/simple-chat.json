@@ -1,0 +1,66 @@
+{
+  "schema_version": "2.0",
+  "id": "516341ec-a370-4286-9a7b-9dd27a7a3711",
+  "name": "Simple Chat",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "bot",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "You are a helpful assistant."
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reply",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "bot.input"
+    },
+    {
+      "from": "bot.reply",
+      "to": "out.result"
+    }
+  ]
+}

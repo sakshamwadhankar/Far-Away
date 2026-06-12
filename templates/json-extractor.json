@@ -1,0 +1,67 @@
+{
+  "schema_version": "2.0",
+  "id": "15ceb9d9-7f2a-4ca7-9584-8beb188c63fd",
+  "name": "JSON Extractor",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "raw_text",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "extractor",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "response_format": "json",
+        "system_prompt": "Extract entities into JSON."
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "json"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.raw_text",
+      "to": "extractor.input"
+    },
+    {
+      "from": "extractor.data",
+      "to": "out.result"
+    }
+  ]
+}

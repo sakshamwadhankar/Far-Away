@@ -35,6 +35,10 @@ from fastapi import (
     status,
 )
 from pydantic import ValidationError
+import json
+from pathlib import Path
+import httpx
+from neuralflow.compiler.models import Pipeline
 
 from neuralflow.api.auth import verify_token
 from neuralflow.api.models import (
@@ -106,6 +110,45 @@ def _global_state_manager() -> StateManager:
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(status="ok", version=app.version)
+
+
+# ---------------------------------------------------------------------------
+# GET /health/ollama  (no auth — used for onboarding)
+# ---------------------------------------------------------------------------
+
+@app.get("/health/ollama")
+async def health_ollama() -> dict[str, Any]:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get("http://127.0.0.1:11434/")
+            if resp.status_code == 200:
+                return {"status": "ok", "message": "Ollama is running"}
+    except Exception:
+        pass
+    return {"status": "error", "message": "Ollama not reachable"}
+
+
+# ---------------------------------------------------------------------------
+# GET /pipelines/templates  (auth required)
+# ---------------------------------------------------------------------------
+
+@app.get("/pipelines/templates", dependencies=[Depends(verify_token)])
+async def get_templates() -> list[dict[str, Any]]:
+    templates_dir = Path(__file__).parent.parent.parent.parent / "templates"
+    templates = []
+    if not templates_dir.exists():
+        return []
+    
+    for file in templates_dir.glob("*.json"):
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                pipeline = Pipeline.model_validate(data)
+                templates.append(pipeline.model_dump(exclude_none=True))
+        except Exception as e:
+            logger.warning("Failed to load template %s: %s", file.name, e)
+            
+    return templates
 
 
 # ---------------------------------------------------------------------------

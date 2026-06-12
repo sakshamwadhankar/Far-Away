@@ -1,0 +1,154 @@
+{
+  "schema_version": "2.0",
+  "id": "3c00974c-e9bc-4abd-aa89-84248f85cb12",
+  "name": "Multi-Perspective",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "topic",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "optimist",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "You are extremely optimistic."
+      },
+      "inputs": [
+        {
+          "name": "topic",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "view",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "pessimist",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "You are extremely pessimistic."
+      },
+      "inputs": [
+        {
+          "name": "topic",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "view",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "realist",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "You are a grounded realist."
+      },
+      "inputs": [
+        {
+          "name": "topic",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "view",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "synthesizer",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "config": {
+        "system_prompt": "Synthesize these three perspectives into a balanced overview."
+      },
+      "inputs": [
+        {
+          "name": "v1",
+          "type": "text"
+        },
+        {
+          "name": "v2",
+          "type": "text"
+        },
+        {
+          "name": "v3",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "summary",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.topic",
+      "to": "optimist.topic"
+    },
+    {
+      "from": "in.topic",
+      "to": "pessimist.topic"
+    },
+    {
+      "from": "in.topic",
+      "to": "realist.topic"
+    },
+    {
+      "from": "optimist.view",
+      "to": "synthesizer.v1"
+    },
+    {
+      "from": "pessimist.view",
+      "to": "synthesizer.v2"
+    },
+    {
+      "from": "realist.view",
+      "to": "synthesizer.v3"
+    },
+    {
+      "from": "synthesizer.summary",
+      "to": "out.result"
+    }
+  ]
+}

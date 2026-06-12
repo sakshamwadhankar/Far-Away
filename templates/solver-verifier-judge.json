@@ -1,0 +1,117 @@
+{
+  "schema_version": "2.0",
+  "id": "0f054a46-29a6-4454-8c5f-c7ac85618aa3",
+  "name": "Solver, Verifier, Judge Loop",
+  "version": "1.0.0",
+  "endpoints": {
+    "local:ollama": {
+      "kind": "ollama",
+      "model": "qwen2.5:3b"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "solver",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "role": "solver",
+      "config": {
+        "temperature": 0.7,
+        "max_tokens": 512
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "solution",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "verifier",
+      "type": "model",
+      "endpoint_ref": "local:ollama",
+      "role": "verifier",
+      "config": {
+        "response_format": "json"
+      },
+      "inputs": [
+        {
+          "name": "solution",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "verified_json",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "judge",
+      "type": "judge",
+      "config": {
+        "score_field": "verified",
+        "strategy": "truthy"
+      },
+      "inputs": [
+        {
+          "name": "cand1",
+          "type": "json"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "best",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "json"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "solver.input"
+    },
+    {
+      "from": "solver.solution",
+      "to": "verifier.solution"
+    },
+    {
+      "from": "verifier.verified_json",
+      "to": "judge.cand1"
+    },
+    {
+      "from": "judge.best",
+      "to": "out.result"
+    }
+  ]
+}

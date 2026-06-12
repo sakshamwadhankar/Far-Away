@@ -123,3 +123,76 @@ describe('App - P3 Phase 2 UI Tests', () => {
   });
 });
 
+describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    
+    // Mock localStorage
+    const store: Record<string, string> = {};
+    global.localStorage = {
+      getItem: (key: string) => store[key] || null,
+      setItem: (key: string, value: string) => { store[key] = value; },
+      clear: () => { for (let key in store) delete store[key]; },
+      removeItem: (key: string) => { delete store[key]; },
+      length: 0,
+      key: () => null
+    } as any;
+    
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/health/ollama')) {
+        return Promise.resolve({
+          json: () => Promise.resolve({ status: 'ok', message: 'Ollama is running' })
+        });
+      }
+      if (url.includes('/pipelines/templates')) {
+        return Promise.resolve({
+          json: () => Promise.resolve([
+            { id: 't1', name: 'Solver, Verifier, Judge Loop', nodes: [], edges: [] }
+          ])
+        });
+      }
+      return Promise.resolve({ json: () => Promise.resolve({}) });
+    }) as any;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows OnboardingModal on first run if Ollama is up', async () => {
+    render(<App />);
+    
+    // The modal should appear asynchronously after fetch
+    const modalHeader = await screen.findByText('Ollama Detected! 🎉');
+    expect(modalHeader).toBeDefined();
+
+    // Verify template load button is there
+    const loadBtn = screen.getByText('Load & Run Solver-Verifier-Judge');
+    expect(loadBtn).toBeDefined();
+
+    // Click load
+    fireEvent.click(loadBtn);
+
+    // Modal should close and flag should be set
+    expect(screen.queryByText('Ollama Detected! 🎉')).toBeNull();
+    expect(localStorage.getItem('neuralflow_first_run')).toBe('1');
+  });
+
+  it('renders Template Gallery in LeftSidebar', async () => {
+    render(<App />);
+    
+    // Gallery header
+    expect(screen.getByText('Template Gallery')).toBeDefined();
+
+    // Wait for templates to load
+    const templateName = await screen.findByText('Solver, Verifier, Judge Loop');
+    expect(templateName).toBeDefined();
+
+    // Click load button in gallery
+    const loadBtn = screen.getByText('Load');
+    fireEvent.click(loadBtn);
+
+    // fromPipelineSchema is triggered in loadPipelineFromJson, which will call setNodes/setEdges.
+    // For this mock, it's sufficient that the Load button is interactive and doesn't crash.
+  });
+});
