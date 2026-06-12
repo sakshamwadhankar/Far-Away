@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toPipelineSchema, fromPipelineSchema } from './serializer';
+import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './serializer';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from './nodes/PipelineNode';
 
@@ -115,5 +115,45 @@ describe('Serializer', () => {
     expect(edges[0].target).toBe('n2');
     expect(edges[0].sourceHandle).toBe('text:out');
     expect(edges[0].targetHandle).toBe('text:in');
+  });
+
+  it('scrubSecrets removes api_key, token, and secret fields from pipeline', () => {
+    const pipeline = {
+      schema_version: '2.0',
+      id: 'test-1',
+      name: 'Test',
+      version: '1.0',
+      nodes: [
+        {
+          id: 'n1',
+          type: 'model',
+          config: {
+            temperature: 0.7,
+            api_key: 'sk-123',
+            secret: 'shh',
+            token: 'tkn'
+          }
+        }
+      ],
+      edges: [],
+      endpoints: {
+        'ep_mock': {
+          kind: 'mock',
+          api_key: 'sk-456',
+          token: 'tkn2'
+        }
+      }
+    } as any; // Cast as any to bypass TS type check for secret injection
+
+    const scrubbed = scrubSecrets(pipeline) as any;
+
+    expect(scrubbed.endpoints['ep_mock'].api_key).toBeUndefined();
+    expect(scrubbed.endpoints['ep_mock'].token).toBeUndefined();
+    expect(scrubbed.endpoints['ep_mock'].kind).toBe('mock');
+
+    expect(scrubbed.nodes[0].config.api_key).toBeUndefined();
+    expect(scrubbed.nodes[0].config.secret).toBeUndefined();
+    expect(scrubbed.nodes[0].config.token).toBeUndefined();
+    expect(scrubbed.nodes[0].config.temperature).toBe(0.7);
   });
 });
