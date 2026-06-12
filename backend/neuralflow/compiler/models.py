@@ -211,9 +211,9 @@ class Pipeline(BaseModel):
     name: str = Field(min_length=1)
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$", description="Semantic version, e.g. '1.0.0'.")
     nodes: list[Node] = Field(min_length=1)
-    loops: list[Loop] = Field(default_factory=list)
-    edges: list[Edge] = Field(default_factory=list)
-    endpoints: dict[str, EndpointDescriptor] = Field(default_factory=dict)
+    loops: list[Loop] = Field(default_factory=list)  # Optional in schema
+    edges: list[Edge]  # Required in schema, but can be empty
+    endpoints: dict[str, EndpointDescriptor]  # Required in schema, but can be empty
 
     @field_validator("nodes")
     @classmethod
