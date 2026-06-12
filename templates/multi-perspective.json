@@ -4,7 +4,7 @@
   "name": "Multi-Perspective",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "optimist",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "You are extremely optimistic."
       },
@@ -44,7 +44,7 @@
     {
       "id": "pessimist",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "You are extremely pessimistic."
       },
@@ -64,7 +64,7 @@
     {
       "id": "realist",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "You are a grounded realist."
       },
@@ -84,7 +84,7 @@
     {
       "id": "synthesizer",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Synthesize these three perspectives into a balanced overview."
       },

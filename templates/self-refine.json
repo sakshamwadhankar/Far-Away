@@ -4,7 +4,7 @@
   "name": "Self-Refine",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "draft",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "inputs": [
         {
           "name": "input",
@@ -41,7 +41,7 @@
     {
       "id": "critique",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Critique the draft and suggest improvements."
       },
@@ -61,7 +61,7 @@
     {
       "id": "refine",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Improve the draft based on feedback."
       },

@@ -38,6 +38,7 @@ from pydantic import ValidationError
 import json
 from pathlib import Path
 import httpx
+import keyring
 from neuralflow.compiler.models import Pipeline
 
 from neuralflow.api.auth import verify_token
@@ -51,7 +52,7 @@ from neuralflow.api.models import (
 )
 from neuralflow.api.registry import run_registry
 from neuralflow.compiler.dag import compile as compile_pipeline
-from neuralflow.compiler.validation import PipelineValidationError
+from neuralflow.compiler.validation import PipelineValidationError, PipelineValidationErrors
 from neuralflow.endpoints.base import ModelEndpoint
 from neuralflow.endpoints.cloud import CloudEndpoint
 from neuralflow.scheduler.engine import EndpointRegistry
@@ -159,27 +160,120 @@ async def get_templates() -> list[dict[str, Any]]:
 @app.get("/models", response_model=ModelsResponse, dependencies=[Depends(verify_token)])
 async def list_models() -> ModelsResponse:
     """
-    Return capabilities for all registered endpoints.
-    Phase 4 will fetch live model lists from each provider dynamically.
+    Fetch live model lists from each provider dynamically.
     """
-    registry = _global_registry()
     infos: list[ModelInfo] = []
+
+    # Keep mock endpoints if they are in the test registry override
+    registry = _global_registry()
     for eid, ep in registry.items():
-        caps = ep.capabilities()
-        parts = eid.split(":", 1)
-        provider = parts[0] if len(parts) == 2 else "unknown"
-        model_name = parts[1] if len(parts) == 2 else eid
-        infos.append(
-            ModelInfo(
-                endpoint_id=eid,
-                provider=provider,
-                model_name=model_name,
-                max_context=caps.max_context,
-                json_mode=caps.json_mode,
-                tools=caps.tools,
-                vision=caps.vision,
+        if eid.startswith("mock:"):
+            caps = ep.capabilities()
+            infos.append(
+                ModelInfo(
+                    endpoint_id=eid,
+                    provider="mock",
+                    model_name=eid.split(":", 1)[1],
+                    max_context=caps.max_context,
+                    json_mode=caps.json_mode,
+                    tools=caps.tools,
+                    vision=caps.vision,
+                )
             )
-        )
+
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        # 1. Ollama
+        try:
+            resp = await client.get("http://127.0.0.1:11434/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                for m in data.get("models", []):
+                    name = m.get("name")
+                    if name:
+                        infos.append(ModelInfo(
+                            endpoint_id=f"ollama:{name}",
+                            provider="ollama",
+                            model_name=name,
+                            max_context=8192,
+                            json_mode=True,
+                            tools=False,
+                            vision=False
+                        ))
+        except Exception:
+            pass
+
+        # 2. OpenAI
+        openai_key = keyring.get_password("neuralflow", "openai")
+        if openai_key:
+            try:
+                resp = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {openai_key}"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("data", []):
+                        name = m.get("id")
+                        if name and ("gpt" in name or "o1" in name or "o3" in name):
+                            infos.append(ModelInfo(
+                                endpoint_id=f"openai:{name}",
+                                provider="openai",
+                                model_name=name,
+                                max_context=128000,
+                                json_mode=True,
+                                tools=True,
+                                vision=True
+                            ))
+            except Exception:
+                pass
+
+        # 3. Anthropic
+        anthropic_key = keyring.get_password("neuralflow", "anthropic")
+        if anthropic_key:
+            try:
+                resp = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("data", []):
+                        name = m.get("id")
+                        if name:
+                            infos.append(ModelInfo(
+                                endpoint_id=f"anthropic:{name}",
+                                provider="anthropic",
+                                model_name=name,
+                                max_context=200000,
+                                json_mode=True,
+                                tools=True,
+                                vision=True
+                            ))
+            except Exception:
+                pass
+
+        # 4. Google
+        google_key = keyring.get_password("neuralflow", "google")
+        if google_key:
+            try:
+                resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={google_key}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("models", []):
+                        name = m.get("name", "").replace("models/", "")
+                        if "gemini" in name:
+                            infos.append(ModelInfo(
+                                endpoint_id=f"google:{name}",
+                                provider="google",
+                                model_name=name,
+                                max_context=1048576,
+                                json_mode=True,
+                                tools=True,
+                                vision=True
+                            ))
+            except Exception:
+                pass
+
     return ModelsResponse(models=infos)
 
 
@@ -207,6 +301,8 @@ async def start_run(body: RunRequest) -> RunResponse:
         dag = compile_pipeline(body.pipeline)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors())
+    except PipelineValidationErrors as exc:
+        raise HTTPException(status_code=422, detail=exc.errors)
     except PipelineValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:

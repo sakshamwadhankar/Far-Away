@@ -21,7 +21,7 @@ describe('Serializer', () => {
         position: { x: 200, y: 0 },
         data: {
           type: 'model',
-          endpoint_ref: 'ep_mock',
+          endpoint_ref: 'mock:default',
           inputs: [{ name: 'prompt', type: 'text' }],
           outputs: [{ name: 'response', type: 'text' }],
           config: { temperature: 0.5, max_tokens: 100 }
@@ -65,7 +65,7 @@ describe('Serializer', () => {
     // Check nodes mapped correctly
     const modelNode = pipeline.nodes.find(n => n.id === 'node-2');
     expect(modelNode?.type).toBe('model');
-    expect(modelNode?.endpoint_ref).toBe('ep_mock');
+    expect(modelNode?.endpoint_ref).toBe('mock:default');
     expect(modelNode?.config?.temperature).toBe(0.5);
 
     // Check edges formatted correctly
@@ -75,7 +75,7 @@ describe('Serializer', () => {
     expect(pipeline.edges[1].to).toBe('node-3.response');
 
     // Check endpoint was inferred
-    expect(pipeline.endpoints['ep_mock']).toBeDefined();
+    expect(pipeline.endpoints['mock:default']).toBeDefined();
   });
 
   it('deserializes a Pipeline back to React Flow format', () => {
@@ -137,7 +137,7 @@ describe('Serializer', () => {
       ],
       edges: [],
       endpoints: {
-        'ep_mock': {
+        'mock:default': {
           kind: 'mock',
           api_key: 'sk-456',
           token: 'tkn2'
@@ -147,9 +147,9 @@ describe('Serializer', () => {
 
     const scrubbed = scrubSecrets(pipeline) as any;
 
-    expect(scrubbed.endpoints['ep_mock'].api_key).toBeUndefined();
-    expect(scrubbed.endpoints['ep_mock'].token).toBeUndefined();
-    expect(scrubbed.endpoints['ep_mock'].kind).toBe('mock');
+    expect(scrubbed.endpoints['mock:default'].api_key).toBeUndefined();
+    expect(scrubbed.endpoints['mock:default'].token).toBeUndefined();
+    expect(scrubbed.endpoints['mock:default'].kind).toBe('mock');
 
     expect(scrubbed.nodes[0].config.api_key).toBeUndefined();
     expect(scrubbed.nodes[0].config.secret).toBeUndefined();

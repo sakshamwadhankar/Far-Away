@@ -4,7 +4,7 @@
   "name": "JSON Extractor",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "extractor",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "response_format": "json",
         "system_prompt": "Extract entities into JSON."

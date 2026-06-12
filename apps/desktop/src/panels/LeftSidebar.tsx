@@ -4,7 +4,7 @@ import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 
 const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<PipelineNodeData> }[] = [
   { type: 'input', label: 'Input Node', defaultData: { outputs: [{ name: 'prompt', type: 'text' }] } },
-  { type: 'model', label: 'Model Node', defaultData: { endpoint_ref: 'ep_mock', inputs: [{ name: 'prompt', type: 'text' }], outputs: [{ name: 'response', type: 'text' }], config: { temperature: 0.7, max_tokens: 2048, response_format: 'text' } } },
+  { type: 'model', label: 'Model Node', defaultData: { endpoint_ref: '', inputs: [{ name: 'prompt', type: 'text' }], outputs: [{ name: 'response', type: 'text' }], config: { temperature: 0.7, max_tokens: 2048, response_format: 'text' } } },
   { type: 'output', label: 'Output Node', defaultData: { inputs: [{ name: 'response', type: 'text' }] } },
   { type: 'loop', label: 'Loop (Subgraph)', defaultData: {} },
   { type: 'judge', label: 'Judge Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'decision', type: 'boolean' }], role: 'judge', config: { score_field: 'verified', strategy: 'truthy' } } },

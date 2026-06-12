@@ -1,12 +1,14 @@
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { Node as RFNode } from 'reactflow';
+import { ModelInfo } from '../App';
 
 interface RightPanelProps {
   selectedNode: RFNode<PipelineNodeData> | null;
   updateNodeData: (id: string, newData: Partial<PipelineNodeData>) => void;
+  availableModels?: ModelInfo[];
 }
 
-export default function RightPanel({ selectedNode, updateNodeData }: RightPanelProps) {
+export default function RightPanel({ selectedNode, updateNodeData, availableModels = [] }: RightPanelProps) {
   if (!selectedNode) {
     return (
       <div style={{ width: 300, borderLeft: '1px solid #333', padding: 16, backgroundColor: '#252526' }}>
@@ -25,6 +27,20 @@ export default function RightPanel({ selectedNode, updateNodeData }: RightPanelP
 
   const handleBaseChange = (key: string, value: string) => {
     updateNodeData(selectedNode.id, { [key]: value });
+  };
+
+  const groupedModels = availableModels.reduce((acc, model) => {
+    if (!acc[model.provider]) acc[model.provider] = [];
+    acc[model.provider].push(model);
+    return acc;
+  }, {} as Record<string, ModelInfo[]>);
+
+  const providerNames: Record<string, string> = {
+    'ollama': 'Local (Ollama)',
+    'openai': 'OpenAI',
+    'anthropic': 'Anthropic',
+    'google': 'Google',
+    'mock': 'Mock (Testing)'
   };
 
   return (
@@ -50,7 +66,22 @@ export default function RightPanel({ selectedNode, updateNodeData }: RightPanelP
         <>
           <div>
             <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '4px' }}>Endpoint Ref</label>
-            <input type="text" value={data.endpoint_ref || ''} onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)} placeholder="e.g. ep_mock" style={{ width: '100%', padding: '6px', background: '#1e1e1e', border: '1px solid #555', color: '#fff', borderRadius: '4px' }} />
+            <select 
+              value={data.endpoint_ref || ''} 
+              onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)} 
+              style={{ width: '100%', padding: '6px', background: '#1e1e1e', border: '1px solid #555', color: '#fff', borderRadius: '4px' }}
+            >
+              <option value="" disabled>Select a model...</option>
+              {Object.entries(groupedModels).map(([provider, models]) => (
+                <optgroup key={provider} label={providerNames[provider] || provider}>
+                  {models.map(m => (
+                    <option key={m.endpoint_id} value={m.endpoint_id}>
+                      {m.model_name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '4px' }}>System Prompt</label>

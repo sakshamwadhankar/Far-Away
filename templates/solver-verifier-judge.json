@@ -4,7 +4,7 @@
   "name": "Solver, Verifier, Judge Loop",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "solver",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "role": "solver",
       "config": {
         "temperature": 0.7,
@@ -46,7 +46,7 @@
     {
       "id": "verifier",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "role": "verifier",
       "config": {
         "response_format": "json"

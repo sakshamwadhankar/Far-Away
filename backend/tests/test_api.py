@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+import httpx
 from httpx_ws import aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 
@@ -262,17 +263,86 @@ async def test_invalid_pipeline_422(client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
+from unittest.mock import patch, MagicMock
+
 @pytest.mark.asyncio
-async def test_models_endpoint(client: AsyncClient) -> None:
-    resp = await client.get("/models", headers=AUTH)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "models" in body
-    assert len(body["models"]) >= 1
-    m = body["models"][0]
-    assert "endpoint_id" in m
-    assert "max_context" in m
-    assert "json_mode" in m
+async def test_models_endpoint_dynamic_fetching(client: AsyncClient) -> None:
+    class MockResponse:
+        def __init__(self, status_code, json_data):
+            self.status_code = status_code
+            self._json_data = json_data
+        def json(self):
+            return self._json_data
+
+    original_get = httpx.AsyncClient.get
+
+    async def mock_get(self, url, *args, **kwargs):
+        url_str = str(url)
+        if "11434" in url_str:
+            return MockResponse(200, {"models": [{"name": "qwen2.5:3b"}]})
+        elif "openai" in url_str:
+            return MockResponse(200, {"data": [{"id": "gpt-4o-mini"}]})
+        elif "anthropic" in url_str:
+            return MockResponse(401, {}) # simulate error
+        elif "google" in url_str:
+            return MockResponse(200, {"models": [{"name": "models/gemini-1.5-flash"}]})
+        return await original_get(self, url, *args, **kwargs)
+
+    def mock_keyring_get(service, username):
+        if username == "openai": return "sk-open"
+        if username == "anthropic": return "sk-anth"
+        if username == "google": return "sk-goog"
+        return None
+
+    with patch("httpx.AsyncClient.get", new=mock_get), \
+         patch("keyring.get_password", side_effect=mock_keyring_get):
+        resp = await client.get("/models", headers=AUTH)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "models" in body
+        
+        models = body["models"]
+        endpoint_ids = [m["endpoint_id"] for m in models]
+        
+        # Test mock provider override
+        assert "mock:default" in endpoint_ids
+        
+        # Test local ollama
+        assert "ollama:qwen2.5:3b" in endpoint_ids
+        
+        # Test openai (key present, 200 OK)
+        assert "openai:gpt-4o-mini" in endpoint_ids
+        
+        # Test anthropic (key present, but 401 error, skips cleanly)
+        assert not any(eid.startswith("anthropic:") for eid in endpoint_ids)
+        
+        # Test google (key present, 200 OK, stripped models/)
+        assert "google:gemini-1.5-flash" in endpoint_ids
+
+
+@pytest.mark.asyncio
+async def test_models_endpoint_all_offline(client: AsyncClient) -> None:
+    original_get = httpx.AsyncClient.get
+
+    async def mock_get(self, url, *args, **kwargs):
+        url_str = str(url)
+        if "11434" not in url_str and ("/models" in url_str or "127.0.0.1" in url_str):
+            return await original_get(self, url, *args, **kwargs)
+        raise Exception("Network error")
+
+    def mock_keyring_get(service, username):
+        return None  # No keys
+
+    with patch("httpx.AsyncClient.get", new=mock_get), \
+         patch("keyring.get_password", side_effect=mock_keyring_get):
+        resp = await client.get("/models", headers=AUTH)
+        assert resp.status_code == 200
+        body = resp.json()
+        
+        # Should only contain mock:default
+        models = body["models"]
+        assert len(models) == 1
+        assert models[0]["endpoint_id"] == "mock:default"
 
 
 @pytest.mark.asyncio

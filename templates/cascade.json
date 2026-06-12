@@ -4,7 +4,7 @@
   "name": "Cascade",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "fast_model",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "inputs": [
         {
           "name": "input",
@@ -41,7 +41,7 @@
     {
       "id": "confidence_check",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "response_format": "json"
       },
@@ -110,7 +110,7 @@
     {
       "id": "escalate_model",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "inputs": [
         {
           "name": "input",

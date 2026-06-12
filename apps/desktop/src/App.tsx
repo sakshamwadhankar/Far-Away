@@ -10,6 +10,16 @@ import OnboardingModal from './panels/OnboardingModal';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
 
+export interface ModelInfo {
+  endpoint_id: string;
+  provider: string;
+  model_name: string;
+  max_context: number;
+  json_mode: boolean;
+  tools: boolean;
+  vision: boolean;
+}
+
 export default function App() {
   const [backendPort, setBackendPort] = useState<number | null>(null);
   const [backendToken, setBackendToken] = useState<string | null>(null);
@@ -18,6 +28,8 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
 
   // Monitor State
   const [runId, setRunId] = useState<string | null>(null);
@@ -48,6 +60,26 @@ export default function App() {
       };
     }
   }, [setNodes, setEdges]);
+
+  useEffect(() => {
+    if (!backendPort || !backendToken) return;
+
+    const fetchModels = async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${backendPort}/models`, {
+          headers: { 'Authorization': `Bearer ${backendToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableModels(data.models || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+      }
+    };
+    
+    fetchModels();
+  }, [backendPort, backendToken]);
 
   const onConnect = useCallback((params: Edge | Connection) => {
     const sourceHandleType = params.sourceHandle?.split(':')[0];
@@ -97,7 +129,24 @@ export default function App() {
       });
 
       if (!res.ok) {
-        console.error('Run failed', await res.text());
+        const text = await res.text();
+        console.error('Run failed', text);
+        try {
+          const json = JSON.parse(text);
+          if (json.detail) {
+            if (Array.isArray(json.detail)) {
+              // Could be Pydantic errors or our PipelineValidationErrors
+              const errs = json.detail.map((e: any) => typeof e === 'string' ? e : (e.msg || JSON.stringify(e)));
+              alert('Pipeline Validation Errors:\n\n' + errs.join('\n\n'));
+            } else {
+              alert('Validation Error:\n' + json.detail);
+            }
+          } else {
+            alert('Run failed:\n' + text);
+          }
+        } catch {
+          alert('Run failed:\n' + text);
+        }
         setIsRunning(false);
         return;
       }
@@ -319,6 +368,7 @@ export default function App() {
       <RightPanel 
         selectedNode={selectedNode} 
         updateNodeData={updateNodeData} 
+        availableModels={availableModels}
       />
 
       {showTrace && runId && (

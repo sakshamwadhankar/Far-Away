@@ -4,7 +4,7 @@
   "name": "RAG Pipeline",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "retriever",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "role": "retriever",
       "config": {
         "system_prompt": "Retrieve facts for the query."
@@ -45,7 +45,7 @@
     {
       "id": "generator",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "role": "generator",
       "config": {
         "system_prompt": "Use facts to answer."

@@ -4,7 +4,7 @@
   "name": "Debate",
   "version": "1.0.0",
   "endpoints": {
-    "local:ollama": {
+    "ollama:qwen2.5:3b": {
       "kind": "ollama",
       "model": "qwen2.5:3b"
     }
@@ -24,7 +24,7 @@
     {
       "id": "arguer_pro",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Argue PRO."
       },
@@ -44,7 +44,7 @@
     {
       "id": "arguer_con",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Argue CON."
       },
@@ -64,7 +64,7 @@
     {
       "id": "judge",
       "type": "model",
-      "endpoint_ref": "local:ollama",
+      "endpoint_ref": "ollama:qwen2.5:3b",
       "config": {
         "system_prompt": "Adjudicate the debate and declare a winner."
       },

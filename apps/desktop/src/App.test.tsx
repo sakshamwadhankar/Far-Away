@@ -151,7 +151,13 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
           ])
         });
       }
-      return Promise.resolve({ json: () => Promise.resolve({}) });
+      if (url.includes('/models')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ models: [] })
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     }) as any;
   });
 
