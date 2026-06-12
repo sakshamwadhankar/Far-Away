@@ -21,8 +21,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from neuralflow.compiler.models import Loop, Pipeline, PortType
-from neuralflow.compiler.validation import _loop_body_edges, validate_pipeline
+from neuralflow.compiler.validation import PipelineValidationErrors, _loop_body_edges, validate_pipeline
 
 # ---------------------------------------------------------------------------
 # CompiledDAG — the compiler's output
@@ -177,13 +179,23 @@ def compile(raw_json: dict[str, Any]) -> CompiledDAG:
       4. Return frozen CompiledDAG.
 
     Raises:
-        pydantic.ValidationError — structural / field-level issues.
-        PipelineValidationError  — semantic issues (cycles, type mismatches, etc.)
+        PipelineValidationErrors  — structural or semantic issues
     """
     # Step 1: Parse and structurally validate
-    pipeline = Pipeline.model_validate(raw_json)
+    try:
+        pipeline = Pipeline.model_validate(raw_json)
+    except ValidationError as e:
+        errors: list[str] = []
+        for err in e.errors():
+            loc = ".".join(str(x) for x in err["loc"])
+            msg = err["msg"]
+            if msg.startswith("Value error, "):
+                msg = msg[len("Value error, "):]
+            errors.append(f"[Structural] Field '{loc}': {msg}")
+        raise PipelineValidationErrors(errors)
 
     # Step 2: Semantic validation (acyclicity, port compatibility, loop bodies)
+    # This will raise PipelineValidationErrors if any rules are violated.
     validate_pipeline(pipeline)
 
     # Step 3: Build execution metadata

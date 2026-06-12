@@ -33,20 +33,12 @@ class PipelineValidationError(Exception):
     """Base class for all pipeline semantic validation errors."""
 
 
-class CyclicGraphError(PipelineValidationError):
-    """Raised when the main pipeline graph contains a cycle (back-edge)."""
+class PipelineValidationErrors(PipelineValidationError):
+    """Raised when one or more pipeline validation errors occur."""
 
-
-class PortTypeMismatchError(PipelineValidationError):
-    """Raised when an edge connects ports of incompatible types."""
-
-
-class UnknownPortError(PipelineValidationError):
-    """Raised when an edge references a port that does not exist on a node."""
-
-
-class UnknownNodeError(PipelineValidationError):
-    """Raised when an edge references a node ID not present in the graph."""
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__("\n".join(errors))
+        self.errors = errors
 
 
 # ---------------------------------------------------------------------------
@@ -103,14 +95,12 @@ def _loop_body_edges(pipeline: Pipeline) -> frozenset[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def _check_acyclic(pipeline: Pipeline) -> None:
+def _check_acyclic(pipeline: Pipeline, errors: list[str]) -> None:
     """
     Enforce TRD §4 rule 1: main graph must be acyclic.
 
     Loop subgraph edges (both endpoints within the same loop body) are excluded
     from this check — they form bounded subgraphs, not true back-edges.
-
-    Raises CyclicGraphError if a cycle is detected.
     """
     node_ids = {n.id for n in pipeline.nodes}
     loop_internal = _loop_body_edges(pipeline)
@@ -141,8 +131,8 @@ def _check_acyclic(pipeline: Pipeline) -> None:
                 queue.append(neighbour)
 
     if visited != len(node_ids):
-        raise CyclicGraphError(
-            f"Pipeline '{pipeline.name}' contains a cycle in the main graph. "
+        errors.append(
+            f"[Graph Cycle] Pipeline '{pipeline.name}' contains a cycle in the main graph. "
             f"Only {visited} of {len(node_ids)} nodes could be topologically sorted. "
             "Loops must be declared as subgraphs in 'loops[]', not as back-edges."
         )
@@ -153,18 +143,13 @@ def _check_acyclic(pipeline: Pipeline) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _check_port_type_compatibility(pipeline: Pipeline) -> None:
+def _check_port_type_compatibility(pipeline: Pipeline, errors: list[str]) -> None:
     """
     Enforce TRD §4 rule 2: every edge must connect type-compatible ports.
 
     Two ports are compatible if and only if their types are identical.
     (Implicit type coercion is intentionally not supported — Transform nodes
     exist for that purpose.)
-
-    Raises:
-        UnknownNodeError  — edge references a node not in the graph.
-        UnknownPortError  — edge references a port not declared on the node.
-        PortTypeMismatchError — source and target port types differ.
     """
     node_index = _build_node_index(pipeline.nodes)
     output_index = _build_port_index(pipeline.nodes)
@@ -177,35 +162,39 @@ def _check_port_type_compatibility(pipeline: Pipeline) -> None:
         dst_port_name = edge.target_port()
 
         if src_node_id not in node_index:
-            raise UnknownNodeError(
-                f"Edge '{edge.from_}' → '{edge.to}': source node '{src_node_id}' not found."
+            errors.append(
+                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': source node '{src_node_id}' not found."
             )
+            continue
         if dst_node_id not in node_index:
-            raise UnknownNodeError(
-                f"Edge '{edge.from_}' → '{edge.to}': target node '{dst_node_id}' not found."
+            errors.append(
+                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': target node '{dst_node_id}' not found."
             )
+            continue
 
         src_ports = output_index.get(src_node_id, {})
         if src_port_name not in src_ports:
-            raise UnknownPortError(
-                f"Edge '{edge.from_}' → '{edge.to}': "
+            errors.append(
+                f"[Unknown Port] Edge '{edge.from_}' -> '{edge.to}': "
                 f"node '{src_node_id}' has no output port named '{src_port_name}'. "
                 f"Available output ports: {list(src_ports.keys()) or '(none)'}."
             )
+            continue
 
         dst_ports = input_index.get(dst_node_id, {})
         if dst_port_name not in dst_ports:
-            raise UnknownPortError(
-                f"Edge '{edge.from_}' → '{edge.to}': "
+            errors.append(
+                f"[Unknown Port] Edge '{edge.from_}' -> '{edge.to}': "
                 f"node '{dst_node_id}' has no input port named '{dst_port_name}'. "
                 f"Available input ports: {list(dst_ports.keys()) or '(none)'}."
             )
+            continue
 
         src_type = src_ports[src_port_name]
         dst_type = dst_ports[dst_port_name]
         if src_type != dst_type:
-            raise PortTypeMismatchError(
-                f"Edge '{edge.from_}' → '{edge.to}': "
+            errors.append(
+                f"[Port Type Mismatch] Edge '{edge.from_}' -> '{edge.to}': "
                 f"source port type '{src_type}' is incompatible with "
                 f"target port type '{dst_type}'. "
                 "Use a Transform node to convert between types."
@@ -217,11 +206,7 @@ def _check_port_type_compatibility(pipeline: Pipeline) -> None:
 # ---------------------------------------------------------------------------
 
 
-class InvalidLoopBodyError(PipelineValidationError):
-    """Raised when a loop body references a node ID not in the pipeline."""
-
-
-def _check_loop_bodies(pipeline: Pipeline) -> None:
+def _check_loop_bodies(pipeline: Pipeline, errors: list[str]) -> None:
     """
     Validate that every node ID in every loop's body list exists in the
     pipeline's nodes. Catches typos at compile time.
@@ -230,8 +215,8 @@ def _check_loop_bodies(pipeline: Pipeline) -> None:
     for loop in pipeline.loops:
         for body_node_id in loop.body:
             if body_node_id not in node_ids:
-                raise InvalidLoopBodyError(
-                    f"Loop '{loop.id}' references node '{body_node_id}' "
+                errors.append(
+                    f"[Invalid Loop Body] Loop '{loop.id}' references node '{body_node_id}' "
                     f"in its body, but no node with that ID exists. "
                     f"Available node IDs: {sorted(node_ids)}."
                 )
@@ -246,15 +231,19 @@ def validate_pipeline(pipeline: Pipeline) -> None:
     """
     Run all semantic validation rules on a parsed Pipeline.
 
-    Raises a subclass of PipelineValidationError on the first rule violation.
+    Raises PipelineValidationErrors on rule violation.
     Pydantic structural validation (field types, required fields, endpoint_ref
     resolution) must have already passed before calling this function.
 
     Rules:
-      1. Main graph is acyclic (CyclicGraphError).
-      2. All edge port types are compatible (PortTypeMismatchError, UnknownPortError, UnknownNodeError).
-      3. All loop body node IDs exist in the pipeline (InvalidLoopBodyError).
+      1. Main graph is acyclic.
+      2. All edge port types are compatible.
+      3. All loop body node IDs exist in the pipeline.
     """
-    _check_acyclic(pipeline)
-    _check_port_type_compatibility(pipeline)
-    _check_loop_bodies(pipeline)
+    errors: list[str] = []
+    _check_acyclic(pipeline, errors)
+    _check_port_type_compatibility(pipeline, errors)
+    _check_loop_bodies(pipeline, errors)
+
+    if errors:
+        raise PipelineValidationErrors(errors)

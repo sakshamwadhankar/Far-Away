@@ -28,8 +28,7 @@ from pydantic import ValidationError
 
 from neuralflow.compiler.models import Pipeline
 from neuralflow.compiler.validation import (
-    CyclicGraphError,
-    PortTypeMismatchError,
+    PipelineValidationErrors,
     validate_pipeline,
 )
 
@@ -242,10 +241,11 @@ def test_cyclic_pipeline_fails_json_schema() -> None:
 
 
 def test_cyclic_pipeline_rejected_by_compiler() -> None:
-    """validate_pipeline() must raise CyclicGraphError for a graph with a back-edge."""
+    """validate_pipeline() must raise PipelineValidationErrors for a graph with a back-edge."""
     pipeline = Pipeline.model_validate(INVALID_CYCLIC)
-    with pytest.raises(CyclicGraphError):
+    with pytest.raises(PipelineValidationErrors) as exc_info:
         validate_pipeline(pipeline)
+    assert any("[Graph Cycle]" in err for err in exc_info.value.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -259,10 +259,11 @@ def test_type_mismatch_pipeline_fails_json_schema() -> None:
 
 
 def test_type_mismatch_rejected_by_compiler() -> None:
-    """validate_pipeline() must raise PortTypeMismatchError for json→number edge."""
+    """validate_pipeline() must raise PipelineValidationErrors for json->number edge."""
     pipeline = Pipeline.model_validate(INVALID_TYPE_MISMATCH)
-    with pytest.raises(PortTypeMismatchError):
+    with pytest.raises(PipelineValidationErrors) as exc_info:
         validate_pipeline(pipeline)
+    assert any("[Port Type Mismatch]" in err for err in exc_info.value.errors)
 
 
 # ---------------------------------------------------------------------------

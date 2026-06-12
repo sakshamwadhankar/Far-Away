@@ -22,12 +22,8 @@ from neuralflow.compiler.models import (
     StopValue,
 )
 from neuralflow.compiler.validation import (
-    CyclicGraphError,
-    InvalidLoopBodyError,
     PipelineValidationError,
-    PortTypeMismatchError,
-    UnknownNodeError,
-    UnknownPortError,
+    PipelineValidationErrors,
     validate_pipeline,
 )
 
@@ -51,11 +47,7 @@ __all__ = [
     "StopOp",
     "StopValue",
     # Validation
-    "CyclicGraphError",
-    "InvalidLoopBodyError",
     "PipelineValidationError",
-    "PortTypeMismatchError",
-    "UnknownNodeError",
-    "UnknownPortError",
+    "PipelineValidationErrors",
     "validate_pipeline",
 ]

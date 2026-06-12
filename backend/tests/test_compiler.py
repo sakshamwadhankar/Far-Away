@@ -23,11 +23,7 @@ from typing import Any
 import pytest
 
 from neuralflow.compiler.dag import CompiledDAG, compile
-from neuralflow.compiler.validation import (
-    CyclicGraphError,
-    InvalidLoopBodyError,
-    PortTypeMismatchError,
-)
+from neuralflow.compiler.validation import PipelineValidationErrors
 
 
 # ---------------------------------------------------------------------------
@@ -279,9 +275,10 @@ def test_topo_order_respects_edges() -> None:
 
 
 def test_compile_rejects_cycle() -> None:
-    """compile() raises CyclicGraphError for a graph with a back-edge."""
-    with pytest.raises(CyclicGraphError):
+    """compile() raises PipelineValidationErrors for a graph with a back-edge."""
+    with pytest.raises(PipelineValidationErrors) as exc_info:
         compile(INVALID_CYCLIC)
+    assert any("[Graph Cycle]" in err for err in exc_info.value.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +287,10 @@ def test_compile_rejects_cycle() -> None:
 
 
 def test_compile_rejects_type_mismatch() -> None:
-    """compile() raises PortTypeMismatchError for json→number edge."""
-    with pytest.raises(PortTypeMismatchError):
+    """compile() raises PipelineValidationErrors for json->number edge."""
+    with pytest.raises(PipelineValidationErrors) as exc_info:
         compile(INVALID_TYPE_MISMATCH)
+    assert any("[Port Type Mismatch]" in err for err in exc_info.value.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -301,9 +299,10 @@ def test_compile_rejects_type_mismatch() -> None:
 
 
 def test_compile_rejects_bad_loop_body() -> None:
-    """compile() raises InvalidLoopBodyError for nonexistent node in body."""
-    with pytest.raises(InvalidLoopBodyError, match="nonexistent_node"):
+    """compile() raises PipelineValidationErrors for nonexistent node in body."""
+    with pytest.raises(PipelineValidationErrors) as exc_info:
         compile(INVALID_LOOP_BODY)
+    assert any("[Invalid Loop Body]" in err and "nonexistent_node" in err for err in exc_info.value.errors)
 
 
 # ---------------------------------------------------------------------------

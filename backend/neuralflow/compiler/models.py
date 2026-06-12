@@ -84,10 +84,10 @@ class Node(BaseModel):
     @model_validator(mode="after")
     def _validate_model_node_endpoint(self) -> "Node":
         if self.type == "model" and not self.endpoint_ref:
-            raise ValueError("Nodes of type 'model' must have an endpoint_ref.")
+            raise ValueError(f"[Missing Endpoint] Node '{self.id}' of type 'model' must define an 'endpoint_ref'.")
         if self.type != "model" and self.endpoint_ref is not None:
             raise ValueError(
-                f"Only 'model' nodes may have endpoint_ref; node '{self.id}' has type '{self.type}'."
+                f"[Invalid Endpoint] Only 'model' nodes may have 'endpoint_ref'; node '{self.id}' has type '{self.type}'."
             )
         return self
 
@@ -227,7 +227,7 @@ class Pipeline(BaseModel):
         if len(ids) != len(set(ids)):
             seen: set[str] = set()
             dupes = [n for n in ids if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
-            raise ValueError(f"Duplicate node IDs: {dupes}")
+            raise ValueError(f"[Duplicate Node ID] Duplicate node IDs found: {', '.join(dupes)}")
         return nodes
 
     @field_validator("loops")
@@ -235,7 +235,9 @@ class Pipeline(BaseModel):
     def _unique_loop_ids(cls, loops: list[Loop]) -> list[Loop]:
         ids = [lp.id for lp in loops]
         if len(ids) != len(set(ids)):
-            raise ValueError("Duplicate loop IDs detected.")
+            seen: set[str] = set()
+            dupes = [n for n in ids if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
+            raise ValueError(f"[Duplicate Loop ID] Duplicate loop IDs found: {', '.join(dupes)}")
         return loops
 
     @model_validator(mode="after")
@@ -244,7 +246,7 @@ class Pipeline(BaseModel):
         for node in self.nodes:
             if node.endpoint_ref and node.endpoint_ref not in self.endpoints:
                 raise ValueError(
-                    f"Node '{node.id}' references endpoint_ref '{node.endpoint_ref}' "
-                    f"which is not defined in the endpoints map."
+                    f"[Unresolved Endpoint] Node '{node.id}' references endpoint_ref '{node.endpoint_ref}' "
+                    f"which is not defined in the 'endpoints' map."
                 )
         return self
