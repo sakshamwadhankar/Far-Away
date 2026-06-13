@@ -152,7 +152,7 @@ async def get_templates() -> list[dict[str, Any]]:
             with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 pipeline = Pipeline.model_validate(data)
-                templates.append(pipeline.model_dump(exclude_none=True))
+                templates.append(pipeline.model_dump(exclude_none=True, by_alias=True))
         except Exception as e:
             logger.warning("Failed to load template %s: %s", file.name, e)
             
