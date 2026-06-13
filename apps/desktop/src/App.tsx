@@ -71,13 +71,18 @@ export default function App() {
   // Edge animation state
   const [animatedEdgeIds, setAnimatedEdgeIds] = useState<Set<string>>(new Set());
 
+  // Buffers for high-frequency token events
+  const tokenStatsBuffer = useRef<Record<string, number>>({});
+  const tokenTotalsBuffer = useRef<number>(0);
+  const lastStatsUpdate = useRef<number>(Date.now());
+
   // We use refs to access latest nodes/edges in callbacks without stale closures
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
 
-  const API_BASE = `http://127.0.0.1:${backendPort || 8000}`;
+  const API_BASE = `http://127.0.0.1:${backendPort || 8765}`;
 
   useEffect(() => {
     // Listen for backend info from Electron
@@ -89,7 +94,7 @@ export default function App() {
       });
     } else {
       // Development fallback
-      setBackendPort(8000);
+      setBackendPort(8765);
       setBackendToken('test-token');
     }
 
@@ -341,6 +346,25 @@ export default function App() {
         }));
       }
     } else if (eventType === 'run_completed' || eventType === 'run_stopped' || eventType === 'budget_exceeded' || eventType === 'run_halted') {
+      // Flush any remaining tokens
+      const flushedStats = { ...tokenStatsBuffer.current };
+      const flushedTotals = tokenTotalsBuffer.current;
+      tokenStatsBuffer.current = {};
+      tokenTotalsBuffer.current = 0;
+      
+      if (flushedTotals > 0) {
+        setNodeStats(prev => {
+          const next = { ...prev };
+          for (const [nid, count] of Object.entries(flushedStats)) {
+            if (next[nid]) {
+              next[nid] = { ...next[nid], tokensOut: next[nid].tokensOut + count };
+            }
+          }
+          return next;
+        });
+        setRunTotals(prev => ({ ...prev, tokensOut: prev.tokensOut + flushedTotals }));
+      }
+
       if (data.total_cost_usd !== undefined) {
         setRunTotals(prev => ({
           ...prev,
@@ -353,15 +377,31 @@ export default function App() {
       setAnimatedEdgeIds(new Set());
     } else if (eventType === 'token') {
       const nodeId = data.node_id as string;
-      setNodeStats(prev => {
-        const current = prev[nodeId];
-        if (!current) return prev;
-        return {
-          ...prev,
-          [nodeId]: { ...current, tokensOut: current.tokensOut + 1 }
-        };
-      });
-      setRunTotals(prev => ({ ...prev, tokensOut: prev.tokensOut + 1 }));
+      tokenStatsBuffer.current[nodeId] = (tokenStatsBuffer.current[nodeId] || 0) + 1;
+      tokenTotalsBuffer.current += 1;
+
+      const now = Date.now();
+      if (now - lastStatsUpdate.current > 500) {
+        lastStatsUpdate.current = now;
+        const flushedStats = { ...tokenStatsBuffer.current };
+        const flushedTotals = tokenTotalsBuffer.current;
+        tokenStatsBuffer.current = {};
+        tokenTotalsBuffer.current = 0;
+
+        setNodeStats(prev => {
+          const next = { ...prev };
+          let changed = false;
+          for (const [nid, count] of Object.entries(flushedStats)) {
+            if (next[nid]) {
+              next[nid] = { ...next[nid], tokensOut: next[nid].tokensOut + count };
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+
+        setRunTotals(prev => ({ ...prev, tokensOut: prev.tokensOut + flushedTotals }));
+      }
     } else if (eventType === 'loop_iteration') {
       setRunTotals(prev => ({ ...prev, iterations: prev.iterations + 1 }));
     }

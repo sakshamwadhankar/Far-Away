@@ -341,6 +341,7 @@ textarea.nf-input {
   line-height: 1.55;
   font-size: 13.5px;
   word-wrap: break-word;
+  overflow-wrap: break-word;
   white-space: pre-wrap;
 }
 
