@@ -86,3 +86,22 @@ class RunResponse(BaseModel):
 class StopResponse(BaseModel):
     run_id: str
     halted: bool
+
+
+# ---------------------------------------------------------------------------
+# POST /pipelines/estimate
+# ---------------------------------------------------------------------------
+
+
+class NodeEstimate(BaseModel):
+    usd: float
+    latency_ms: int
+    is_local: bool
+
+
+class EstimateResponse(BaseModel):
+    nodes: dict[str, NodeEstimate]
+    total_usd: float
+    total_latency_ms: int
+    loop_multiplier: int = 1
+

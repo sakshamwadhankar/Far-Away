@@ -440,3 +440,23 @@ async def test_cost_divergence_on_retries(client: AsyncClient) -> None:
     
     assert model_node["cost"] == node_cost
     assert trace["run"]["cost"] == node_cost
+
+@pytest.mark.asyncio
+async def test_estimate_pipeline(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/pipelines/estimate",
+        json={"pipeline": PIPELINE},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "nodes" in data
+    assert "total_usd" in data
+    assert "total_latency_ms" in data
+    assert "model_node" in data["nodes"]
+    est = data["nodes"]["model_node"]
+    assert "usd" in est
+    assert "latency_ms" in est
+    assert "is_local" in est
+    # In mock:default, is_local should be true
+    assert est["is_local"] is True

@@ -49,6 +49,8 @@ from neuralflow.api.models import (
     RunRequest,
     RunResponse,
     StopResponse,
+    EstimateResponse,
+    NodeEstimate,
 )
 from neuralflow.api.registry import run_registry
 from neuralflow.compiler.dag import compile as compile_pipeline
@@ -391,6 +393,97 @@ async def _run_task(
         from neuralflow.scheduler.events import WsRunErrorEvent
         await queue.put(WsRunErrorEvent(run_id=run_id, error=str(exc)))
         await queue.put(None)
+
+
+# ---------------------------------------------------------------------------
+# POST /pipelines/estimate  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/pipelines/estimate",
+    response_model=EstimateResponse,
+    dependencies=[Depends(verify_token)],
+)
+async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
+    """
+    Returns cost and latency estimates for model nodes in the pipeline.
+    """
+    try:
+        dag = compile_pipeline(body.pipeline)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors())
+    except PipelineValidationErrors as exc:
+        raise HTTPException(status_code=422, detail=exc.errors)
+    except PipelineValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    global_ep = _global_registry()
+    run_endpoints: dict[str, ModelEndpoint] = {}
+
+    for ref, descriptor in dag.pipeline.endpoints.items():
+        if ref in global_ep:
+            run_endpoints[ref] = global_ep[ref]
+        else:
+            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible"):
+                run_endpoints[ref] = CloudEndpoint(
+                    provider=descriptor.kind,
+                    model_name=descriptor.model or "gpt-4o-mini",
+                    base_url=descriptor.base_url,
+                )
+            elif descriptor.kind == "mock":
+                from neuralflow.endpoints.mock import MockEndpoint
+                run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
+            elif descriptor.kind == "ollama":
+                from neuralflow.endpoints.ollama import OllamaEndpoint
+                run_endpoints[ref] = OllamaEndpoint(
+                    id=f"ollama:{descriptor.model or 'default'}",
+                    base_url=descriptor.base_url or "http://127.0.0.1:11434/v1",
+                    model=descriptor.model or "qwen2.5:3b",
+                )
+
+    from neuralflow.endpoints.base import GenRequest, Message
+    dummy_req = GenRequest(messages=[Message(role="user", content="Test " * 100)]) # ~100 tokens input
+    
+    nodes_est: dict[str, NodeEstimate] = {}
+    total_usd = 0.0
+    total_latency = 0
+    loop_multiplier = 1
+    
+    for node in dag.pipeline.nodes:
+        if node.type == "model":
+            ep_ref = node.endpoint_ref
+            if ep_ref and ep_ref in run_endpoints:
+                ep = run_endpoints[ep_ref]
+                
+                req = dummy_req.model_copy(update={})
+                if hasattr(node, "config") and node.config and "max_tokens" in node.config:
+                    req.max_tokens = node.config["max_tokens"]
+                
+                cost = ep.estimate_cost(req)
+                is_local = (ep_ref.startswith("ollama:") or ep_ref.startswith("mock:"))
+                lat = 2000 if is_local else 5000
+                
+                nodes_est[node.id] = NodeEstimate(usd=cost.usd, latency_ms=lat, is_local=is_local)
+                total_usd += cost.usd
+                total_latency += lat
+        
+        elif node.type == "loop":
+            iters = node.config.get("max_iterations", 1) if getattr(node, "config", None) else 1
+            if isinstance(iters, int) and iters > 1:
+                loop_multiplier = max(loop_multiplier, iters)
+                
+    total_usd *= loop_multiplier
+    total_latency *= loop_multiplier
+
+    return EstimateResponse(
+        nodes=nodes_est,
+        total_usd=total_usd,
+        total_latency_ms=total_latency,
+        loop_multiplier=loop_multiplier
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -5,10 +5,14 @@ import App from './App';
 import './index.css';
 import 'reactflow/dist/style.css';
 
+import { ToastProvider } from './contexts/ToastContext';
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ReactFlowProvider>
-      <App />
-    </ReactFlowProvider>
+    <ToastProvider>
+      <ReactFlowProvider>
+        <App />
+      </ReactFlowProvider>
+    </ToastProvider>
   </React.StrictMode>,
 );

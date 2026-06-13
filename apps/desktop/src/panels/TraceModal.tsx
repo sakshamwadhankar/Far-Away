@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { diffLines, Change } from 'diff';
 
 interface TraceModalProps {
   runId: string;
@@ -109,25 +110,53 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
 
               <h3>Loop Iterations ({trace.loops?.length})</h3>
               {trace.loops?.length > 0 ? (
-                trace.loops.map((loop: any, idx: number) => (
-                  <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
-                    <strong>Loop ID:</strong> {loop.loop_id} | <strong>Iteration:</strong> {loop.iteration}
-                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-                      <div style={{ flex: 1 }}>
-                        <strong>Inputs:</strong>
-                        <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                          {JSON.stringify(loop.inputs, null, 2)}
-                        </pre>
+                trace.loops.map((loop: any, idx: number) => {
+                  let diffElements: JSX.Element[] | null = null;
+                  if (idx > 0) {
+                    const prevOutputs = JSON.stringify(trace.loops[idx - 1].outputs, null, 2) || '';
+                    const currOutputs = JSON.stringify(loop.outputs, null, 2) || '';
+                    if (prevOutputs !== currOutputs) {
+                      const changes = diffLines(prevOutputs, currOutputs);
+                      diffElements = changes.map((part: Change, i: number) => {
+                        const color = part.added ? '#10b981' : part.removed ? '#ef4444' : '#ccc';
+                        const bgColor = part.added ? 'rgba(16, 185, 129, 0.1)' : part.removed ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
+                        return (
+                          <span key={i} style={{ color, backgroundColor: bgColor }}>
+                            {part.value}
+                          </span>
+                        );
+                      });
+                    }
+                  }
+
+                  return (
+                    <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
+                      <strong>Loop ID:</strong> {loop.loop_id} | <strong>Iteration:</strong> {loop.iteration}
+                      <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                        <div style={{ flex: 1 }}>
+                          <strong>Inputs:</strong>
+                          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                            {JSON.stringify(loop.inputs, null, 2)}
+                          </pre>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <strong>Outputs:</strong>
+                          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
+                            {JSON.stringify(loop.outputs, null, 2)}
+                          </pre>
+                        </div>
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <strong>Outputs:</strong>
-                        <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                          {JSON.stringify(loop.outputs, null, 2)}
-                        </pre>
-                      </div>
+                      {diffElements && (
+                        <div style={{ marginTop: '16px' }}>
+                          <strong>Changes from previous iteration (Outputs):</strong>
+                          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px', whiteSpace: 'pre-wrap' }}>
+                            {diffElements}
+                          </pre>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p>No loop iterations.</p>
               )}

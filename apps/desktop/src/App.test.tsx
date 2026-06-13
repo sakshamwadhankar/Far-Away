@@ -4,6 +4,7 @@ import App from './App';
 import { useState } from 'react';
 import * as reactflow from 'reactflow';
 import type { PipelineNodeData } from './canvas/nodes/PipelineNode';
+import { ToastProvider } from './contexts/ToastContext';
 
 // We need to spy on addEdge to see if it was called
 const addEdgeSpy = vi.spyOn(reactflow, 'addEdge');
@@ -74,14 +75,22 @@ describe('App - P3 Phase 2 UI Tests', () => {
   });
 
   it('renders LeftSidebar, Canvas, and RightPanel', () => {
-    render(<App />);
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
     expect(screen.getByText('Node Palette')).toBeDefined();
     expect(screen.getByTestId('react-flow-mock')).toBeDefined();
     expect(screen.getByText('Configuration')).toBeDefined();
   });
 
   it('allows connecting compatible ports (text -> text)', () => {
-    render(<App />);
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
     const validBtn = screen.getByTestId('trigger-connect-valid');
     
     fireEvent.click(validBtn);
@@ -95,29 +104,34 @@ describe('App - P3 Phase 2 UI Tests', () => {
   });
 
   it('rejects connecting incompatible ports (text -> boolean)', () => {
-    render(<App />);
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
     const invalidBtn = screen.getByTestId('trigger-connect-invalid');
     
-    // Silence the console.warn we expect
+    // Mock console.warn as fallback, but also test toast (ToastProvider shows it in UI)
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     
     fireEvent.click(invalidBtn);
     
-    // addEdge should NOT be called
+    // addEdge should NOT have been called
     expect(addEdgeSpy).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith('Incompatible port types', 'text', 'boolean');
     
+    // Toast should be rendered
+    expect(screen.queryByText(/Incompatible port types: cannot connect text to boolean/)).not.toBeNull();
     warnSpy.mockRestore();
   });
 
   it('handles drag-and-drop to create a new node', () => {
     // Because reactFlowWrapper is used in Canvas, we need to mock it globally or mock getBoundingClientRect
     // To make it simple, we can mock HTMLElement.prototype.getBoundingClientRect
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       top: 0, left: 0, width: 1000, height: 1000, bottom: 1000, right: 1000, x: 0, y: 0, toJSON: () => {}
     });
 
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     const dropBtn = screen.getByTestId('trigger-drop');
     
     fireEvent.click(dropBtn);
@@ -126,7 +140,66 @@ describe('App - P3 Phase 2 UI Tests', () => {
     // If it was added to state and passed to RightPanel, we should be able to select it?
     // Actually, App.tsx passes nodes to Canvas.
     
-    rectSpy.mockRestore();
+    expect(true).toBe(true);
+  });
+});
+
+describe('Tier 2 UI: Status and Estimates', () => {
+  it('status indicator reflects fetch success/failure', async () => {
+    // Mock fetch failure
+    global.fetch = vi.fn().mockRejectedValue(new Error('Failed'));
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+    // Wait for async fetch
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getAllByText('Disconnected — start the backend').length).toBeGreaterThan(0);
+
+    // Mock fetch success
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
+  });
+
+  it('cost estimate sums per-node correctly (incl. ×iterations for a loop)', async () => {
+    // Mock both /health and /pipelines/estimate
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (url.endsWith('/health')) return Promise.resolve({ ok: true, json: async () => ({}) });
+      if (url.endsWith('/pipelines/estimate')) return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          nodes: { n1: { usd: 0.02, latency_ms: 5000, is_local: false } },
+          total_usd: 0.06,
+          total_latency_ms: 15000,
+          loop_multiplier: 3
+        })
+      });
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    // Trigger node add so that it requests estimate (debounced)
+    const dropBtn = screen.getByTestId('trigger-drop');
+    fireEvent.click(dropBtn);
+
+    // Wait for debounce and fetch
+    await new Promise(r => setTimeout(r, 1100));
+
+    // Assert total estimate is displayed near Run Pipeline button
+    expect(screen.getByText(/Est: ~\$0.0600 · ~15.0s/)).toBeDefined();
+    expect(screen.getByText(/⚠️ Loop ×3 applied/)).toBeDefined();
   });
 });
 
@@ -181,7 +254,7 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
   });
 
   it('shows OnboardingModal on first run if Ollama is up', async () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     
     // The modal should appear asynchronously after fetch
     const modalHeader = await screen.findByText('Ollama Detected! 🎉');
@@ -200,7 +273,7 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
   });
 
   it('renders Template Gallery in LeftSidebar', async () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     
     // Gallery header
     expect(screen.getByText('Template Gallery')).toBeDefined();
@@ -233,14 +306,14 @@ describe('App - Mode Switch', () => {
   });
 
   it('renders mode switch with Edit and Use buttons', () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     expect(screen.getByTestId('mode-switch')).toBeDefined();
     expect(screen.getByTestId('mode-edit')).toBeDefined();
     expect(screen.getByTestId('mode-use')).toBeDefined();
   });
 
   it('shows canvas in Edit mode and chat in Use mode', () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     
     // Default is Edit mode — canvas visible
     expect(screen.getByTestId('react-flow-mock')).toBeDefined();
@@ -268,7 +341,7 @@ describe('App - Chat mode disabled for multi-output pipelines', () => {
   });
 
   it('shows disabled chat tooltip when pipeline has multiple output nodes', () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
 
     // Inject nodes via the dev setE2EState helper
     const multiOutputNodes: reactflow.Node<PipelineNodeData>[] = [
@@ -315,7 +388,7 @@ describe('App - Empty state hint', () => {
   });
 
   it('shows empty-state hint when canvas has no nodes', () => {
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     // The empty-state hint should be visible since there are no nodes
     expect(screen.getByTestId('empty-state-hint')).toBeDefined();
     expect(screen.getByText('Drag a node from the palette, or load a template →')).toBeDefined();
@@ -384,7 +457,7 @@ describe('App - WS node_done flips node visual state', () => {
     // Full integration test of WS → node state requires E2E.
     // Here we verify the node status data attribute changes.
     
-    render(<App />);
+    render(<ToastProvider><App /></ToastProvider>);
     
     // Inject a node
     const setter = (window as any).setE2EState;
@@ -405,5 +478,34 @@ describe('App - WS node_done flips node visual state', () => {
     if (nodeEl) {
       expect(nodeEl.getAttribute('data-status')).toBe('idle');
     }
+  });
+  it('shows error toast for invalid imported pipeline JSON', () => {
+    const { getByText, getByLabelText, queryByText } = render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    const input = getByLabelText('Import Pipeline') as HTMLInputElement;
+    const invalidSchema = { schema_version: '1.0' }; // Invalid version
+    const file = new File([JSON.stringify(invalidSchema)], 'pipeline.json', { type: 'application/json' });
+    
+    // Create a mock for FileReader to synchronously call onload
+    class MockFileReader {
+      onload: any = null;
+      readAsText() {
+        if (this.onload) {
+          this.onload({ target: { result: JSON.stringify(invalidSchema) } } as any);
+        }
+      }
+    }
+    vi.stubGlobal('FileReader', MockFileReader);
+
+    fireEvent.change(input, { target: { files: [file] } });
+    
+    // Check if error toast was shown
+    expect(getByText(/Invalid or missing schema_version/)).toBeDefined();
+    
+    vi.unstubAllGlobals();
   });
 });

@@ -315,3 +315,50 @@ async def test_model_executor_json_repair_failure(mock_emitter: MockEmitter):
     # Should raise after 3 attempts
     with pytest.raises(ValueError, match="Failed to generate valid JSON"):
         await executor.execute(ctx)
+
+
+async def test_compare_executor_different(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    from neuralflow.executors.logic import CompareExecutor
+    node = Node(
+        id="comp1", 
+        type="compare", 
+        outputs=[
+            Port(name="diff", type="text"),
+            Port(name="is_different", type="boolean"),
+        ]
+    )
+    inputs = {
+        "input1": "Hello World",
+        "input2": "Hello World!"
+    }
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = CompareExecutor()
+    outputs = await executor.execute(ctx)
+    
+    assert outputs["is_different"] is True
+    assert "Hello World!" in outputs["diff"]
+    assert "-Hello World" in outputs["diff"]
+
+
+async def test_compare_executor_same(registry: EndpointRegistry, mock_emitter: MockEmitter):
+    from neuralflow.executors.logic import CompareExecutor
+    node = Node(
+        id="comp2", 
+        type="compare", 
+        outputs=[
+            Port(name="diff", type="text"),
+            Port(name="is_different", type="boolean"),
+        ]
+    )
+    inputs = {
+        "input1": {"foo": "bar"},
+        "input2": {"foo": "bar"}
+    }
+    ctx = make_ctx(node, inputs, registry, mock_emitter)
+    
+    executor = CompareExecutor()
+    outputs = await executor.execute(ctx)
+    
+    assert outputs["is_different"] is False
+    assert outputs["diff"] == ""

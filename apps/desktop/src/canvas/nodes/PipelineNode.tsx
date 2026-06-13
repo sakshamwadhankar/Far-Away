@@ -20,6 +20,11 @@ const STATUS_ICONS: Record<string, string> = {
 export interface PipelineNodeData extends Omit<SchemaNode, 'id'> {
   // We omit ID here because React Flow provides an ID on the wrapping Node object itself
   status?: 'idle' | 'running' | 'done' | 'error';
+  estimate?: {
+    usd: number;
+    latency_ms: number;
+    is_local: boolean;
+  };
 }
 
 export default function PipelineNode({ data, selected }: { data: PipelineNodeData; selected: boolean }) {
@@ -56,13 +61,34 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         border: `1px solid ${getBorderColor()}`,
         borderRadius: '8px',
         minWidth: '150px',
-        color: '#fff',
         fontFamily: 'sans-serif',
-        fontSize: '12px',
         boxShadow: getBoxShadow(),
+        position: 'relative',
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
       }}
     >
+      {type === 'model' && data.estimate && (
+        <div style={{
+          position: 'absolute',
+          top: '-24px',
+          right: 0,
+          display: 'flex',
+          gap: '6px',
+          fontSize: '11px',
+          fontFamily: 'monospace',
+          color: '#aaa'
+        }}>
+          {data.estimate.is_local ? (
+             <span style={{ background: '#059669', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>Local</span>
+          ) : (
+             <span style={{ background: '#2563eb', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>Cloud</span>
+          )}
+          <span style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>
+            ~${data.estimate.usd.toFixed(4)} &middot; ~{(data.estimate.latency_ms / 1000).toFixed(1)}s
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div
         style={{

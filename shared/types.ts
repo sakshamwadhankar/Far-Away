@@ -33,7 +33,8 @@ export type NodeType =
   | "loop"
   | "judge"
   | "router"
-  | "transform";
+  | "transform"
+  | "compare";
 
 export interface NodeConfig {
   temperature?: number;
@@ -158,6 +159,8 @@ export interface Pipeline {
   name: string;
   /** Semantic version string, e.g. "1.0.0". */
   version: string;
+  /** Optional description for shared/exported pipelines. */
+  description?: string;
   nodes: Node[];
   loops?: Loop[];
   edges: Edge[];

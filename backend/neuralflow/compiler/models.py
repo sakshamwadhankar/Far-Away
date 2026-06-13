@@ -40,7 +40,7 @@ class Port(BaseModel):
 # Node
 # ---------------------------------------------------------------------------
 
-NodeType = Literal["input", "output", "model", "loop", "judge", "router", "transform"]
+NodeType = Literal["input", "output", "model", "loop", "judge", "router", "transform", "compare"]
 
 
 class NodeConfig(BaseModel):
@@ -214,6 +214,7 @@ class Pipeline(BaseModel):
     schema_version: Literal["2.0"] = Field(alias="schema_version")
     id: str = Field(description="UUID v4 pipeline identifier.")
     name: str = Field(min_length=1)
+    description: str = Field(default="", description="Optional description for shared/exported pipelines.")
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$", description="Semantic version, e.g. '1.0.0'.")
     nodes: list[Node] = Field(min_length=1)
     loops: list[Loop] = Field(default_factory=list)  # Optional in schema

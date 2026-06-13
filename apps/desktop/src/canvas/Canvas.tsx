@@ -40,13 +40,21 @@ export default function Canvas({
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
 
-  // Apply animation flag to edges
+  // Apply animation flag to edges and check port validity
   const displayEdges = useMemo(() => {
-    if (!animatedEdgeIds || animatedEdgeIds.size === 0) return edges;
-    return edges.map(e => ({
-      ...e,
-      animated: animatedEdgeIds.has(e.id),
-    }));
+    return edges.map(e => {
+      let isInvalid = false;
+      const sourceHandleType = e.sourceHandle?.split(':')[0];
+      const targetHandleType = e.targetHandle?.split(':')[0];
+      if (sourceHandleType && targetHandleType && sourceHandleType !== targetHandleType) {
+        isInvalid = true;
+      }
+      return {
+        ...e,
+        animated: animatedEdgeIds ? animatedEdgeIds.has(e.id) : false,
+        style: isInvalid ? { stroke: '#ef4444', strokeWidth: 2 } : e.style,
+      };
+    });
   }, [edges, animatedEdgeIds]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -158,7 +166,7 @@ export default function Canvas({
   );
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowWrapper}>
+    <div data-tour="canvas" style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowWrapper}>
       {/* Empty-state hint when no nodes on canvas */}
       {nodes.length === 0 && (
         <div className="nf-empty-state" data-testid="empty-state-hint">

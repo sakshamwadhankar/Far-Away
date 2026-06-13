@@ -144,3 +144,54 @@ class TransformExecutor(BaseExecutor):
             )
         )
         return outputs
+
+
+class CompareExecutor(BaseExecutor):
+    """
+    Compare node executor.
+    Takes 'input1' and 'input2' and compares them.
+    Outputs 'diff' (a string showing differences) and 'is_different' (boolean).
+    """
+
+    async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
+        ctx.check_cancel()
+        
+        import difflib
+
+        val1 = ctx.inputs.get("input1")
+        val2 = ctx.inputs.get("input2")
+
+        str1 = json.dumps(val1, indent=2) if isinstance(val1, (dict, list)) else str(val1)
+        str2 = json.dumps(val2, indent=2) if isinstance(val2, (dict, list)) else str(val2)
+
+        is_different = str1 != str2
+
+        if is_different:
+            diff_lines = list(difflib.unified_diff(
+                str1.splitlines(),
+                str2.splitlines(),
+                fromfile="input1",
+                tofile="input2",
+                lineterm=""
+            ))
+            diff_text = "\n".join(diff_lines)
+        else:
+            diff_text = ""
+
+        outputs: dict[str, Any] = {}
+        for port in ctx.node.outputs:
+            if port.name == "is_different":
+                outputs[port.name] = is_different
+            elif port.name == "diff":
+                outputs[port.name] = diff_text
+            else:
+                outputs[port.name] = None
+
+        await ctx.emit(
+            SchedulerEvent(
+                kind=EventKind.NODE_DONE,
+                node_id=ctx.node.id,
+                data={"inputs": ctx.inputs, "outputs": outputs},
+            )
+        )
+        return outputs

@@ -30,7 +30,7 @@
 
     "NodeType": {
       "type": "string",
-      "enum": ["input", "output", "model", "loop", "judge", "router", "transform"],
+      "enum": ["input", "output", "model", "loop", "judge", "router", "transform", "compare"],
       "description": "Allowed node types in R0."
     },
 
@@ -206,6 +206,10 @@
       "type": "string",
       "minLength": 1,
       "description": "Human-readable pipeline name."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description for shared/exported pipelines."
     },
     "version": {
       "type": "string",

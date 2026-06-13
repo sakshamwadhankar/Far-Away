@@ -10,6 +10,7 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'judge', label: 'Judge Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'decision', type: 'boolean' }], role: 'judge', config: { score_field: 'verified', strategy: 'truthy' } } },
   { type: 'router', label: 'Router Node', defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'branch_a', type: 'text' }, { name: 'branch_b', type: 'text' }], config: { routing_map: { "true": "branch_a", "false": "branch_b" } } } },
   { type: 'transform', label: 'Transform Node', defaultData: { inputs: [{ name: 'in', type: 'json' }], outputs: [{ name: 'out', type: 'json' }] } },
+  { type: 'compare', label: 'Compare Node', defaultData: { inputs: [{ name: 'input1', type: 'text' }, { name: 'input2', type: 'text' }], outputs: [{ name: 'diff', type: 'text' }, { name: 'is_different', type: 'boolean' }] } },
 ];
 
 export default function LeftSidebar({ backendPort: _backendPort, backendToken, onLoadTemplate, API_BASE }: { backendPort: number | null, backendToken: string | null, onLoadTemplate?: (schema: any) => void, API_BASE: string }) {
@@ -52,7 +53,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
   };
 
   return (
-    <div style={{ width: 250, borderRight: '1px solid #333', padding: 16, backgroundColor: '#252526', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+    <div data-tour="palette" style={{ width: 250, borderRight: '1px solid #333', padding: 16, backgroundColor: '#252526', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <h3>Node Palette</h3>
       <p style={{ color: '#888', fontSize: '0.9em' }}>Drag nodes to the canvas.</p>
       
