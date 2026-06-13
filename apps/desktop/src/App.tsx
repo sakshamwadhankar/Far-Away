@@ -159,6 +159,13 @@ export default function App() {
           return;
         }
 
+        // Prevent 422 console spam: skip estimation if any model node lacks an endpoint
+        const hasIncompleteModels = scrubbed.nodes.some((n: any) => n.type === 'model' && !n.endpoint_ref);
+        if (hasIncompleteModels) {
+          setPipelineEstimate(null);
+          return;
+        }
+
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (backendToken) headers['Authorization'] = `Bearer ${backendToken}`;
 
@@ -417,9 +424,8 @@ export default function App() {
       const { run_id } = await res.json();
       setRunId(run_id);
       
-      const wsUrl = new URL(API_BASE);
-      wsUrl.protocol = 'ws:';
-      const ws = new WebSocket(`${wsUrl.toString()}/ws/run/${run_id}?token=${token}`.replace('///', '//'));
+      const wsBase = API_BASE.replace(/^http/, 'ws').replace(/\/+$/, '');
+      const ws = new WebSocket(`${wsBase}/ws/run/${run_id}?token=${token}`);
       wsRef.current = ws;
       
       ws.onmessage = (event) => {

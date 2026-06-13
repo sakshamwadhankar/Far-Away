@@ -178,8 +178,8 @@ class PipelineRunner:
                 {
                     node.id: {
                         port.name: (
-                            (node.config or {}).get("default_value", "")
-                            if hasattr(node, "config") and node.config
+                            getattr(node.config, "default_value", "")
+                            if getattr(node, "config", None) and getattr(node.config, "default_value", None)
                             else ""
                         )
                         for port in node.outputs

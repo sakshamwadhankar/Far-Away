@@ -144,10 +144,9 @@ export default function ChatPanel({
       const { run_id } = await res.json() as { run_id: string };
 
       // Connect WebSocket for streaming
-      const wsUrl = new URL(apiBase);
-      wsUrl.protocol = 'ws:';
+      const wsBase = apiBase.replace(/^http/, 'ws').replace(/\/+$/, '');
       const ws = new WebSocket(
-        `${wsUrl.toString()}/ws/run/${run_id}?token=${token}`.replace('///', '//')
+        `${wsBase}/ws/run/${run_id}?token=${token}`
       );
       wsRef.current = ws;
 
@@ -197,8 +196,27 @@ export default function ChatPanel({
           eventType === 'run_completed' ||
           eventType === 'run_stopped' ||
           eventType === 'budget_exceeded' ||
-          eventType === 'run_halted'
+          eventType === 'run_halted' ||
+          eventType === 'run_error' ||
+          eventType === 'node_error'
         ) {
+          if (eventType === 'run_error' || eventType === 'node_error') {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId && !m.content
+                  ? { ...m, content: `❌ Pipeline error: ${(data.error || 'Unknown error') as string}` }
+                  : m
+              )
+            );
+          } else if (eventType === 'run_completed') {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId && !m.content
+                  ? { ...m, content: `⚠️ Pipeline completed but produced no output. Please make sure the Output node is connected.` }
+                  : m
+              )
+            );
+          }
           onRunStateChange(false);
           ws.close();
         }

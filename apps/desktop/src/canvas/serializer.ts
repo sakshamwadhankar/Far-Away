@@ -91,8 +91,9 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
     };
   });
 
-  const edges: RFEdge[] = pipeline.edges.map((e, index) => {
-    const [sourceNode, sourcePort] = e.from.split('.');
+  const edges: RFEdge[] = pipeline.edges.map((e: any, index) => {
+    const fromStr = e.from || e.from_;
+    const [sourceNode, sourcePort] = fromStr.split('.');
     const [targetNode, targetPort] = e.to.split('.');
 
     // We need to guess the port type from the node definitions to construct the handle ID
