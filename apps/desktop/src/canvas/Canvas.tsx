@@ -52,7 +52,7 @@ export default function Canvas({
       return {
         ...e,
         animated: animatedEdgeIds ? animatedEdgeIds.has(e.id) : false,
-        style: isInvalid ? { stroke: '#ef4444', strokeWidth: 2 } : e.style,
+        style: isInvalid ? { stroke: '#B83232', strokeWidth: 2 } : { stroke: 'rgba(43,46,38,0.4)', ...e.style },
       };
     });
   }, [edges, animatedEdgeIds]);
@@ -191,9 +191,14 @@ export default function Canvas({
         nodeTypes={nodeTypes}
         fitView
       >
-        <Background color="#ccc" gap={16} />
-        <Controls />
-        <MiniMap nodeStrokeColor={(_n) => '#666'} nodeColor={(_n) => '#222'} />
+        <Background color="rgba(30,35,25,0.12)" gap={20} size={1.2} />
+        <Controls style={{ background: '#F4F2EB', border: '1px solid rgba(30,35,25,0.13)', borderRadius: 12 }} />
+        <MiniMap
+          nodeStrokeColor={(_n) => 'rgba(30,35,25,0.2)'}
+          nodeColor={(_n) => '#F4F2EB'}
+          maskColor="rgba(232,237,228,0.7)"
+          style={{ background: '#E8EDE4', border: '1px solid rgba(30,35,25,0.13)', borderRadius: 12 }}
+        />
       </ReactFlow>
     </div>
   );

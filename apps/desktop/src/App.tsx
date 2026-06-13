@@ -560,135 +560,128 @@ export default function App() {
       <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         {/* ─── Top Bar ─── */}
-        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Mode Switch */}
-          <div className="nf-mode-switch" data-testid="mode-switch">
-            <button
-              className={appMode === 'edit' ? 'active' : ''}
-              onClick={() => setAppMode('edit')}
-              data-testid="mode-edit"
-            >
-              ✏️ Edit
-            </button>
-            <button
-              className={appMode === 'use' ? 'active' : ''}
-              onClick={() => setAppMode('use')}
-              data-testid="mode-use"
-            >
-              💬 Use
-            </button>
-          </div>
-          
-          {/* Connection Status Badge */}
-          <div style={{
-            marginLeft: '8px',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: backendConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-            color: backendConnected ? '#10b981' : '#ef4444',
-            border: `1px solid ${backendConnected ? '#10b981' : '#ef4444'}`,
-          }}>
-            <div style={{
-              width: '8px', height: '8px', borderRadius: '50%',
-              background: backendConnected ? '#10b981' : '#ef4444',
-              boxShadow: backendConnected ? '0 0 4px #10b981' : '0 0 4px #ef4444'
-            }} />
-            {backendConnected === null ? 'Checking...' : backendConnected ? 'Connected' : 'Disconnected — start the backend'}
-          </div>
-
-          {appMode === 'edit' && (
-            <>
-              <button onClick={handleSavePipeline} style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Export Pipeline</button>
-              <label style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>
-                Import Pipeline
-                <input type="file" accept=".json" onChange={handleLoadPipeline} style={{ display: 'none' }} />
-              </label>
+        <div style={{
+          position: 'absolute', top: 12, left: 12, right: 12,
+          zIndex: 10, display: 'flex', gap: 8, alignItems: 'center',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Mode Switch */}
+            <div className="nf-mode-switch" data-testid="mode-switch" style={{ boxShadow: 'var(--shadow-md)' }}>
               <button
-                onClick={handleUndo}
-                disabled={!canUndo()}
-                title="Undo (Ctrl+Z)"
-                style={{
-                  padding: '6px 12px',
-                  background: canUndo() ? '#333' : '#222',
-                  color: canUndo() ? '#fff' : '#666',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
-                  cursor: canUndo() ? 'pointer' : 'not-allowed',
-                  fontSize: '14px',
-                }}
+                className={appMode === 'edit' ? 'active' : ''}
+                onClick={() => setAppMode('edit')}
+                data-testid="mode-edit"
               >
-                ↩ Undo
+                ✏ Edit
               </button>
               <button
-                onClick={handleRedo}
-                disabled={!canRedo()}
-                title="Redo (Ctrl+Shift+Z)"
-                style={{
-                  padding: '6px 12px',
-                  background: canRedo() ? '#333' : '#222',
-                  color: canRedo() ? '#fff' : '#666',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
-                  cursor: canRedo() ? 'pointer' : 'not-allowed',
-                  fontSize: '14px',
-                }}
+                className={appMode === 'use' ? 'active' : ''}
+                onClick={() => setAppMode('use')}
+                data-testid="mode-use"
               >
-                ↪ Redo
+                ◎ Use
               </button>
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* ─── Top-Right Controls (Edit mode only) ─── */}
-        {appMode === 'edit' && (
-          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
-            {runId && !isRunning && (
-              <button 
-                onClick={() => setShowTrace(true)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}
-              >
-                View Trace
-              </button>
+            {/* Connection Status */}
+            <div
+              className={`nf-tag ${backendConnected === null ? 'nf-tag--checking' : backendConnected ? 'nf-tag--connected' : 'nf-tag--disconnected'}`}
+              style={{ boxShadow: 'var(--shadow-sm)' }}
+            >
+              <div className={`nf-dot ${
+                backendConnected === null ? 'nf-dot--yellow' : backendConnected ? 'nf-dot--green' : 'nf-dot--red'
+              }`} style={{ width: 6, height: 6 }} />
+              {backendConnected === null ? 'Checking…' : backendConnected ? 'Connected' : 'Disconnected'}
+            </div>
+
+            {appMode === 'edit' && (
+              <>
+                <button onClick={handleSavePipeline} className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                  ↑ Export
+                </button>
+                <label className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}>
+                  ↓ Import
+                  <input type="file" accept=".json" onChange={handleLoadPipeline} style={{ display: 'none' }} />
+                </label>
+                <button
+                  onClick={handleUndo}
+                  disabled={!canUndo()}
+                  title="Undo (Ctrl+Z)"
+                  className="nf-pill-btn"
+                  style={{ boxShadow: 'var(--shadow-sm)' }}
+                >
+                  ↩
+                </button>
+                <button
+                  onClick={handleRedo}
+                  disabled={!canRedo()}
+                  title="Redo (Ctrl+Shift+Z)"
+                  className="nf-pill-btn"
+                  style={{ boxShadow: 'var(--shadow-sm)' }}
+                >
+                  ↪
+                </button>
+              </>
             )}
-            <button 
-              data-testid="run-pipeline-button"
-              onClick={runPipeline}
-              disabled={isRunning || nodes.length === 0}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: isRunning ? '#555' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: isRunning || nodes.length === 0 ? 'not-allowed' : 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              {isRunning ? 'Running...' : 'Run Pipeline'}
-            </button>
-            {pipelineEstimate && (
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', fontSize: '11px', color: '#aaa', marginLeft: '4px' }}>
-                <div>Est: ~${pipelineEstimate.total_usd.toFixed(4)} &middot; ~{(pipelineEstimate.total_latency_ms/1000).toFixed(1)}s</div>
-                {pipelineEstimate.loop_multiplier > 1 && (
-                  <div style={{ color: '#f59e0b', fontSize: '10px' }}>⚠️ Loop ×{pipelineEstimate.loop_multiplier} applied</div>
+          </div>
+
+          {/* Right side of top bar */}
+          <div style={{ marginLeft: 'auto', pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            {appMode === 'edit' && (
+              <>
+                {runId && !isRunning && (
+                  <button
+                    onClick={() => setShowTrace(true)}
+                    className="nf-pill-btn"
+                    style={{ boxShadow: 'var(--shadow-sm)' }}
+                  >
+                    ◉ View Trace
+                  </button>
                 )}
-              </div>
+                {pipelineEstimate && (
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-2)',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-pill)',
+                    padding: '5px 12px',
+                    boxShadow: 'var(--shadow-sm)',
+                    lineHeight: 1.4,
+                  }}>
+                    <div>~${pipelineEstimate.total_usd.toFixed(4)} · ~{(pipelineEstimate.total_latency_ms/1000).toFixed(1)}s</div>
+                    {pipelineEstimate.loop_multiplier > 1 && (
+                      <div style={{ color: '#8A5A10', fontSize: 10 }}>⚠ Loop ×{pipelineEstimate.loop_multiplier}</div>
+                    )}
+                  </div>
+                )}
+                <button
+                  data-testid="run-pipeline-button"
+                  onClick={runPipeline}
+                  disabled={isRunning || nodes.length === 0}
+                  className={`nf-pill-btn nf-pill-btn--lg ${
+                    isRunning ? '' : 'nf-pill-btn--highlight'
+                  }`}
+                  style={{
+                    boxShadow: 'var(--shadow-md)',
+                    background: isRunning ? 'var(--surface-2)' : undefined,
+                    color: isRunning ? 'var(--text-2)' : undefined,
+                    borderColor: isRunning ? 'var(--border)' : undefined,
+                  }}
+                >
+                  {isRunning ? (
+                    <>
+                      <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>◌</span>
+                      Running…
+                    </>
+                  ) : '▶ Run Pipeline'}
+                </button>
+              </>
             )}
           </div>
-        )}
+        </div>
         
         {/* ─── Main Content Area ─── */}
         <div style={{ flex: 1, position: 'relative' }}>
