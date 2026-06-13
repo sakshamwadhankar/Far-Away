@@ -27,45 +27,58 @@ let node_http = require("node:http");
 node_http = __toESM(node_http);
 let node_crypto = require("node:crypto");
 node_crypto = __toESM(node_crypto);
+let node_child_process = require("node:child_process");
+let node_net = require("node:net");
+node_net = __toESM(node_net);
 //#region src/main.ts
 process.env.DIST = node_path.default.join(__dirname, "../dist");
 process.env.VITE_PUBLIC = electron.app.isPackaged ? process.env.DIST : node_path.default.join(process.env.DIST, "../public");
 var win;
 var VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-function spawnBackendStub(win) {
+function spawnBackend(win) {
 	const token = node_crypto.default.randomUUID();
-	const server = node_http.default.createServer((req, res) => {
-		if (req.url === "/health") {
-			res.writeHead(200, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({
-				status: "ok",
-				mocked: true
-			}));
-		} else {
-			res.writeHead(404);
-			res.end();
-		}
-	});
-	server.listen(0, "127.0.0.1", () => {
-		const port = server.address().port;
-		console.log(`[Stub Backend] Running on http://127.0.0.1:${port}`);
-		console.log(`[Stub Backend] Token: ${token}`);
-		node_http.default.get(`http://127.0.0.1:${port}/health`, (res) => {
-			let data = "";
-			res.on("data", (chunk) => data += chunk);
-			res.on("end", () => {
-				console.log(`[Stub Backend] Ping response: ${data}`);
-				win.webContents.send("backend-ready", {
-					port,
-					token
-				});
+	const srv = node_net.default.createServer();
+	srv.listen(0, "127.0.0.1", () => {
+		const port = srv.address().port;
+		srv.close(() => {
+			console.log(`[Backend] Starting Python backend on port ${port}...`);
+			const isWin = process.platform === "win32";
+			const backendDir = electron.app.isPackaged ? node_path.default.join(process.resourcesPath, "backend") : node_path.default.join(__dirname, "../../../backend");
+			const backendProcess = (0, node_child_process.spawn)(isWin ? node_path.default.join(backendDir, ".venv", "Scripts", "python.exe") : node_path.default.join(backendDir, ".venv", "bin", "python"), [
+				"-m",
+				"uvicorn",
+				"neuralflow.api.main:app",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				port.toString()
+			], {
+				cwd: backendDir,
+				env: {
+					...process.env,
+					NEURALFLOW_SESSION_TOKEN: token
+				}
 			});
-		}).on("error", (err) => {
-			console.error(`[Stub Backend] Ping failed:`, err);
+			backendProcess.stdout.on("data", (data) => console.log(`[Backend] ${data}`));
+			backendProcess.stderr.on("data", (data) => console.error(`[Backend ERR] ${data}`));
+			const checkHealth = () => {
+				node_http.default.get(`http://127.0.0.1:${port}/health`, (res) => {
+					if (res.statusCode === 200) {
+						console.log(`[Backend] Ready on port ${port} with token ${token}`);
+						win.webContents.send("backend-ready", {
+							port,
+							token
+						});
+					} else setTimeout(checkHealth, 500);
+				}).on("error", () => {
+					setTimeout(checkHealth, 500);
+				});
+			};
+			setTimeout(checkHealth, 500);
+			electron.app.on("will-quit", () => {
+				backendProcess.kill();
+			});
 		});
-	});
-	electron.app.on("will-quit", () => {
-		server.close();
 	});
 }
 function createWindow() {
@@ -77,7 +90,7 @@ function createWindow() {
 	});
 	win.webContents.on("did-finish-load", () => {
 		win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-		spawnBackendStub(win);
+		spawnBackend(win);
 	});
 	if (VITE_DEV_SERVER_URL) win.loadURL(VITE_DEV_SERVER_URL);
 	else win.loadFile(node_path.default.join(process.env.DIST, "index.html"));

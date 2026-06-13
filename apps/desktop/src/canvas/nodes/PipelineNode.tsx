@@ -65,6 +65,7 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         boxShadow: getBoxShadow(),
         position: 'relative',
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+        color: 'white',
       }}
     >
       {type === 'model' && data.estimate && (

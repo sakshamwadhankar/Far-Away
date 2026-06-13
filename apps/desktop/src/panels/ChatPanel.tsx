@@ -59,13 +59,23 @@ export default function ChatPanel({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const compatible = isChatCompatible(nodes);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages if already near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!chatContainerRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
   }, [messages]);
 
   const sendMessage = useCallback(async () => {
@@ -150,6 +160,9 @@ export default function ChatPanel({
       );
       wsRef.current = ws;
 
+      let tokenBuffer = '';
+      let lastUpdate = Date.now();
+
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data) as Record<string, unknown>;
         const eventType = (data.event || data.kind) as string;
@@ -157,31 +170,46 @@ export default function ChatPanel({
         // Forward ALL events to App for node visuals / monitor
         onWsEvent(data);
 
-        // Stream tokens into the assistant bubble
+        // Stream tokens into the assistant bubble (buffered to prevent layout thrashing)
         if (eventType === 'token' && data.text) {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, content: m.content + (data.text as string) }
-                : m
-            )
-          );
+          tokenBuffer += data.text as string;
+          const now = Date.now();
+          if (now - lastUpdate > 250) {
+            const flushed = tokenBuffer;
+            tokenBuffer = '';
+            lastUpdate = now;
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, content: m.content + flushed }
+                  : m
+              )
+            );
+          }
         }
 
         // On node_done for the output node, capture the final result
         if (eventType === 'node_done' && data.node_id === outputNode.id) {
           const outputs = data.outputs as Record<string, string> | undefined;
           if (outputs) {
-            // Get the first output port value as the response
             const firstValue = Object.values(outputs)[0];
             if (firstValue) {
+              // Flush any remaining buffer before applying the final output
+              const flushed = tokenBuffer;
+              tokenBuffer = '';
               setMessages(prev => {
                 const existing = prev.find(m => m.id === assistantMsgId);
                 // Only replace if we haven't streamed tokens (some pipelines don't stream)
-                if (existing && !existing.content) {
+                if (existing && !existing.content && !flushed) {
                   return prev.map(m =>
                     m.id === assistantMsgId
                       ? { ...m, content: String(firstValue) }
+                      : m
+                  );
+                } else if (flushed) {
+                  return prev.map(m =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: m.content + flushed }
                       : m
                   );
                 }
@@ -200,6 +228,19 @@ export default function ChatPanel({
           eventType === 'run_error' ||
           eventType === 'node_error'
         ) {
+          // Flush any remaining tokens
+          if (tokenBuffer) {
+            const flushed = tokenBuffer;
+            tokenBuffer = '';
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, content: m.content + flushed }
+                  : m
+              )
+            );
+          }
+
           if (eventType === 'run_error' || eventType === 'node_error') {
             setMessages(prev =>
               prev.map(m =>
@@ -288,7 +329,7 @@ export default function ChatPanel({
 
   return (
     <div className="nf-chat-panel" data-testid="chat-panel">
-      <div className="nf-chat-messages">
+      <div className="nf-chat-messages" ref={chatContainerRef}>
         {messages.length === 0 && (
           <div className="nf-chat-bubble nf-chat-bubble--system">
             Send a message to run the pipeline. Your message becomes the Input node's value,
@@ -301,11 +342,10 @@ export default function ChatPanel({
             className={`nf-chat-bubble nf-chat-bubble--${msg.role}`}
             data-testid={`chat-message-${msg.role}`}
           >
-            {msg.content}
+            <span style={{ whiteSpace: 'pre-wrap' }}>
+              {msg.content}
+            </span>
             {msg.role === 'assistant' && isRunning && !msg.content && (
-              <span className="nf-streaming-cursor" />
-            )}
-            {msg.role === 'assistant' && isRunning && msg.content && (
               <span className="nf-streaming-cursor" />
             )}
           </div>
