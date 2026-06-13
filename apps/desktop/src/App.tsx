@@ -133,8 +133,10 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     const checkHealth = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
       try {
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await fetch(`${API_BASE}/health`, { signal: controller.signal });
         if (res.ok && mounted) {
           setBackendConnected(true);
         } else if (mounted) {
@@ -142,10 +144,12 @@ export default function App() {
         }
       } catch {
         if (mounted) setBackendConnected(false);
+      } finally {
+        clearTimeout(timeout);
       }
     };
     checkHealth();
-    const interval = setInterval(checkHealth, 5000);
+    const interval = setInterval(checkHealth, 2000);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -626,13 +630,24 @@ export default function App() {
 
             {/* Connection Status */}
             <div
-              className={`nf-tag ${backendConnected === null ? 'nf-tag--checking' : backendConnected ? 'nf-tag--connected' : 'nf-tag--disconnected'}`}
+              className={`nf-tag ${
+                backendConnected === null
+                  ? 'nf-tag--checking'
+                  : backendConnected
+                  ? 'nf-tag--connected'
+                  : 'nf-tag--disconnected'
+              }`}
               style={{ boxShadow: 'var(--shadow-sm)' }}
+              title={!backendConnected ? 'Run start.bat to launch the backend' : undefined}
             >
               <div className={`nf-dot ${
                 backendConnected === null ? 'nf-dot--yellow' : backendConnected ? 'nf-dot--green' : 'nf-dot--red'
               }`} style={{ width: 6, height: 6 }} />
-              {backendConnected === null ? 'Checking…' : backendConnected ? 'Connected' : 'Disconnected'}
+              {backendConnected === null
+                ? 'Checking…'
+                : backendConnected
+                ? 'Connected'
+                : 'Disconnected — run start.bat'}
             </div>
 
             {appMode === 'edit' && (
