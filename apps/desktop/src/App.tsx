@@ -82,19 +82,29 @@ export default function App() {
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
 
-  const API_BASE = `http://127.0.0.1:${backendPort || 8765}`;
+  const API_BASE = `http://127.0.0.1:${backendPort || 8000}`;
 
   useEffect(() => {
-    // Listen for backend info from Electron
+    // Listen for backend info from Electron IPC
     if (window.electron) {
+      // Fallback: if Electron backend-ready never fires (e.g. HMR race),
+      // fall back to the start.bat backend on port 8000 after 2s.
+      const fallbackTimer = setTimeout(() => {
+        setBackendPort(prev => prev ?? 8000);
+        setBackendToken(prev => prev ?? 'test-token');
+      }, 2000);
+
       window.electron.onBackendReady((data: { port: number; token: string }) => {
-        console.log('Backend is ready on port:', data.port, 'with token:', data.token);
+        clearTimeout(fallbackTimer);
+        console.log('Backend is ready on port:', data.port);
         setBackendPort(data.port);
         setBackendToken(data.token);
       });
+
+      return () => clearTimeout(fallbackTimer);
     } else {
-      // Development fallback
-      setBackendPort(8765);
+      // Plain browser / Vite dev server — use the start.bat backend
+      setBackendPort(8000);
       setBackendToken('test-token');
     }
 
