@@ -56,6 +56,8 @@ class NodeConfig(BaseModel):
     routing_map: dict[str, str] | None = None
     score_field: str | None = Field(default="score")
     strategy: Literal["max_numeric", "truthy"] | None = Field(default="max_numeric")
+    default_value: str | None = None
+    label: str | None = None
 
 
 class Node(BaseModel):

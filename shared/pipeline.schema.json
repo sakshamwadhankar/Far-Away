@@ -51,7 +51,9 @@
         "role":           { "type": "string" },
         "routing_map":    { "type": "object", "additionalProperties": { "type": "string" } },
         "score_field":    { "type": "string" },
-        "strategy":       { "type": "string", "enum": ["max_numeric", "truthy"] }
+        "strategy":       { "type": "string", "enum": ["max_numeric", "truthy"] },
+        "default_value":  { "type": "string" },
+        "label":          { "type": "string" }
       }
     },
 
