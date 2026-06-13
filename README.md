@@ -3,6 +3,28 @@
 > Desktop visual editor for building and running multi-model LLM pipelines.
 > Cloud APIs + local models (Ollama) on a single machine — **R0 (MVP)**.
 
+## Running Locally (Development)
+
+NeuralFlow requires both the FastAPI backend and the React frontend to be running simultaneously during development.
+
+**1. Start the Backend**
+```bash
+cd backend
+.venv\Scripts\python.exe -m uvicorn neuralflow.api.main:app --port 8000
+```
+*(On macOS/Linux, use `.venv/bin/python`)*
+
+**2. Start the Frontend**
+```bash
+cd apps/desktop
+npm install
+npm run dev
+```
+
+The frontend will start on port `5173` (or `5174`) and automatically connect to the backend on `127.0.0.1:8000`.
+
+## Architecture (TRD §2)
+
 ## What it is
 
 NeuralFlow lets you compose pipelines of AI models visually (React Flow canvas),

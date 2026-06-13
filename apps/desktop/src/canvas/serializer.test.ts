@@ -156,4 +156,71 @@ describe('Serializer', () => {
     expect(scrubbed.nodes[0].config.token).toBeUndefined();
     expect(scrubbed.nodes[0].config.temperature).toBe(0.7);
   });
+
+  it('editing a node config is reflected in the serialized pipeline', () => {
+    const rfNodes: RFNode<PipelineNodeData>[] = [
+      {
+        id: 'node-1',
+        type: 'pipelineNode',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'model',
+          endpoint_ref: 'mock:default',
+          inputs: [{ name: 'prompt', type: 'text' }],
+          outputs: [{ name: 'response', type: 'text' }],
+          config: { temperature: 0.7, max_tokens: 2048, system_prompt: '' }
+        }
+      }
+    ];
+
+    // Simulate editing config (same path updateNodeData takes)
+    const editedNodes = rfNodes.map(n => ({
+      ...n,
+      data: {
+        ...n.data,
+        config: { ...n.data.config, temperature: 1.2, system_prompt: 'You are a pirate.' }
+      }
+    }));
+
+    const pipeline = toPipelineSchema(editedNodes, []);
+
+    const modelNode = pipeline.nodes.find(n => n.id === 'node-1');
+    expect(modelNode?.config?.temperature).toBe(1.2);
+    expect(modelNode?.config?.system_prompt).toBe('You are a pirate.');
+    expect(modelNode?.config?.max_tokens).toBe(2048);
+  });
+
+  it('deleting a node removes its connected edges from serialization', () => {
+    const rfNodes: RFNode<PipelineNodeData>[] = [
+      {
+        id: 'node-1', type: 'pipelineNode', position: { x: 0, y: 0 },
+        data: { type: 'input', outputs: [{ name: 'prompt', type: 'text' }] }
+      },
+      {
+        id: 'node-2', type: 'pipelineNode', position: { x: 200, y: 0 },
+        data: { type: 'model', endpoint_ref: 'mock:default', inputs: [{ name: 'prompt', type: 'text' }], outputs: [{ name: 'response', type: 'text' }] }
+      },
+      {
+        id: 'node-3', type: 'pipelineNode', position: { x: 400, y: 0 },
+        data: { type: 'output', inputs: [{ name: 'response', type: 'text' }] }
+      }
+    ];
+
+    const rfEdges: RFEdge[] = [
+      { id: 'e1-2', source: 'node-1', target: 'node-2', sourceHandle: 'text:prompt', targetHandle: 'text:prompt' },
+      { id: 'e2-3', source: 'node-2', target: 'node-3', sourceHandle: 'text:response', targetHandle: 'text:response' }
+    ];
+
+    // Simulate deleting node-2 and its connected edges (same as deleteNodes in App.tsx)
+    const deletedId = 'node-2';
+    const remainingNodes = rfNodes.filter(n => n.id !== deletedId);
+    const remainingEdges = rfEdges.filter(e => e.source !== deletedId && e.target !== deletedId);
+
+    const pipeline = toPipelineSchema(remainingNodes, remainingEdges);
+
+    expect(pipeline.nodes).toHaveLength(2);
+    expect(pipeline.nodes.map(n => n.id)).toEqual(['node-1', 'node-3']);
+    expect(pipeline.edges).toHaveLength(0);
+  });
 });
+

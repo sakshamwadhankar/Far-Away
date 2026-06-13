@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import App from './App';
 import { useState } from 'react';
@@ -141,11 +141,19 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/health/ollama')) {
         return Promise.resolve({
+          ok: true,
           json: () => Promise.resolve({ status: 'ok', message: 'Ollama is running' })
+        });
+      }
+      if (url.includes('/health')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'ok' })
         });
       }
       if (url.includes('/pipelines/templates')) {
         return Promise.resolve({
+          ok: true,
           json: () => Promise.resolve([
             { id: 't1', name: 'Solver, Verifier, Judge Loop', nodes: [], edges: [] }
           ])

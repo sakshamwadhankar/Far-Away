@@ -45,6 +45,16 @@ export interface NodeConfig {
   routing_map?: Record<string, string>;
   score_field?: string;
   strategy?: "max_numeric" | "truthy";
+  /** Input node: placeholder label shown to the user. */
+  label?: string;
+  /** Loop node: hard upper bound on iterations (1–100). */
+  max_iterations?: number;
+  /** Loop node: structured stop condition. */
+  stop_when?: StopCondition;
+  /** Loop node: what to do when max_iterations is reached. */
+  on_max?: OnMax;
+  /** Allow additional config keys for extensibility. */
+  [key: string]: string | number | boolean | Record<string, string> | StopCondition | undefined;
 }
 
 export interface Node {

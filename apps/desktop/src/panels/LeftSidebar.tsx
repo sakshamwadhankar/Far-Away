@@ -12,20 +12,39 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'transform', label: 'Transform Node', defaultData: { inputs: [{ name: 'in', type: 'json' }], outputs: [{ name: 'out', type: 'json' }] } },
 ];
 
-export default function LeftSidebar({ backendPort, backendToken, onLoadTemplate }: { backendPort: number | null, backendToken: string | null, onLoadTemplate?: (schema: any) => void }) {
+export default function LeftSidebar({ backendPort: _backendPort, backendToken, onLoadTemplate, API_BASE }: { backendPort: number | null, backendToken: string | null, onLoadTemplate?: (schema: any) => void, API_BASE: string }) {
   const [templates, setTemplates] = useState<any[]>([]);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!backendPort || !backendToken) return;
-    fetch(`http://127.0.0.1:${backendPort}/pipelines/templates`, {
+    // Ping health first
+    fetch(`${API_BASE}/health`)
+      .then(r => {
+        if (r.ok) setIsConnected(true);
+        else setIsConnected(false);
+      })
+      .catch(() => setIsConnected(false));
+  }, [API_BASE]);
+
+  useEffect(() => {
+    if (!isConnected || !backendToken) return;
+    setTemplateError(null);
+    fetch(`${API_BASE}/pipelines/templates`, {
       headers: { 'Authorization': `Bearer ${backendToken}` }
     })
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error('Network response was not ok');
+        return r.json();
+      })
       .then(data => {
         if (Array.isArray(data)) setTemplates(data);
       })
-      .catch(e => console.error('Failed to fetch templates', e));
-  }, [backendPort, backendToken]);
+      .catch(e => {
+        console.warn('Failed to fetch templates:', e);
+        setTemplateError(`Backend not reachable. Start it: cd backend && .venv\\Scripts\\python.exe -m uvicorn neuralflow.api.main:app --port 8000`);
+      });
+  }, [isConnected, API_BASE, backendToken]);
 
   const onDragStart = (event: React.DragEvent, nodeType: NodeType, defaultData: Partial<PipelineNodeData>) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, data: defaultData }));
@@ -74,16 +93,17 @@ export default function LeftSidebar({ backendPort, backendToken, onLoadTemplate 
               )}
             </div>
           ))}
-          {templates.length === 0 && <div style={{ color: '#888', fontSize: '0.8em' }}>No templates found.</div>}
+          {templates.length === 0 && !templateError && <div style={{ color: '#888', fontSize: '0.8em' }}>No templates found.</div>}
+          {templateError && <div style={{ color: '#ef4444', fontSize: '0.8em', lineHeight: '1.4' }}>{templateError}</div>}
         </div>
       </div>
 
       <div style={{ marginTop: 'auto', paddingTop: 20, borderTop: '1px solid #444' }}>
         <h4>Backend Status</h4>
-        {backendPort ? (
-          <span style={{ color: 'lightgreen' }}>Connected (Port {backendPort})</span>
+        {isConnected ? (
+          <span style={{ color: 'lightgreen' }}>Connected (Port {API_BASE.split(':').pop()})</span>
         ) : (
-          <span style={{ color: 'orange' }}>Connecting...</span>
+          <span style={{ color: '#ef4444', fontSize: '0.85em', display: 'block', lineHeight: '1.4' }}>Disconnected — start the backend</span>
         )}
       </div>
     </div>

@@ -1,34 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface OnboardingModalProps {
-  backendPort: number | null;
+  API_BASE: string;
   onLoadTemplate: (schema: any) => void;
 }
 
-export default function OnboardingModal({ backendPort, onLoadTemplate }: OnboardingModalProps) {
+export default function OnboardingModal({ API_BASE, onLoadTemplate }: OnboardingModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [ollamaUp, setOllamaUp] = useState(false);
+  const [_ollamaUp, setOllamaUp] = useState(false);
   const [templateToLoad, setTemplateToLoad] = useState<any>(null);
 
   useEffect(() => {
     const hasRun = typeof localStorage !== 'undefined' ? localStorage.getItem('neuralflow_first_run') : null;
     if (hasRun) return;
 
-    if (!backendPort) return;
+    if (!API_BASE) return;
 
     // Check if Ollama is up
-    fetch(`http://127.0.0.1:${backendPort}/health/ollama`)
+    fetch(`${API_BASE}/health/ollama`)
       .then(r => r.json())
       .then(data => {
-        if (data.status === 'ok') {
+        if (data && data.status === 'ok') {
           setOllamaUp(true);
           // Also fetch templates to find the solver-verifier-judge one
-          return fetch(`http://127.0.0.1:${backendPort}/pipelines/templates`, {
+          return fetch(`${API_BASE}/pipelines/templates`, {
              headers: { 'Authorization': 'Bearer test-token' } // Or pass backendToken
           });
         }
+        return null;
       })
-      .then(r => r?.json())
+      .then(r => (r ? r.json() : null))
       .then(templates => {
         if (Array.isArray(templates)) {
           const solver = templates.find(t => t.name.toLowerCase().includes('solver, verifier'));
@@ -38,8 +39,10 @@ export default function OnboardingModal({ backendPort, onLoadTemplate }: Onboard
           }
         }
       })
-      .catch(e => console.error('Onboarding error:', e));
-  }, [backendPort]);
+      .catch(e => {
+        console.warn('Onboarding skip: Backend or Ollama not reachable', e);
+      });
+  }, [API_BASE]);
 
   const handleClose = () => {
     if (typeof localStorage !== 'undefined') {

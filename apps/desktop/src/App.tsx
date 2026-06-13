@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNodesState, useEdgesState, Connection, Edge, addEdge } from 'reactflow';
+import { useNodesState, useEdgesState, Connection, Edge, addEdge, Node } from 'reactflow';
 import Canvas from './canvas/Canvas';
 import LeftSidebar from './panels/LeftSidebar';
 import RightPanel from './panels/RightPanel';
@@ -9,6 +9,7 @@ import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
+import { useUndoRedo } from './canvas/useUndoRedo';
 
 export interface ModelInfo {
   endpoint_id: string;
@@ -27,9 +28,12 @@ export default function App() {
   
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+
+  // Undo/Redo
+  const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
 
   // Monitor State
   const [runId, setRunId] = useState<string | null>(null);
@@ -38,6 +42,14 @@ export default function App() {
   const [runTotals, setRunTotals] = useState({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
   const [showTrace, setShowTrace] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // We use refs to access latest nodes/edges in callbacks without stale closures
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  const API_BASE = `http://127.0.0.1:${backendPort || 8000}`;
 
   useEffect(() => {
     // Listen for backend info from Electron
@@ -54,7 +66,7 @@ export default function App() {
     }
 
     if (import.meta.env.DEV) {
-      (window as any).setE2EState = (n: any, e: any) => {
+      (window as unknown as Record<string, unknown>).setE2EState = (n: Node<PipelineNodeData>[], e: Edge[]) => {
         setNodes(n);
         setEdges(e);
       };
@@ -66,20 +78,23 @@ export default function App() {
 
     const fetchModels = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:${backendPort}/models`, {
+        const res = await fetch(`${API_BASE}/models`, {
           headers: { 'Authorization': `Bearer ${backendToken}` }
         });
         if (res.ok) {
           const data = await res.json();
           setAvailableModels(data.models || []);
+        } else {
+          setAvailableModels([]);
         }
       } catch (err) {
-        console.error('Failed to fetch models:', err);
+        console.warn('Backend not reachable for models fetch:', err);
+        setAvailableModels([]);
       }
     };
     
     fetchModels();
-  }, [backendPort, backendToken]);
+  }, [API_BASE, backendToken]);
 
   const onConnect = useCallback((params: Edge | Connection) => {
     const sourceHandleType = params.sourceHandle?.split(':')[0];
@@ -88,19 +103,70 @@ export default function App() {
       console.warn('Incompatible port types', sourceHandleType, targetHandleType);
       return;
     }
+    takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
     setEdges((eds) => addEdge(params, eds));
-  }, [setEdges]);
+  }, [setEdges, takeSnapshot]);
 
-  const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
+  // First selected node for the config panel
+  const selectedNode = nodes.find(n => selectedNodeIds.includes(n.id)) || null;
 
   const updateNodeData = useCallback((id: string, newData: Partial<PipelineNodeData>) => {
+    takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
     setNodes((nds) => nds.map((n) => {
       if (n.id === id) {
         return { ...n, data: { ...n.data, ...newData } };
       }
       return n;
     }));
-  }, [setNodes]);
+  }, [setNodes, takeSnapshot]);
+
+  // --- Delete ---
+  const deleteNodes = useCallback((nodeIds: string[]) => {
+    if (nodeIds.length === 0) return;
+    takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
+    setNodes((nds) => nds.filter((n) => !nodeIds.includes(n.id)));
+    setEdges((eds) => eds.filter((e) => !nodeIds.includes(e.source) && !nodeIds.includes(e.target)));
+    setSelectedNodeIds([]);
+  }, [setNodes, setEdges, takeSnapshot]);
+
+  /** Called by Canvas before React Flow applies its own remove changes. */
+  const handleBeforeDelete = useCallback((nodeIds: string[], edgeIds: string[]) => {
+    if (nodeIds.length > 0 || edgeIds.length > 0) {
+      takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
+    }
+  }, [takeSnapshot]);
+
+  // --- Undo / Redo ---
+  const handleUndo = useCallback(() => {
+    const prev = undo({ nodes: nodesRef.current, edges: edgesRef.current });
+    if (prev) {
+      setNodes(prev.nodes);
+      setEdges(prev.edges);
+    }
+  }, [undo, setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    const next = redo({ nodes: nodesRef.current, edges: edgesRef.current });
+    if (next) {
+      setNodes(next.nodes);
+      setEdges(next.edges);
+    }
+  }, [redo, setNodes, setEdges]);
+
+  // --- Duplicate ---
+  const handleDuplicate = useCallback(() => {
+    if (selectedNodeIds.length === 0) return;
+    takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
+    const toDuplicate = nodesRef.current.filter((n) => selectedNodeIds.includes(n.id));
+    const newNodes = toDuplicate.map((n) => ({
+      ...n,
+      id: `node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      position: { x: n.position.x + 50, y: n.position.y + 50 },
+      data: { ...n.data },
+      selected: false,
+    }));
+    setNodes((nds) => [...nds, ...newNodes]);
+  }, [selectedNodeIds, setNodes, takeSnapshot]);
 
   const runPipeline = async () => {
     if (nodes.length === 0) return;
@@ -114,12 +180,11 @@ export default function App() {
     // reset all statuses on canvas
     setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, status: 'idle' } })));
 
-    const schema = toPipelineSchema(nodes as any, edges);
-    const port = backendPort || 8000;
+    const schema = toPipelineSchema(nodes as Node<PipelineNodeData>[], edges);
     const token = backendToken || 'test-token';
 
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/pipelines/run`, {
+      const res = await fetch(`${API_BASE}/pipelines/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +201,7 @@ export default function App() {
           if (json.detail) {
             if (Array.isArray(json.detail)) {
               // Could be Pydantic errors or our PipelineValidationErrors
-              const errs = json.detail.map((e: any) => typeof e === 'string' ? e : (e.msg || JSON.stringify(e)));
+              const errs = json.detail.map((e: Record<string, unknown>) => typeof e === 'string' ? e : ((e.msg as string) || JSON.stringify(e)));
               alert('Pipeline Validation Errors:\n\n' + errs.join('\n\n'));
             } else {
               alert('Validation Error:\n' + json.detail);
@@ -154,7 +219,9 @@ export default function App() {
       const { run_id } = await res.json();
       setRunId(run_id);
       
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/run/${run_id}?token=${token}`);
+      const wsUrl = new URL(API_BASE);
+      wsUrl.protocol = 'ws:';
+      const ws = new WebSocket(`${wsUrl.toString()}/ws/run/${run_id}?token=${token}`.replace('///', '//'));
       wsRef.current = ws;
       
       ws.onmessage = (event) => {
@@ -239,10 +306,9 @@ export default function App() {
 
   const stopRun = async () => {
     if (!runId) return;
-    const port = backendPort || 8000;
     const token = backendToken || 'test-token';
     try {
-      await fetch(`http://127.0.0.1:${port}/runs/${runId}/stop`, {
+      await fetch(`${API_BASE}/runs/${runId}/stop`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -254,7 +320,7 @@ export default function App() {
   };
 
   const handleSavePipeline = () => {
-    const schema = toPipelineSchema(nodes as any, edges);
+    const schema = toPipelineSchema(nodes as Node<PipelineNodeData>[], edges);
     const scrubbed = scrubSecrets(schema);
     const jsonStr = JSON.stringify(scrubbed, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -283,8 +349,10 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const loadPipelineFromJson = (schema: any) => {
     try {
+      takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
       const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
       setNodes(newNodes);
       setEdges(newEdges);
@@ -296,7 +364,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-      <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} />
+      <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
           <button onClick={handleSavePipeline} style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Save JSON</button>
@@ -304,6 +372,38 @@ export default function App() {
             Load JSON
             <input type="file" accept=".json" onChange={handleLoadPipeline} style={{ display: 'none' }} />
           </label>
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo()}
+            title="Undo (Ctrl+Z)"
+            style={{
+              padding: '6px 12px',
+              background: canUndo() ? '#333' : '#222',
+              color: canUndo() ? '#fff' : '#666',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              cursor: canUndo() ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+            }}
+          >
+            ↩ Undo
+          </button>
+          <button
+            onClick={handleRedo}
+            disabled={!canRedo()}
+            title="Redo (Ctrl+Shift+Z)"
+            style={{
+              padding: '6px 12px',
+              background: canRedo() ? '#333' : '#222',
+              color: canRedo() ? '#fff' : '#666',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              cursor: canRedo() ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+            }}
+          >
+            ↪ Redo
+          </button>
         </div>
         <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
           {runId && !isRunning && (
@@ -348,7 +448,11 @@ export default function App() {
             onEdgesChange={onEdgesChange} 
             onConnect={onConnect}
             setNodes={setNodes}
-            onSelectionChange={(id) => setSelectedNodeId(id)}
+            onSelectionChange={(ids) => setSelectedNodeIds(ids)}
+            onBeforeDelete={handleBeforeDelete}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onDuplicate={handleDuplicate}
           />
         </div>
 
@@ -369,6 +473,7 @@ export default function App() {
         selectedNode={selectedNode} 
         updateNodeData={updateNodeData} 
         availableModels={availableModels}
+        onDeleteNode={(id) => deleteNodes([id])}
       />
 
       {showTrace && runId && (
@@ -380,7 +485,7 @@ export default function App() {
         />
       )}
 
-      <OnboardingModal backendPort={backendPort} onLoadTemplate={loadPipelineFromJson} />
+      <OnboardingModal API_BASE={API_BASE} onLoadTemplate={loadPipelineFromJson} />
     </div>
   );
 }
