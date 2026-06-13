@@ -10,6 +10,12 @@ const PORT_COLORS: Record<PortType, string> = {
   audio: '#f97316',
 };
 
+/** Status icon glyphs rendered next to the node type label. */
+const STATUS_ICONS: Record<string, string> = {
+  done: '✓',
+  error: '✗',
+};
+
 // React Flow node data
 export interface PipelineNodeData extends Omit<SchemaNode, 'id'> {
   // We omit ID here because React Flow provides an ID on the wrapping Node object itself
@@ -31,14 +37,20 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
 
   const getBoxShadow = () => {
     if (selected) return '0 0 0 1px #3b82f6';
-    if (status === 'running') return '0 0 8px 1px rgba(234, 179, 8, 0.6)';
+    // Running state uses CSS animation class instead of static shadow
+    if (status === 'running') return undefined;
     if (status === 'done') return '0 0 8px 1px rgba(16, 185, 129, 0.4)';
     if (status === 'error') return '0 0 8px 1px rgba(239, 68, 68, 0.6)';
     return '0 4px 6px -1px rgba(0, 0, 0, 0.5)';
   };
 
+  const statusIcon = STATUS_ICONS[status] ?? null;
+
   return (
     <div
+      className={status === 'running' ? 'nf-node-running' : undefined}
+      data-testid={`pipeline-node-${type}`}
+      data-status={status}
       style={{
         background: '#1e1e1e',
         border: `1px solid ${getBorderColor()}`,
@@ -48,7 +60,7 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         fontFamily: 'sans-serif',
         fontSize: '12px',
         boxShadow: getBoxShadow(),
-        transition: 'all 0.2s ease',
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
       }}
     >
       {/* Header */}
@@ -64,12 +76,24 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
           alignItems: 'center',
         }}
       >
-        <strong style={{ textTransform: 'uppercase' }}>
+        <strong style={{ textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
           {type}
-          {status !== 'idle' && (
-             <span style={{ marginLeft: '6px', fontSize: '10px', color: getBorderColor() }}>
-               ({status})
-             </span>
+          {statusIcon && (
+            <span
+              data-testid={`node-status-icon-${status}`}
+              style={{
+                fontSize: '12px',
+                color: status === 'done' ? '#10b981' : '#ef4444',
+                fontWeight: 'bold',
+              }}
+            >
+              {statusIcon}
+            </span>
+          )}
+          {status === 'running' && (
+            <span style={{ fontSize: '10px', color: '#eab308' }}>
+              (running)
+            </span>
           )}
         </strong>
         {role && <span style={{ color: '#888', fontSize: '10px' }}>{role}</span>}

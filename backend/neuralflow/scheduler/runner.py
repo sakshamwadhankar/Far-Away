@@ -176,7 +176,14 @@ class PipelineRunner:
         try:
             result = await scheduler.run(
                 {
-                    node.id: {port.name: "" for port in node.outputs}
+                    node.id: {
+                        port.name: (
+                            (node.config or {}).get("default_value", "")
+                            if hasattr(node, "config") and node.config
+                            else ""
+                        )
+                        for port in node.outputs
+                    }
                     for node in self._dag.pipeline.nodes
                     if node.type == "input"
                 },

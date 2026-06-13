@@ -7,9 +7,12 @@ import RightPanel from './panels/RightPanel';
 import MonitorPanel, { NodeStat } from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
+import ChatPanel from './panels/ChatPanel';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
 import { useUndoRedo } from './canvas/useUndoRedo';
+
+export type AppMode = 'edit' | 'use';
 
 export interface ModelInfo {
   endpoint_id: string;
@@ -25,6 +28,7 @@ export default function App() {
   const [backendPort, setBackendPort] = useState<number | null>(null);
   const [backendToken, setBackendToken] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [appMode, setAppMode] = useState<AppMode>('edit');
   
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -42,6 +46,9 @@ export default function App() {
   const [runTotals, setRunTotals] = useState({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
   const [showTrace, setShowTrace] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Edge animation state
+  const [animatedEdgeIds, setAnimatedEdgeIds] = useState<Set<string>>(new Set());
 
   // We use refs to access latest nodes/edges in callbacks without stale closures
   const nodesRef = useRef(nodes);
@@ -120,6 +127,16 @@ export default function App() {
     }));
   }, [setNodes, takeSnapshot]);
 
+  /** Update node data WITHOUT taking an undo snapshot (for status-only changes during runs). */
+  const updateNodeDataSilent = useCallback((id: string, newData: Partial<PipelineNodeData>) => {
+    setNodes((nds) => nds.map((n) => {
+      if (n.id === id) {
+        return { ...n, data: { ...n.data, ...newData } };
+      }
+      return n;
+    }));
+  }, [setNodes]);
+
   // --- Delete ---
   const deleteNodes = useCallback((nodeIds: string[]) => {
     if (nodeIds.length === 0) return;
@@ -168,6 +185,102 @@ export default function App() {
     setNodes((nds) => [...nds, ...newNodes]);
   }, [selectedNodeIds, setNodes, takeSnapshot]);
 
+  // ─── Shared WS Event Handler ────────────────────────────────────────────────
+  // Used by both runPipeline (Edit mode) and ChatPanel (Use mode)
+
+  const handleWsEvent = useCallback((data: Record<string, unknown>) => {
+    const eventType = (data.event || data.kind) as string;
+
+    if (eventType === 'node_started') {
+      const nodeId = data.node_id as string;
+      updateNodeDataSilent(nodeId, { status: 'running' });
+      setNodeStats(prev => ({
+        ...prev,
+        [nodeId]: { status: 'running', tokensIn: 0, tokensOut: 0, costUsd: 0 }
+      }));
+      // Animate edges FROM this node (outgoing)
+      const outgoing = edgesRef.current
+        .filter(e => e.source === nodeId)
+        .map(e => e.id);
+      if (outgoing.length > 0) {
+        setAnimatedEdgeIds(prev => {
+          const next = new Set(prev);
+          outgoing.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else if (eventType === 'node_done') {
+      const nodeId = data.node_id as string;
+      updateNodeDataSilent(nodeId, { status: 'done' });
+      setNodeStats(prev => ({
+        ...prev,
+        [nodeId]: { 
+          status: 'done', 
+          tokensIn: (data.tokens_in as number) || 0, 
+          tokensOut: (data.tokens_out as number) || prev[nodeId]?.tokensOut || 0, 
+          costUsd: (data.cost_usd as number) || 0 
+        }
+      }));
+      if (data.cost_usd || data.tokens_in || data.tokens_out) {
+        setRunTotals(prev => ({
+          ...prev,
+          costUsd: prev.costUsd + ((data.cost_usd as number) || 0),
+          tokensIn: prev.tokensIn + ((data.tokens_in as number) || 0),
+        }));
+      }
+      // Animate edges TO downstream nodes
+      const downstream = edgesRef.current
+        .filter(e => e.source === nodeId)
+        .map(e => e.id);
+      if (downstream.length > 0) {
+        setAnimatedEdgeIds(prev => {
+          const next = new Set(prev);
+          downstream.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else if (eventType === 'node_error' || eventType === 'run_error') {
+      if (data.node_id) {
+        const nodeId = data.node_id as string;
+        updateNodeDataSilent(nodeId, { status: 'error' });
+        setNodeStats(prev => ({
+          ...prev,
+          [nodeId]: { ...prev[nodeId], status: 'error' }
+        }));
+      }
+    } else if (eventType === 'run_completed' || eventType === 'run_stopped' || eventType === 'budget_exceeded' || eventType === 'run_halted') {
+      if (data.total_cost_usd !== undefined) {
+        setRunTotals(prev => ({
+          ...prev,
+          costUsd: data.total_cost_usd as number,
+          tokensIn: data.total_tokens_in !== undefined ? (data.total_tokens_in as number) : prev.tokensIn,
+          tokensOut: data.total_tokens_out !== undefined ? (data.total_tokens_out as number) : prev.tokensOut
+        }));
+      }
+      setIsRunning(false);
+      setAnimatedEdgeIds(new Set());
+    } else if (eventType === 'token') {
+      const nodeId = data.node_id as string;
+      setNodeStats(prev => {
+        const current = prev[nodeId];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [nodeId]: { ...current, tokensOut: current.tokensOut + 1 }
+        };
+      });
+      setRunTotals(prev => ({ ...prev, tokensOut: prev.tokensOut + 1 }));
+    } else if (eventType === 'loop_iteration') {
+      setRunTotals(prev => ({ ...prev, iterations: prev.iterations + 1 }));
+    }
+  }, [updateNodeDataSilent]);
+
+  /** Reset all node visuals to idle and clear animations. */
+  const resetAllNodes = useCallback(() => {
+    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, status: 'idle' } })));
+    setAnimatedEdgeIds(new Set());
+  }, [setNodes]);
+
   const runPipeline = async () => {
     if (nodes.length === 0) return;
     setIsRunning(true);
@@ -178,7 +291,7 @@ export default function App() {
     setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
     
     // reset all statuses on canvas
-    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, status: 'idle' } })));
+    resetAllNodes();
 
     const schema = toPipelineSchema(nodes as Node<PipelineNodeData>[], edges);
     const token = backendToken || 'test-token';
@@ -227,65 +340,17 @@ export default function App() {
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         console.log('WS event:', data);
-        
-        const eventType = data.event || data.kind; // Handle both mapping cases
+        handleWsEvent(data);
 
-        if (eventType === 'node_started') {
-          updateNodeData(data.node_id, { status: 'running' });
-          setNodeStats(prev => ({
-            ...prev,
-            [data.node_id]: { status: 'running', tokensIn: 0, tokensOut: 0, costUsd: 0 }
-          }));
-        } else if (eventType === 'node_done') {
-          updateNodeData(data.node_id, { status: 'done' });
-          setNodeStats(prev => ({
-            ...prev,
-            [data.node_id]: { 
-              status: 'done', 
-              tokensIn: data.tokens_in || 0, 
-              tokensOut: data.tokens_out || prev[data.node_id]?.tokensOut || 0, 
-              costUsd: data.cost_usd || 0 
-            }
-          }));
-          if (data.cost_usd || data.tokens_in || data.tokens_out) {
-            setRunTotals(prev => ({
-              ...prev,
-              costUsd: prev.costUsd + (data.cost_usd || 0),
-              tokensIn: prev.tokensIn + (data.tokens_in || 0),
-              // We don't add token_out here if it was streamed, but we could sync it
-            }));
-          }
-        } else if (eventType === 'node_error' || eventType === 'run_error') {
-          if (data.node_id) {
-            updateNodeData(data.node_id, { status: 'error' });
-            setNodeStats(prev => ({
-              ...prev,
-              [data.node_id]: { ...prev[data.node_id], status: 'error' }
-            }));
-          }
-        } else if (eventType === 'run_completed' || eventType === 'run_stopped' || eventType === 'budget_exceeded' || eventType === 'run_halted') {
-          if (data.total_cost_usd !== undefined) {
-            setRunTotals(prev => ({
-              ...prev,
-              costUsd: data.total_cost_usd,
-              tokensIn: data.total_tokens_in !== undefined ? data.total_tokens_in : prev.tokensIn,
-              tokensOut: data.total_tokens_out !== undefined ? data.total_tokens_out : prev.tokensOut
-            }));
-          }
-          setIsRunning(false);
+        // Terminal events close the WS
+        const eventType = (data.event || data.kind) as string;
+        if (
+          eventType === 'run_completed' ||
+          eventType === 'run_stopped' ||
+          eventType === 'budget_exceeded' ||
+          eventType === 'run_halted'
+        ) {
           ws.close();
-        } else if (eventType === 'token') {
-          setNodeStats(prev => {
-            const current = prev[data.node_id];
-            if (!current) return prev;
-            return {
-              ...prev,
-              [data.node_id]: { ...current, tokensOut: current.tokensOut + 1 }
-            };
-          });
-          setRunTotals(prev => ({ ...prev, tokensOut: prev.tokensOut + 1 }));
-        } else if (eventType === 'loop_iteration') {
-          setRunTotals(prev => ({ ...prev, iterations: prev.iterations + 1 }));
         }
       };
       
@@ -362,98 +427,155 @@ export default function App() {
     }
   };
 
+  // ─── Chat mode callbacks ──────────────────────────────────────────────────
+
+  const handleChatRunStateChange = useCallback((running: boolean) => {
+    setIsRunning(running);
+    if (running) {
+      setRunId(null);
+      setShowTrace(false);
+      setStartTime(Date.now());
+      setNodeStats({});
+      setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
+    }
+  }, []);
+
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
       <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
-          <button onClick={handleSavePipeline} style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Save JSON</button>
-          <label style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>
-            Load JSON
-            <input type="file" accept=".json" onChange={handleLoadPipeline} style={{ display: 'none' }} />
-          </label>
-          <button
-            onClick={handleUndo}
-            disabled={!canUndo()}
-            title="Undo (Ctrl+Z)"
-            style={{
-              padding: '6px 12px',
-              background: canUndo() ? '#333' : '#222',
-              color: canUndo() ? '#fff' : '#666',
-              border: '1px solid #555',
-              borderRadius: '4px',
-              cursor: canUndo() ? 'pointer' : 'not-allowed',
-              fontSize: '14px',
-            }}
-          >
-            ↩ Undo
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={!canRedo()}
-            title="Redo (Ctrl+Shift+Z)"
-            style={{
-              padding: '6px 12px',
-              background: canRedo() ? '#333' : '#222',
-              color: canRedo() ? '#fff' : '#666',
-              border: '1px solid #555',
-              borderRadius: '4px',
-              cursor: canRedo() ? 'pointer' : 'not-allowed',
-              fontSize: '14px',
-            }}
-          >
-            ↪ Redo
-          </button>
+        {/* ─── Top Bar ─── */}
+        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Mode Switch */}
+          <div className="nf-mode-switch" data-testid="mode-switch">
+            <button
+              className={appMode === 'edit' ? 'active' : ''}
+              onClick={() => setAppMode('edit')}
+              data-testid="mode-edit"
+            >
+              ✏️ Edit
+            </button>
+            <button
+              className={appMode === 'use' ? 'active' : ''}
+              onClick={() => setAppMode('use')}
+              data-testid="mode-use"
+            >
+              💬 Use
+            </button>
+          </div>
+
+          {appMode === 'edit' && (
+            <>
+              <button onClick={handleSavePipeline} style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Save JSON</button>
+              <label style={{ padding: '6px 12px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>
+                Load JSON
+                <input type="file" accept=".json" onChange={handleLoadPipeline} style={{ display: 'none' }} />
+              </label>
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo()}
+                title="Undo (Ctrl+Z)"
+                style={{
+                  padding: '6px 12px',
+                  background: canUndo() ? '#333' : '#222',
+                  color: canUndo() ? '#fff' : '#666',
+                  border: '1px solid #555',
+                  borderRadius: '4px',
+                  cursor: canUndo() ? 'pointer' : 'not-allowed',
+                  fontSize: '14px',
+                }}
+              >
+                ↩ Undo
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo()}
+                title="Redo (Ctrl+Shift+Z)"
+                style={{
+                  padding: '6px 12px',
+                  background: canRedo() ? '#333' : '#222',
+                  color: canRedo() ? '#fff' : '#666',
+                  border: '1px solid #555',
+                  borderRadius: '4px',
+                  cursor: canRedo() ? 'pointer' : 'not-allowed',
+                  fontSize: '14px',
+                }}
+              >
+                ↪ Redo
+              </button>
+            </>
+          )}
         </div>
-        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
-          {runId && !isRunning && (
+
+        {/* ─── Top-Right Controls (Edit mode only) ─── */}
+        {appMode === 'edit' && (
+          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: '8px' }}>
+            {runId && !isRunning && (
+              <button 
+                onClick={() => setShowTrace(true)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                View Trace
+              </button>
+            )}
             <button 
-              onClick={() => setShowTrace(true)}
+              data-testid="run-pipeline-button"
+              onClick={runPipeline}
+              disabled={isRunning || nodes.length === 0}
               style={{
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
+                backgroundColor: isRunning ? '#555' : '#10b981',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: 'pointer',
+                cursor: isRunning || nodes.length === 0 ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold'
               }}
             >
-              View Trace
+              {isRunning ? 'Running...' : 'Run Pipeline'}
             </button>
-          )}
-          <button 
-            data-testid="run-pipeline-button"
-            onClick={runPipeline}
-            disabled={isRunning || nodes.length === 0}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: isRunning ? '#555' : '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: isRunning || nodes.length === 0 ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            {isRunning ? 'Running...' : 'Run Pipeline'}
-          </button>
-        </div>
+          </div>
+        )}
         
+        {/* ─── Main Content Area ─── */}
         <div style={{ flex: 1, position: 'relative' }}>
-          <Canvas 
-            nodes={nodes} 
-            edges={edges} 
-            onNodesChange={onNodesChange} 
-            onEdgesChange={onEdgesChange} 
-            onConnect={onConnect}
-            setNodes={setNodes}
-            onSelectionChange={(ids) => setSelectedNodeIds(ids)}
-            onBeforeDelete={handleBeforeDelete}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            onDuplicate={handleDuplicate}
-          />
+          {appMode === 'edit' ? (
+            <Canvas 
+              nodes={nodes} 
+              edges={edges} 
+              onNodesChange={onNodesChange} 
+              onEdgesChange={onEdgesChange} 
+              onConnect={onConnect}
+              setNodes={setNodes}
+              onSelectionChange={(ids) => setSelectedNodeIds(ids)}
+              onBeforeDelete={handleBeforeDelete}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              onDuplicate={handleDuplicate}
+              animatedEdgeIds={animatedEdgeIds}
+            />
+          ) : (
+            <ChatPanel
+              nodes={nodes}
+              edges={edges}
+              backendPort={backendPort}
+              backendToken={backendToken}
+              apiBase={API_BASE}
+              isRunning={isRunning}
+              onRunStateChange={handleChatRunStateChange}
+              updateNodeData={updateNodeDataSilent}
+              resetNodes={resetAllNodes}
+              onWsEvent={handleWsEvent}
+            />
+          )}
         </div>
 
         {(runId || isRunning) && (

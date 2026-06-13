@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import ReactFlow, { Background, Controls, MiniMap, useReactFlow, OnNodesChange, OnEdgesChange, Connection, Edge, Node, NodeChange, EdgeChange } from 'reactflow';
 import PipelineNode, { PipelineNodeData } from './nodes/PipelineNode';
 
@@ -19,6 +19,8 @@ interface CanvasProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onDuplicate?: () => void;
+  /** Set of edge IDs that should show a flowing animation (active execution). */
+  animatedEdgeIds?: Set<string>;
 }
 
 export default function Canvas({
@@ -33,9 +35,19 @@ export default function Canvas({
   onUndo,
   onRedo,
   onDuplicate,
+  animatedEdgeIds,
 }: CanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+
+  // Apply animation flag to edges
+  const displayEdges = useMemo(() => {
+    if (!animatedEdgeIds || animatedEdgeIds.size === 0) return edges;
+    return edges.map(e => ({
+      ...e,
+      animated: animatedEdgeIds.has(e.id),
+    }));
+  }, [edges, animatedEdgeIds]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -146,10 +158,19 @@ export default function Canvas({
   );
 
   return (
-    <div style={{ width: '100%', height: '100%' }} ref={reactFlowWrapper}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowWrapper}>
+      {/* Empty-state hint when no nodes on canvas */}
+      {nodes.length === 0 && (
+        <div className="nf-empty-state" data-testid="empty-state-hint">
+          <div className="nf-empty-state-card">
+            <span className="nf-empty-icon">🧩</span>
+            <div>Drag a node from the palette, or load a template →</div>
+          </div>
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={displayEdges}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
@@ -169,4 +190,3 @@ export default function Canvas({
     </div>
   );
 }
-

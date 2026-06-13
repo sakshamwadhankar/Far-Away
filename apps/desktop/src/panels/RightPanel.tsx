@@ -93,6 +93,23 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
         </>
       )}
 
+      {/* ─── OUTPUT NODE ──────────────────────────────────────────────── */}
+      {data.type === 'output' && (
+        <>
+          <div style={sectionHeaderStyle}>Output Config</div>
+          <div>
+            <label style={labelStyle}>Display Label</label>
+            <input
+              type="text"
+              value={config.label || ''}
+              onChange={(e) => handleConfigChange('label', e.target.value)}
+              placeholder="e.g. Final Answer"
+              style={inputStyle}
+            />
+          </div>
+        </>
+      )}
+
       {/* ─── MODEL NODE ──────────────────────────────────────────────── */}
       {data.type === 'model' && (
         <>
@@ -191,7 +208,33 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
 
       {/* ─── ROUTER NODE ─────────────────────────────────────────────── */}
       {data.type === 'router' && (
-        <RouterConfig config={config} onConfigChange={handleConfigChange} />
+        <>
+          <div style={sectionHeaderStyle}>Router Config</div>
+          <div>
+            <label style={labelStyle}>Endpoint Ref</label>
+            <select 
+              value={data.endpoint_ref || ''} 
+              onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)} 
+              style={inputStyle}
+            >
+              <option value="" disabled>Select a model...</option>
+              {Object.entries(groupedModels).map(([provider, models]) => (
+                <optgroup key={provider} label={providerNames[provider] || provider}>
+                  {models.map(m => (
+                    <option key={m.endpoint_id} value={m.endpoint_id}>
+                      {m.model_name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>System Prompt</label>
+            <textarea rows={3} value={config.system_prompt || ''} onChange={(e) => handleConfigChange('system_prompt', e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
+          </div>
+          <RouterConfig config={config} onConfigChange={handleConfigChange} />
+        </>
       )}
 
       {/* ─── LOOP NODE ───────────────────────────────────────────────── */}
