@@ -77,7 +77,12 @@ ollama pull qwen2.5:3b
 
 ### Run from source (developers)
 
-NeuralFlow requires both the backend and frontend to run simultaneously in separate terminals.
+~> Clone this repo
+
+~> Run Start.bat
+
+------------------------------------------------------------------------------
+Komvos requires both the backend and frontend to run simultaneously in separate terminals.
 
 **1. Backend (Python 3.11+)**
 ```bash
@@ -90,7 +95,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -e ".[dev]"
-uvicorn neuralflow.api.main:app --port 8000
+uvicorn Komvos.api.main:app --port 8000
 ```
 
 **2. Frontend (Node 18+)**
@@ -197,7 +202,7 @@ cd apps/desktop && npm test && npm run typecheck
 │   ├── src/canvas/      # Node editor, serialization
 │   └── src/panels/      # Config, monitor, chat, gallery
 ├── backend/             # FastAPI backend
-│   └── neuralflow/
+│   └── Komvos/
 │       ├── compiler/    # graph → validated DAG
 │       ├── scheduler/   # execution engine, events, cancellation
 │       ├── executors/   # node implementations
