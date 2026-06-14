@@ -191,7 +191,7 @@ export default function Canvas({
         nodeTypes={nodeTypes}
         fitView
       >
-        <Background color="rgba(30,35,25,0.12)" gap={20} size={1.2} />
+        <Background color="rgba(30,35,25,0.25)" gap={20} size={1.8} />
         <Controls style={{ background: '#F4F2EB', border: '1px solid rgba(30,35,25,0.13)', borderRadius: 12 }} />
         <MiniMap
           nodeStrokeColor={(_n) => 'rgba(30,35,25,0.2)'}
