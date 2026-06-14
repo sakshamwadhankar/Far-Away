@@ -72,21 +72,7 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
   const statusIcon = STATUS_ICONS[status] ?? null;
 
   return (
-    <div
-      className={status === 'running' ? 'nf-node-running' : undefined}
-      data-testid={`pipeline-node-${type}`}
-      data-status={status}
-      style={{
-        background: '#F4F2EB',
-        border: `1.5px solid ${getBorderColor()}`,
-        borderRadius: 16,
-        minWidth: 160,
-        fontFamily: "'Inter', system-ui, sans-serif",
-        boxShadow: getBoxShadow(),
-        position: 'relative',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-      }}
-    >
+    <div style={{ position: 'relative' }}>
       {/* Estimate tooltip above node */}
       {type === 'model' && data.estimate && (
         <div style={{
@@ -97,6 +83,8 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
           gap: 5,
           fontSize: 10,
           fontFamily: "'DM Mono', monospace",
+          alignItems: 'center',
+          whiteSpace: 'nowrap',
         }}>
           <span style={{
             background: data.estimate.is_local ? PORT_COLORS.number : PORT_COLORS.text,
@@ -119,15 +107,29 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         </div>
       )}
 
-      {/* Colored accent header */}
-      <div style={{
-        background: accent.bg,
-        padding: '8px 12px',
-        borderBottom: `1px solid ${accent.dot}33`,
-        borderTopLeftRadius: 14.5,
-        borderTopRightRadius: 14.5,
-        display: 'flex',
-        justifyContent: 'space-between',
+      <div
+        className={status === 'running' ? 'nf-node-running' : undefined}
+        data-testid={`pipeline-node-${type}`}
+        data-status={status}
+        style={{
+          background: '#F4F2EB',
+          border: `1.5px solid ${getBorderColor()}`,
+          borderRadius: 16,
+          minWidth: 160,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          boxShadow: getBoxShadow(),
+          position: 'relative',
+          transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Colored accent header */}
+        <div style={{
+          background: accent.bg,
+          padding: '8px 12px',
+          borderBottom: `1px solid ${accent.dot}33`,
+          display: 'flex',
+          justifyContent: 'space-between',
         alignItems: 'center',
         gap: 6,
       }}>
@@ -252,5 +254,6 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         </div>
       </div>
     </div>
+  </div>
   );
 }
