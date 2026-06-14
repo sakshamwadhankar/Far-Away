@@ -58,6 +58,10 @@ class NodeConfig(BaseModel):
     strategy: Literal["max_numeric", "truthy"] | None = Field(default="max_numeric")
     default_value: str | None = None
     label: str | None = None
+    # Custom node display metadata (used by transform nodes created from custom definitions)
+    custom_node_id: str | None = Field(default=None, description="ID of the custom node definition.")
+    custom_label: str | None = Field(default=None, description="Display label overriding 'transform'.")
+    custom_color: str | None = Field(default=None, description="Hex accent color for this custom node.")
 
 
 class Node(BaseModel):

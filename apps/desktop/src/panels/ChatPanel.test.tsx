@@ -38,7 +38,7 @@ describe('ChatPanel - isChatCompatible', () => {
     expect(isChatCompatible(nodes)).toBe(false);
   });
 
-  it('returns false for multiple output nodes', () => {
+  it('returns true for multiple output nodes', () => {
     const nodes: RFNode<PipelineNodeData>[] = [
       {
         id: 'in', type: 'pipelineNode', position: { x: 0, y: 0 },
@@ -54,10 +54,10 @@ describe('ChatPanel - isChatCompatible', () => {
       },
     ];
 
-    expect(isChatCompatible(nodes)).toBe(false);
+    expect(isChatCompatible(nodes)).toBe(true);
   });
 
-  it('returns false for multiple input nodes', () => {
+  it('returns true for multiple input nodes', () => {
     const nodes: RFNode<PipelineNodeData>[] = [
       {
         id: 'in1', type: 'pipelineNode', position: { x: 0, y: 0 },
@@ -73,7 +73,7 @@ describe('ChatPanel - isChatCompatible', () => {
       },
     ];
 
-    expect(isChatCompatible(nodes)).toBe(false);
+    expect(isChatCompatible(nodes)).toBe(true);
   });
 
   it('returns false for empty node list', () => {

@@ -51,6 +51,12 @@ from neuralflow.api.models import (
     StopResponse,
     EstimateResponse,
     NodeEstimate,
+    PublishTemplateRequest,
+    LibraryTemplateResponse,
+    PublishTemplateResponse,
+    SaveCustomNodeRequest,
+    CustomNodeResponse,
+    SaveCustomNodeResponse,
 )
 from neuralflow.api.registry import run_registry
 from neuralflow.compiler.dag import compile as compile_pipeline
@@ -157,6 +163,192 @@ async def get_templates() -> list[dict[str, Any]]:
             logger.warning("Failed to load template %s: %s", file.name, e)
             
     return templates
+
+
+# ---------------------------------------------------------------------------
+# POST /library/publish  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/library/publish",
+    response_model=PublishTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_token)],
+)
+async def publish_library_template(body: PublishTemplateRequest) -> PublishTemplateResponse:
+    """Validate a pipeline and publish it to the community library."""
+    # Validate pipeline schema
+    try:
+        Pipeline.model_validate(body.pipeline)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid pipeline: {exc}")
+
+    template_id = str(uuid.uuid4())
+    sm = _global_state_manager()
+    sm.publish_template(
+        template_id=template_id,
+        name=body.name,
+        description=body.description,
+        author=body.author,
+        tags=body.tags,
+        pipeline_json=json.dumps(body.pipeline),
+    )
+    return PublishTemplateResponse(id=template_id)
+
+
+# ---------------------------------------------------------------------------
+# GET /library/templates  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/library/templates",
+    response_model=list[LibraryTemplateResponse],
+    dependencies=[Depends(verify_token)],
+)
+async def list_library_templates() -> list[LibraryTemplateResponse]:
+    """Return all community-published templates."""
+    sm = _global_state_manager()
+    rows = sm.list_library_templates()
+    return [LibraryTemplateResponse(**r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /library/templates/{template_id}  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.delete(
+    "/library/templates/{template_id}",
+    dependencies=[Depends(verify_token)],
+)
+async def delete_library_template(template_id: str) -> dict[str, Any]:
+    """Remove a template from the community library."""
+    sm = _global_state_manager()
+    deleted = sm.delete_library_template(template_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+    return {"deleted": True, "id": template_id}
+
+
+# ---------------------------------------------------------------------------
+# POST /custom-nodes  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/custom-nodes",
+    response_model=SaveCustomNodeResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_token)],
+)
+async def save_custom_node(body: SaveCustomNodeRequest) -> SaveCustomNodeResponse:
+    """Save a user-defined custom node definition."""
+    node_id = str(uuid.uuid4())
+    sm = _global_state_manager()
+    sm.save_custom_node(
+        node_id=node_id,
+        name=body.name,
+        description=body.description,
+        author=body.author,
+        icon_color=body.icon_color,
+        inputs_json=json.dumps([p.model_dump() for p in body.inputs]),
+        outputs_json=json.dumps([p.model_dump() for p in body.outputs]),
+        template=body.template,
+        tags=body.tags,
+    )
+    return SaveCustomNodeResponse(id=node_id)
+
+
+# ---------------------------------------------------------------------------
+# GET /custom-nodes  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/custom-nodes",
+    response_model=list[CustomNodeResponse],
+    dependencies=[Depends(verify_token)],
+)
+async def list_custom_nodes() -> list[CustomNodeResponse]:
+    """Return all user-defined custom node definitions."""
+    sm = _global_state_manager()
+    rows = sm.list_custom_nodes()
+    return [CustomNodeResponse(**r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /custom-nodes/{node_id}  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.delete(
+    "/custom-nodes/{node_id}",
+    dependencies=[Depends(verify_token)],
+)
+async def delete_custom_node(node_id: str) -> dict[str, Any]:
+    """Remove a custom node definition."""
+    sm = _global_state_manager()
+    deleted = sm.delete_custom_node(node_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Custom node '{node_id}' not found.")
+    return {"deleted": True, "id": node_id}
+
+
+# ---------------------------------------------------------------------------
+# POST /custom-nodes/{node_id}/publish  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/custom-nodes/{node_id}/publish",
+    response_model=PublishTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_token)],
+)
+async def publish_custom_node(node_id: str) -> PublishTemplateResponse:
+    """Publish a custom node to the library as a single-node pipeline template."""
+    sm = _global_state_manager()
+    cn = sm.get_custom_node(node_id)
+    if cn is None:
+        raise HTTPException(status_code=404, detail=f"Custom node '{node_id}' not found.")
+
+    # Build a single-node pipeline from the custom node definition
+    pipeline = {
+        "schema_version": "2.0",
+        "id": str(uuid.uuid4()),
+        "name": f"Custom: {cn['name']}",
+        "version": "1.0.0",
+        "description": cn.get("description", ""),
+        "endpoints": {},
+        "nodes": [
+            {
+                "id": "custom-node",
+                "type": "transform",
+                "inputs": cn.get("inputs", []),
+                "outputs": cn.get("outputs", []),
+                "config": {
+                    "system_prompt": cn.get("template", ""),
+                    "custom_node_id": node_id,
+                    "custom_label": cn["name"],
+                    "custom_color": cn.get("icon_color", "#6B3AB8"),
+                },
+            }
+        ],
+        "edges": [],
+    }
+
+    template_id = str(uuid.uuid4())
+    sm.publish_template(
+        template_id=template_id,
+        name=f"Custom Node: {cn['name']}",
+        description=cn.get("description", ""),
+        author=cn.get("author", "Anonymous"),
+        tags=f"custom-node,{cn.get('tags', '')}".rstrip(","),
+        pipeline_json=json.dumps(pipeline),
+    )
+    return PublishTemplateResponse(id=template_id)
 
 
 # ---------------------------------------------------------------------------

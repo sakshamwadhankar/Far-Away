@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { NodeType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import KomvosLogo from '../assets/KomvosLogo.png';
@@ -26,18 +26,48 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'compare',   label: 'Compare',   defaultData: { inputs: [{ name: 'input1', type: 'text' }, { name: 'input2', type: 'text' }], outputs: [{ name: 'diff', type: 'text' }, { name: 'is_different', type: 'boolean' }] } },
 ];
 
+export interface LibraryTemplate {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  tags: string;
+  pipeline: Record<string, unknown>;
+  created_at: number;
+  downloads: number;
+}
+
+export interface CustomNodeDef {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  icon_color: string;
+  inputs: { name: string; type: string }[];
+  outputs: { name: string; type: string }[];
+  template: string;
+  tags: string;
+  created_at: number;
+}
+
 interface LeftSidebarProps {
   backendPort: number | null;
   backendToken: string | null;
   onLoadTemplate?: (schema: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
+  onPublishClick?: () => void;
+  onCreateCustomNode?: () => void;
+  customNodes?: CustomNodeDef[];
+  onDeleteCustomNode?: (id: string) => void;
   API_BASE: string;
 }
 
-export default function LeftSidebar({ backendPort: _backendPort, backendToken, onLoadTemplate, API_BASE }: LeftSidebarProps) {
+export default function LeftSidebar({ backendPort: _backendPort, backendToken, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, API_BASE }: LeftSidebarProps) {
   const [templates, setTemplates] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([]);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'nodes' | 'templates'>('nodes');
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<'nodes' | 'templates' | 'library'>('nodes');
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -60,10 +90,56 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
       });
   }, [isConnected, API_BASE, backendToken]);
 
+  // Fetch library templates
+  const fetchLibrary = useCallback(() => {
+    if (!isConnected || !backendToken) return;
+    setLibraryError(null);
+    fetch(`${API_BASE}/library/templates`, { headers: { 'Authorization': `Bearer ${backendToken}` } })
+      .then(r => {
+        if (!r.ok) throw new Error('Network response was not ok');
+        return r.json();
+      })
+      .then((data: LibraryTemplate[]) => { if (Array.isArray(data)) setLibraryTemplates(data); })
+      .catch(e => {
+        console.warn('Failed to fetch library templates:', e);
+        setLibraryError('Could not load library');
+      });
+  }, [isConnected, API_BASE, backendToken]);
+
+  useEffect(() => {
+    if (activeSection === 'library') fetchLibrary();
+  }, [activeSection, fetchLibrary]);
+
+  const handleDeleteLibraryTemplate = async (templateId: string) => {
+    if (!backendToken) return;
+    try {
+      const res = await fetch(`${API_BASE}/library/templates/${templateId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${backendToken}` },
+      });
+      if (res.ok) {
+        setLibraryTemplates(prev => prev.filter(t => t.id !== templateId));
+      }
+    } catch (e) {
+      console.warn('Failed to delete library template:', e);
+    }
+  };
+
+  const handleLoadLibraryTemplate = (tpl: LibraryTemplate) => {
+    if (onLoadTemplate) {
+      onLoadTemplate(tpl.pipeline);
+    }
+  };
+
   const onDragStart = (event: React.DragEvent, nodeType: NodeType, defaultData: Partial<PipelineNodeData>) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, data: defaultData }));
     event.dataTransfer.effectAllowed = 'move';
   };
+
+  const parseTags = (tags: string): string[] =>
+    tags.split(',').map(t => t.trim()).filter(Boolean);
+
+  const TABS = ['nodes', 'templates', 'library'] as const;
 
   return (
     <div
@@ -78,9 +154,10 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
 
       {/* Section toggle */}
       <div style={{ display: 'flex', gap: 4, marginTop: 14, marginBottom: 12 }}>
-        {(['nodes', 'templates'] as const).map(s => (
+        {TABS.map(s => (
           <button
             key={s}
+            id={`sidebar-tab-${s}`}
             onClick={() => setActiveSection(s)}
             style={{
               flex: 1,
@@ -91,7 +168,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               borderColor: activeSection === s ? '#B8C83A' : 'var(--border)',
               borderRadius: 'var(--radius-pill)',
               fontFamily: 'var(--font-ui)',
-              fontSize: 12,
+              fontSize: s === 'library' ? 11 : 12,
               fontWeight: activeSection === s ? 600 : 500,
               cursor: 'pointer',
               transition: 'all var(--transition)',
@@ -99,7 +176,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               boxShadow: activeSection === s ? '0 1px 4px rgba(200,217,74,0.35)' : 'none',
             }}
           >
-            {s}
+            {s === 'library' ? '📚 Library' : s}
           </button>
         ))}
       </div>
@@ -138,6 +215,66 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               </span>
             </div>
           ))}
+
+          {/* Custom Nodes sub-section */}
+          {customNodes.length > 0 && (
+            <div className="nf-custom-node-section">
+              <div className="nf-section-header" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0, marginBottom: 4 }}>
+                Custom Nodes
+              </div>
+              {customNodes.map((cn) => (
+                <div
+                  key={cn.id}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, 'transform' as any, {
+                    inputs: cn.inputs.map(p => ({ name: p.name, type: p.type as any })),
+                    outputs: cn.outputs.map(p => ({ name: p.name, type: p.type as any })),
+                    config: {
+                      system_prompt: cn.template,
+                      custom_node_id: cn.id,
+                      custom_label: cn.name,
+                      custom_color: cn.icon_color,
+                    },
+                  })}
+                  className="nf-node-drag-item nf-custom-node-item"
+                  style={{ borderLeft: `3px solid ${cn.icon_color}` }}
+                >
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13,
+                    width: 22,
+                    textAlign: 'center',
+                    color: cn.icon_color,
+                  }}>
+                    ✦
+                  </span>
+                  <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cn.name}</span>
+                  {onDeleteCustomNode && (
+                    <button
+                      className="nf-port-remove-btn"
+                      style={{ width: 18, height: 18, fontSize: 9, marginLeft: 2 }}
+                      title="Delete custom node"
+                      onClick={(e) => { e.stopPropagation(); onDeleteCustomNode(cn.id); }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Create custom node button */}
+          {onCreateCustomNode && (
+            <button
+              id="create-custom-node-btn"
+              className="nf-create-custom-btn"
+              onClick={onCreateCustomNode}
+              style={{ marginTop: customNodes.length > 0 ? 6 : 10 }}
+            >
+              ✦ Create Custom Node
+            </button>
+          )}
         </div>
       )}
 
@@ -184,6 +321,87 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               lineHeight: 1.5,
             }}>
               {templateError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Library Section */}
+      {activeSection === 'library' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, animation: 'nf-fade-in 0.18s ease' }}>
+          {/* Publish button */}
+          {onPublishClick && (
+            <button
+              id="library-publish-btn"
+              className="nf-publish-btn"
+              onClick={onPublishClick}
+              style={{ marginBottom: 4 }}
+            >
+              📤 Publish Current Pipeline
+            </button>
+          )}
+
+          <div className="nf-section-header" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0, marginBottom: 4 }}>
+            Community templates
+          </div>
+
+          {libraryTemplates.map((tpl) => (
+            <div key={tpl.id} className="nf-library-card">
+              <div className="nf-library-card-header">
+                <span className="nf-library-card-title">{tpl.name}</span>
+                <button
+                  className="nf-icon-btn--danger"
+                  title="Remove from library"
+                  onClick={() => handleDeleteLibraryTemplate(tpl.id)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {tpl.description && (
+                <div className="nf-library-card-desc">{tpl.description}</div>
+              )}
+
+              <div className="nf-library-meta">
+                <span className="nf-library-author">👤 {tpl.author}</span>
+                {parseTags(tpl.tags).map(tag => (
+                  <span key={tag} className="nf-library-tag">{tag}</span>
+                ))}
+                <span className="nf-library-downloads">↓ {tpl.downloads}</span>
+              </div>
+
+              <div className="nf-library-card-actions">
+                <button
+                  onClick={() => handleLoadLibraryTemplate(tpl)}
+                  className="nf-pill-btn nf-pill-btn--sm nf-pill-btn--highlight"
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Load template
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {libraryTemplates.length === 0 && !libraryError && (
+            <div style={{
+              color: 'var(--text-3)', fontSize: 12, fontStyle: 'italic',
+              padding: '16px 4px', textAlign: 'center', lineHeight: 1.6,
+            }}>
+              No community templates yet.<br />
+              Be the first to publish!
+            </div>
+          )}
+          {libraryError && (
+            <div style={{
+              background: 'rgba(184,50,50,0.08)',
+              border: '1px solid rgba(184,50,50,0.2)',
+              borderRadius: 10,
+              padding: '10px 12px',
+              color: 'var(--danger)',
+              fontSize: 11,
+              lineHeight: 1.5,
+            }}>
+              {libraryError}
             </div>
           )}
         </div>

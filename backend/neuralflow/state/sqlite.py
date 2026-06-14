@@ -76,6 +76,36 @@ class StateManager:
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS library_templates (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        author TEXT NOT NULL DEFAULT 'Anonymous',
+                        tags TEXT NOT NULL DEFAULT '',
+                        pipeline_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        downloads INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS custom_nodes (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        author TEXT NOT NULL DEFAULT 'Anonymous',
+                        icon_color TEXT NOT NULL DEFAULT '#6B3AB8',
+                        inputs_json TEXT NOT NULL DEFAULT '[]',
+                        outputs_json TEXT NOT NULL DEFAULT '[]',
+                        template TEXT NOT NULL DEFAULT '',
+                        tags TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL
+                    )
+                    """
+                )
         finally:
             conn.close()
 
@@ -272,5 +302,213 @@ class StateManager:
                 "nodes": parsed_nodes,
                 "loops": parsed_loops,
             }
+        finally:
+            conn.close()
+
+    # -------------------------------------------------------------------
+    # Library Templates (community sharing)
+    # -------------------------------------------------------------------
+
+    def publish_template(
+        self,
+        template_id: str,
+        name: str,
+        description: str,
+        author: str,
+        tags: str,
+        pipeline_json: str,
+    ) -> None:
+        """Publish a pipeline to the community library."""
+        now = int(time.time() * 1000)
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO library_templates
+                        (id, name, description, author, tags, pipeline_json, created_at, downloads)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        description=excluded.description,
+                        author=excluded.author,
+                        tags=excluded.tags,
+                        pipeline_json=excluded.pipeline_json
+                    """,
+                    (template_id, name, description, author, tags, pipeline_json, now),
+                )
+        finally:
+            conn.close()
+
+    def list_library_templates(self) -> list[dict[str, Any]]:
+        """Return all library templates ordered by newest first."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT id, name, description, author, tags, pipeline_json, created_at, downloads "
+                "FROM library_templates ORDER BY created_at DESC"
+            )
+            results: list[dict[str, Any]] = []
+            for row in cursor:
+                d = dict(row)
+                try:
+                    d["pipeline"] = json.loads(d.pop("pipeline_json"))
+                except json.JSONDecodeError:
+                    d["pipeline"] = {}
+                    d.pop("pipeline_json", None)
+                results.append(d)
+            return results
+        finally:
+            conn.close()
+
+    def get_library_template(self, template_id: str) -> dict[str, Any] | None:
+        """Fetch a single library template by ID."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT id, name, description, author, tags, pipeline_json, created_at, downloads "
+                "FROM library_templates WHERE id = ?",
+                (template_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            try:
+                d["pipeline"] = json.loads(d.pop("pipeline_json"))
+            except json.JSONDecodeError:
+                d["pipeline"] = {}
+                d.pop("pipeline_json", None)
+            return d
+        finally:
+            conn.close()
+
+    def delete_library_template(self, template_id: str) -> bool:
+        """Delete a library template. Returns True if a row was deleted."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "DELETE FROM library_templates WHERE id = ?",
+                    (template_id,),
+                )
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def increment_template_downloads(self, template_id: str) -> None:
+        """Bump the download counter for a library template."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    "UPDATE library_templates SET downloads = downloads + 1 WHERE id = ?",
+                    (template_id,),
+                )
+        finally:
+            conn.close()
+
+    # -------------------------------------------------------------------
+    # Custom Nodes (user-defined node definitions)
+    # -------------------------------------------------------------------
+
+    def save_custom_node(
+        self,
+        node_id: str,
+        name: str,
+        description: str,
+        author: str,
+        icon_color: str,
+        inputs_json: str,
+        outputs_json: str,
+        template: str,
+        tags: str,
+    ) -> None:
+        """Save a user-defined custom node definition."""
+        now = int(time.time() * 1000)
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO custom_nodes
+                        (id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        description=excluded.description,
+                        author=excluded.author,
+                        icon_color=excluded.icon_color,
+                        inputs_json=excluded.inputs_json,
+                        outputs_json=excluded.outputs_json,
+                        template=excluded.template,
+                        tags=excluded.tags
+                    """,
+                    (node_id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, now),
+                )
+        finally:
+            conn.close()
+
+    def list_custom_nodes(self) -> list[dict[str, Any]]:
+        """Return all custom node definitions ordered by newest first."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at "
+                "FROM custom_nodes ORDER BY created_at DESC"
+            )
+            results: list[dict[str, Any]] = []
+            for row in cursor:
+                d = dict(row)
+                try:
+                    d["inputs"] = json.loads(d.pop("inputs_json"))
+                except json.JSONDecodeError:
+                    d["inputs"] = []
+                    d.pop("inputs_json", None)
+                try:
+                    d["outputs"] = json.loads(d.pop("outputs_json"))
+                except json.JSONDecodeError:
+                    d["outputs"] = []
+                    d.pop("outputs_json", None)
+                results.append(d)
+            return results
+        finally:
+            conn.close()
+
+    def get_custom_node(self, node_id: str) -> dict[str, Any] | None:
+        """Fetch a single custom node definition by ID."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at "
+                "FROM custom_nodes WHERE id = ?",
+                (node_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            try:
+                d["inputs"] = json.loads(d.pop("inputs_json"))
+            except json.JSONDecodeError:
+                d["inputs"] = []
+                d.pop("inputs_json", None)
+            try:
+                d["outputs"] = json.loads(d.pop("outputs_json"))
+            except json.JSONDecodeError:
+                d["outputs"] = []
+                d.pop("outputs_json", None)
+            return d
+        finally:
+            conn.close()
+
+    def delete_custom_node(self, node_id: str) -> bool:
+        """Delete a custom node definition. Returns True if a row was deleted."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "DELETE FROM custom_nodes WHERE id = ?",
+                    (node_id,),
+                )
+                return cursor.rowcount > 0
         finally:
             conn.close()

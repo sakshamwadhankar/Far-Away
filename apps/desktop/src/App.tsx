@@ -13,7 +13,10 @@ import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/ser
 import { useUndoRedo } from './canvas/useUndoRedo';
 import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
+import PublishModal from './components/PublishModal';
+import CustomNodeModal from './components/CustomNodeModal';
 import Tour from './components/Tour';
+import type { CustomNodeDef } from './panels/LeftSidebar';
 
 export type AppMode = 'edit' | 'use';
 
@@ -46,6 +49,9 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [appMode, setAppMode] = useState<AppMode>('edit');
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showCustomNodeModal, setShowCustomNodeModal] = useState(false);
+  const [customNodes, setCustomNodes] = useState<CustomNodeDef[]>([]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -67,6 +73,10 @@ export default function App() {
   const [runTotals, setRunTotals] = useState({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
   const [showTrace, setShowTrace] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Chat State
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInputValues, setChatInputValues] = useState<Record<string, string>>({});
 
   // Edge animation state
   const [animatedEdgeIds, setAnimatedEdgeIds] = useState<Set<string>>(new Set());
@@ -590,6 +600,8 @@ export default function App() {
       const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
       setNodes(newNodes);
       setEdges(newEdges);
+      setChatMessages([]);
+      setChatInputValues({});
     } catch (err: any) {
       console.error('Failed to load pipeline from JSON', err);
       showToast(err.message || 'Invalid pipeline JSON', 'error');
@@ -609,9 +621,122 @@ export default function App() {
     }
   }, []);
 
+  const handlePublishToLibrary = async (name: string, description: string, author: string, tags: string) => {
+    if (nodes.length === 0) {
+      showToast('No pipeline to publish — add some nodes first.', 'error');
+      setShowPublishModal(false);
+      return;
+    }
+    const schema = toPipelineSchema(nodes as Node<PipelineNodeData>[], edges);
+    const scrubbed = scrubSecrets(schema);
+    const token = backendToken || 'test-token';
+
+    try {
+      const res = await fetch(`${API_BASE}/library/publish`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, description, author, tags, pipeline: scrubbed }),
+      });
+
+      if (res.ok) {
+        showToast('Pipeline published to library!', 'success');
+      } else {
+        const errText = await res.text();
+        showToast(`Publish failed: ${errText}`, 'error');
+      }
+    } catch (err) {
+      console.error('Failed to publish pipeline:', err);
+      showToast('Backend not reachable', 'error');
+    }
+    setShowPublishModal(false);
+  };
+
+  // ─── Custom Nodes ──────────────────────────────────────────────────────────
+
+  const fetchCustomNodes = useCallback(async () => {
+    const token = backendToken || 'test-token';
+    try {
+      const res = await fetch(`${API_BASE}/custom-nodes`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setCustomNodes(data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch custom nodes:', e);
+    }
+  }, [API_BASE, backendToken]);
+
+  useEffect(() => {
+    if (backendPort) fetchCustomNodes();
+  }, [backendPort, fetchCustomNodes]);
+
+  const handleSaveCustomNode = async (data: {
+    name: string;
+    description: string;
+    author: string;
+    icon_color: string;
+    inputs: { name: string; type: string }[];
+    outputs: { name: string; type: string }[];
+    template: string;
+    tags: string;
+  }) => {
+    const token = backendToken || 'test-token';
+    try {
+      const res = await fetch(`${API_BASE}/custom-nodes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        showToast(`Custom node "${data.name}" created!`, 'success');
+        fetchCustomNodes();
+      } else {
+        const errText = await res.text();
+        showToast(`Failed to save node: ${errText}`, 'error');
+      }
+    } catch (err) {
+      console.error('Failed to save custom node:', err);
+      showToast('Backend not reachable', 'error');
+    }
+    setShowCustomNodeModal(false);
+  };
+
+  const handleDeleteCustomNode = async (nodeId: string) => {
+    const token = backendToken || 'test-token';
+    try {
+      const res = await fetch(`${API_BASE}/custom-nodes/${nodeId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setCustomNodes(prev => prev.filter(n => n.id !== nodeId));
+        showToast('Custom node deleted', 'success');
+      }
+    } catch (e) {
+      console.warn('Failed to delete custom node:', e);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-      <LeftSidebar backendPort={backendPort} backendToken={backendToken} onLoadTemplate={loadPipelineFromJson} API_BASE={API_BASE} />
+      <LeftSidebar
+        backendPort={backendPort}
+        backendToken={backendToken}
+        onLoadTemplate={loadPipelineFromJson}
+        onPublishClick={() => setShowPublishModal(true)}
+        onCreateCustomNode={() => setShowCustomNodeModal(true)}
+        customNodes={customNodes}
+        onDeleteCustomNode={handleDeleteCustomNode}
+        API_BASE={API_BASE}
+      />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         {/* ─── Top Bar ─── */}
         <div style={{
@@ -749,7 +874,7 @@ export default function App() {
         </div>
         
         {/* ─── Main Content Area ─── */}
-        <div style={{ flex: 1, position: 'relative' }}>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {appMode === 'edit' ? (
             <Canvas 
               nodes={nodes} 
@@ -777,6 +902,10 @@ export default function App() {
               updateNodeData={updateNodeDataSilent}
               resetNodes={resetAllNodes}
               onWsEvent={handleWsEvent}
+              messages={chatMessages}
+              setMessages={setChatMessages}
+              inputValues={chatInputValues}
+              setInputValues={setChatInputValues}
             />
           )}
         </div>
@@ -818,6 +947,21 @@ export default function App() {
           initialName={toPipelineSchema(nodes as Node<PipelineNodeData>[], edges).name || 'My Pipeline'}
           onExport={handleExport}
           onCancel={() => setShowExportModal(false)}
+        />
+      )}
+
+      {showPublishModal && (
+        <PublishModal
+          initialName={toPipelineSchema(nodes as Node<PipelineNodeData>[], edges).name || 'My Pipeline'}
+          onPublish={handlePublishToLibrary}
+          onCancel={() => setShowPublishModal(false)}
+        />
+      )}
+
+      {showCustomNodeModal && (
+        <CustomNodeModal
+          onSave={handleSaveCustomNode}
+          onCancel={() => setShowCustomNodeModal(false)}
         />
       )}
     </div>

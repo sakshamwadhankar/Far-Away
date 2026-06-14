@@ -105,3 +105,84 @@ class EstimateResponse(BaseModel):
     total_latency_ms: int
     loop_multiplier: int = 1
 
+
+# ---------------------------------------------------------------------------
+# Library Templates (community sharing)
+# ---------------------------------------------------------------------------
+
+
+class PublishTemplateRequest(BaseModel):
+    """Request body for POST /library/publish."""
+
+    name: str = Field(min_length=1, description="Human-friendly template name.")
+    description: str = Field(default="", description="Optional description.")
+    author: str = Field(default="Anonymous", min_length=1, description="Author display name.")
+    tags: str = Field(default="", description="Comma-separated tags, e.g. 'rag,chat,multi-agent'.")
+    pipeline: dict[str, Any] = Field(
+        description="Pipeline schema v2 JSON object (will be validated server-side)."
+    )
+
+
+class LibraryTemplateResponse(BaseModel):
+    """Single library template returned in lists and detail views."""
+
+    id: str
+    name: str
+    description: str
+    author: str
+    tags: str
+    pipeline: dict[str, Any]
+    created_at: int
+    downloads: int
+
+
+class PublishTemplateResponse(BaseModel):
+    """Response body for POST /library/publish."""
+
+    id: str
+
+
+# ---------------------------------------------------------------------------
+# Custom Nodes (user-defined node definitions)
+# ---------------------------------------------------------------------------
+
+
+class PortDefinition(BaseModel):
+    """A single port definition for a custom node."""
+
+    name: str = Field(min_length=1)
+    type: str = Field(description="Port type: text, number, boolean, json, image, audio.")
+
+
+class SaveCustomNodeRequest(BaseModel):
+    """Request body for POST /custom-nodes."""
+
+    name: str = Field(min_length=1, description="Display name for the custom node.")
+    description: str = Field(default="", description="What this node does.")
+    author: str = Field(default="Anonymous", min_length=1)
+    icon_color: str = Field(default="#6B3AB8", description="Hex color for the node accent.")
+    inputs: list[PortDefinition] = Field(default_factory=list)
+    outputs: list[PortDefinition] = Field(default_factory=list)
+    template: str = Field(default="", description="Jinja2 template for transform logic.")
+    tags: str = Field(default="", description="Comma-separated tags.")
+
+
+class CustomNodeResponse(BaseModel):
+    """A custom node definition returned by GET /custom-nodes."""
+
+    id: str
+    name: str
+    description: str
+    author: str
+    icon_color: str
+    inputs: list[PortDefinition]
+    outputs: list[PortDefinition]
+    template: str
+    tags: str
+    created_at: int
+
+
+class SaveCustomNodeResponse(BaseModel):
+    """Response body for POST /custom-nodes."""
+
+    id: str

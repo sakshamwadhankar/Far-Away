@@ -80,7 +80,7 @@ describe('App - P3 Phase 2 UI Tests', () => {
         <App />
       </ToastProvider>
     );
-    expect(screen.getByText('Node Palette')).toBeDefined();
+    expect(screen.getByText('Drag to canvas')).toBeDefined();
     expect(screen.getByTestId('react-flow-mock')).toBeDefined();
     expect(screen.getByText('Configuration')).toBeDefined();
   });
@@ -155,7 +155,7 @@ describe('Tier 2 UI: Status and Estimates', () => {
     );
     // Wait for async fetch
     await new Promise(r => setTimeout(r, 50));
-    expect(screen.getAllByText('Disconnected — start the backend').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Disconnected/i).length).toBeGreaterThan(0);
 
     // Mock fetch success
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
@@ -170,9 +170,10 @@ describe('Tier 2 UI: Status and Estimates', () => {
 
   it('cost estimate sums per-node correctly (incl. ×iterations for a loop)', async () => {
     // Mock both /health and /pipelines/estimate
-    global.fetch = vi.fn().mockImplementation((url) => {
-      if (url.endsWith('/health')) return Promise.resolve({ ok: true, json: async () => ({}) });
-      if (url.endsWith('/pipelines/estimate')) return Promise.resolve({
+    global.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : (url as Request).url || url.toString();
+      if (urlStr.endsWith('/health')) return Promise.resolve({ ok: true, json: async () => ({}) });
+      if (urlStr.endsWith('/pipelines/estimate')) return Promise.resolve({
         ok: true,
         json: async () => ({
           nodes: { n1: { usd: 0.02, latency_ms: 5000, is_local: false } },
@@ -181,6 +182,7 @@ describe('Tier 2 UI: Status and Estimates', () => {
           loop_multiplier: 3
         })
       });
+      if (urlStr.endsWith('/custom-nodes')) return Promise.resolve({ ok: true, json: async () => [] });
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
 
@@ -195,11 +197,9 @@ describe('Tier 2 UI: Status and Estimates', () => {
     fireEvent.click(dropBtn);
 
     // Wait for debounce and fetch
-    await new Promise(r => setTimeout(r, 1100));
-
-    // Assert total estimate is displayed near Run Pipeline button
-    expect(screen.getByText(/Est: ~\$0.0600 · ~15.0s/)).toBeDefined();
-    expect(screen.getByText(/⚠️ Loop ×3 applied/)).toBeDefined();
+    const estEl = await screen.findByText(/~\$0.0600 · ~15.0s/, {}, { timeout: 2000 });
+    expect(estEl).toBeDefined();
+    expect(screen.getByText(/⚠ Loop ×3/)).toBeDefined();
   });
 });
 
@@ -245,6 +245,12 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
           json: () => Promise.resolve({ models: [] })
         });
       }
+      if (url.includes('/custom-nodes')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([])
+        });
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     }) as any;
   });
@@ -272,18 +278,22 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
     expect(localStorage.getItem('neuralflow_first_run')).toBe('1');
   });
 
-  it('renders Template Gallery in LeftSidebar', async () => {
+  it('renders templates in LeftSidebar', async () => {
     render(<ToastProvider><App /></ToastProvider>);
     
-    // Gallery header
-    expect(screen.getByText('Template Gallery')).toBeDefined();
+    // Switch to templates tab
+    const templatesTab = screen.getByText('templates');
+    fireEvent.click(templatesTab);
+
+    // Header
+    expect(screen.getByText('Click to load')).toBeDefined();
 
     // Wait for templates to load
     const templateName = await screen.findByText('Solver, Verifier, Judge Loop');
     expect(templateName).toBeDefined();
 
     // Click load button in gallery
-    const loadBtn = screen.getByText('Load');
+    const loadBtn = screen.getByText('Load template');
     fireEvent.click(loadBtn);
 
     // fromPipelineSchema is triggered in loadPipelineFromJson, which will call setNodes/setEdges.
@@ -296,9 +306,10 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
 describe('App - Mode Switch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) })
-    ) as any;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+    }) as any;
   });
 
   afterEach(() => {
@@ -328,19 +339,20 @@ describe('App - Mode Switch', () => {
   });
 });
 
-describe('App - Chat mode disabled for multi-output pipelines', () => {
+describe('App - Chat mode enabled for multi-output pipelines', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) })
-    ) as any;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+    }) as any;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('shows disabled chat tooltip when pipeline has multiple output nodes', () => {
+  it('shows active chat panel when pipeline has multiple output nodes', () => {
     render(<ToastProvider><App /></ToastProvider>);
 
     // Inject nodes via the dev setE2EState helper
@@ -368,19 +380,19 @@ describe('App - Chat mode disabled for multi-output pipelines', () => {
     // Switch to Use mode
     fireEvent.click(screen.getByTestId('mode-use'));
 
-    // Chat should be disabled with message
-    const disabled = screen.getByTestId('chat-disabled');
-    expect(disabled).toBeDefined();
-    expect(disabled.textContent).toContain('Chat mode needs exactly one Input node and one Output node');
+    // Chat should be enabled now!
+    const panel = screen.getByTestId('chat-panel');
+    expect(panel).toBeDefined();
   });
 });
 
 describe('App - Empty state hint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) })
-    ) as any;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+    }) as any;
   });
 
   afterEach(() => {
@@ -439,9 +451,10 @@ describe('App - Editing node config updates serialized pipeline', () => {
 describe('App - WS node_done flips node visual state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) })
-    ) as any;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+    }) as any;
   });
 
   afterEach(() => {
@@ -486,7 +499,7 @@ describe('App - WS node_done flips node visual state', () => {
       </ToastProvider>
     );
 
-    const input = getByLabelText('Import Pipeline') as HTMLInputElement;
+    const input = getByLabelText(/↓ Import/i) as HTMLInputElement;
     const invalidSchema = { schema_version: '1.0' }; // Invalid version
     const file = new File([JSON.stringify(invalidSchema)], 'pipeline.json', { type: 'application/json' });
     

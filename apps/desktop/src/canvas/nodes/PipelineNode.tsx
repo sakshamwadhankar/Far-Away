@@ -43,7 +43,13 @@ export interface PipelineNodeData extends Omit<SchemaNode, 'id'> {
 
 export default function PipelineNode({ data, selected }: { data: PipelineNodeData; selected: boolean }) {
   const { type, role, endpoint_ref, inputs = [], outputs = [], status = 'idle' } = data;
-  const accent = TYPE_ACCENTS[type] ?? FALLBACK_ACCENT;
+  const customLabel = data.config?.custom_label as string | undefined;
+  const customColor = data.config?.custom_color as string | undefined;
+
+  // Use custom color if present, otherwise fall back to built-in type accents
+  const accent = customColor
+    ? { bg: `${customColor}22`, fg: customColor, dot: customColor }
+    : (TYPE_ACCENTS[type] ?? FALLBACK_ACCENT);
 
   const getBorderColor = () => {
     if (selected) return '#C8D94A';
@@ -142,7 +148,7 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
             gap: 4,
             fontFamily: "'DM Mono', monospace",
           }}>
-            {type}
+            {customLabel || type}
             {statusIcon && (
               <span
                 data-testid={`node-status-icon-${status}`}
