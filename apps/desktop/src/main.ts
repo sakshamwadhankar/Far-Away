@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -70,13 +70,17 @@ function spawnBackend(win: BrowserWindow) {
 }
 
 function createWindow() {
+  // Remove native menu bar (File / Edit / View / Window)
+  Menu.setApplicationMenu(null);
+
   win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC as string, 'electron-vite.svg'),
+    icon: path.join(process.env.VITE_PUBLIC as string, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
     width: 1200,
     height: 800,
+    autoHideMenuBar: true,
   });
 
   // Test active push message to Renderer-process.

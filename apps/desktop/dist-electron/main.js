@@ -82,11 +82,13 @@ function spawnBackend(win) {
 	});
 }
 function createWindow() {
+	electron.Menu.setApplicationMenu(null);
 	win = new electron.BrowserWindow({
-		icon: node_path.default.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+		icon: node_path.default.join(process.env.VITE_PUBLIC, "icon.png"),
 		webPreferences: { preload: node_path.default.join(__dirname, "preload.mjs") },
 		width: 1200,
-		height: 800
+		height: 800,
+		autoHideMenuBar: true
 	});
 	win.webContents.on("did-finish-load", () => {
 		win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());

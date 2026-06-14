@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { NodeType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
+import KomvosLogo from '../assets/KomvosLogo.png';
 
 // ─── Icons (inline SVG, no external dep) ─────────────────────────────────────
 const ICON_MAP: Record<string, string> = {
@@ -71,27 +72,8 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
       style={{ width: 240, padding: '16px 12px', gap: 0 }}
     >
       {/* Header */}
-      <div style={{ padding: '4px 4px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          fontWeight: 500,
-          color: 'var(--text-3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          marginBottom: 8,
-        }}>
-          Far-Away
-        </div>
-        <div style={{
-          fontFamily: 'var(--font-ui)',
-          fontSize: 18,
-          fontWeight: 700,
-          color: 'var(--text)',
-          letterSpacing: '-0.02em',
-        }}>
-          Pipeline Studio
-        </div>
+      <div style={{ padding: '4px 4px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center' }}>
+        <img src={KomvosLogo} alt="Komvos Logo" style={{ height: 32, objectFit: 'contain' }} />
       </div>
 
       {/* Section toggle */}
