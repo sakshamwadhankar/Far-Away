@@ -85,7 +85,6 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         boxShadow: getBoxShadow(),
         position: 'relative',
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-        overflow: 'hidden',
       }}
     >
       {/* Estimate tooltip above node */}
@@ -125,6 +124,8 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
         background: accent.bg,
         padding: '8px 12px',
         borderBottom: `1px solid ${accent.dot}33`,
+        borderTopLeftRadius: 14.5,
+        borderTopRightRadius: 14.5,
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',

@@ -57,6 +57,8 @@ from neuralflow.api.models import (
     SaveCustomNodeRequest,
     CustomNodeResponse,
     SaveCustomNodeResponse,
+    ApiKeysResponse,
+    ApiKeysUpdateRequest,
 )
 from neuralflow.api.registry import run_registry
 from neuralflow.compiler.dag import compile as compile_pipeline
@@ -352,6 +354,42 @@ async def publish_custom_node(node_id: str) -> PublishTemplateResponse:
 
 
 # ---------------------------------------------------------------------------
+# /settings/api-keys  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/settings/api-keys", response_model=ApiKeysResponse, dependencies=[Depends(verify_token)])
+async def get_api_keys_status() -> ApiKeysResponse:
+    """Return which API keys are set (boolean status only)."""
+    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia"]
+    status = {}
+    for p in providers:
+        status[p] = bool(keyring.get_password("neuralflow", p))
+    return ApiKeysResponse(keys=status)
+
+
+@app.post("/settings/api-keys", response_model=ApiKeysResponse, dependencies=[Depends(verify_token)])
+async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiKeysResponse:
+    """Update API keys in OS keychain."""
+    for provider, key in req.keys.items():
+        if key.strip() == "":
+            # Delete if empty
+            try:
+                keyring.delete_password("neuralflow", provider)
+            except Exception:
+                pass
+        else:
+            keyring.set_password("neuralflow", provider, key.strip())
+            
+    # Return updated status
+    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia"]
+    status = {}
+    for p in providers:
+        status[p] = bool(keyring.get_password("neuralflow", p))
+    return ApiKeysResponse(keys=status)
+
+
+# ---------------------------------------------------------------------------
 # GET /models  (auth required)
 # ---------------------------------------------------------------------------
 
@@ -472,6 +510,69 @@ async def list_models() -> ModelsResponse:
                             ))
             except Exception:
                 pass
+
+        # 5. Groq
+        groq_key = keyring.get_password("neuralflow", "groq")
+        if groq_key:
+            try:
+                resp = await client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {groq_key}"}
+                )
+                if resp.status_code == 200:
+                    for m in resp.json().get("data", []):
+                        name = m.get("id")
+                        if name:
+                            infos.append(ModelInfo(
+                                endpoint_id=f"groq:{name}", provider="groq", model_name=name,
+                                max_context=8192, json_mode=True, tools=True, vision=False
+                            ))
+            except Exception: pass
+
+        # 6. OpenRouter
+        openrouter_key = keyring.get_password("neuralflow", "openrouter")
+        if openrouter_key:
+            try:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {openrouter_key}"}
+                )
+                if resp.status_code == 200:
+                    for m in resp.json().get("data", []):
+                        name = m.get("id")
+                        if name:
+                            infos.append(ModelInfo(
+                                endpoint_id=f"openrouter:{name}", provider="openrouter", model_name=name,
+                                max_context=128000, json_mode=True, tools=True, vision=True
+                            ))
+            except Exception: pass
+
+        # 7. Nvidia
+        nvidia_key = keyring.get_password("neuralflow", "nvidia")
+        if nvidia_key:
+            try:
+                resp = await client.get(
+                    "https://integrate.api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {nvidia_key}"}
+                )
+                if resp.status_code == 200:
+                    for m in resp.json().get("data", []):
+                        name = m.get("id")
+                        if name:
+                            infos.append(ModelInfo(
+                                endpoint_id=f"nvidia:{name}", provider="nvidia", model_name=name,
+                                max_context=128000, json_mode=True, tools=True, vision=True
+                            ))
+            except Exception: pass
+
+        # 8. Zhipu (GLM)
+        zhipu_key = keyring.get_password("neuralflow", "zhipu")
+        if zhipu_key:
+            for name in ["glm-4", "glm-4v", "glm-4-plus", "glm-3-turbo"]:
+                infos.append(ModelInfo(
+                    endpoint_id=f"zhipu:{name}", provider="zhipu", model_name=name,
+                    max_context=128000, json_mode=True, tools=True, vision=(name=="glm-4v")
+                ))
 
     return ModelsResponse(models=infos)
 

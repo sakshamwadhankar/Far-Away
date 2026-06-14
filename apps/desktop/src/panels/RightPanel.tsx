@@ -9,6 +9,7 @@ interface RightPanelProps {
   updateNodeData: (id: string, newData: Partial<PipelineNodeData>) => void;
   availableModels?: ModelInfo[];
   onDeleteNode: (id: string) => void;
+  onManageApis?: () => void;
 }
 
 const STOP_OPS: StopOp[] = ['==', '!=', '>', '<', '>=', '<=', 'contains'];
@@ -25,7 +26,7 @@ const TYPE_COLORS: Record<string, string> = {
   compare:   '#5A3A8A',
 };
 
-export default function RightPanel({ selectedNode, updateNodeData, availableModels = [], onDeleteNode }: RightPanelProps) {
+export default function RightPanel({ selectedNode, updateNodeData, availableModels = [], onDeleteNode, onManageApis }: RightPanelProps) {
   if (!selectedNode) {
     return (
       <div className="nf-right-panel">
@@ -165,7 +166,14 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
               <label className="nf-label">Endpoint</label>
               <select
                 value={data.endpoint_ref || ''}
-                onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === 'MANAGE_APIS') {
+                    if (onManageApis) onManageApis();
+                    // Do not update node data
+                    return;
+                  }
+                  handleBaseChange('endpoint_ref', e.target.value);
+                }}
                 className="nf-input"
               >
                 <option value="" disabled>Select a model…</option>
@@ -176,6 +184,9 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                     ))}
                   </optgroup>
                 ))}
+                <optgroup label="Providers">
+                  <option value="MANAGE_APIS">⚙ Add / Manage API Keys…</option>
+                </optgroup>
               </select>
             </div>
             <div className="nf-field-group">

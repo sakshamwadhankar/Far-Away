@@ -30,15 +30,23 @@ class CloudEndpoint(ModelEndpoint):
         key_name = "openai" if self.provider == "openai_compatible" else self.provider
         api_key = keyring.get_password("neuralflow", key_name)
         if not api_key:
-            raise ValueError(f"Missing API key for provider '{key_name}' in OS keychain. Please add it via keyring.")
+            raise ValueError(f"Missing API key for provider '{key_name}' in OS keychain. Please add it via keyring or Settings.")
         return api_key
 
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         api_key = self._get_api_key()
         
-        if self.provider in ("openai", "openai_compatible"):
+        if self.provider in ("openai", "openai_compatible", "groq", "openrouter", "zhipu", "nvidia"):
             from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
+            
+            base_url = self.base_url
+            if not base_url:
+                if self.provider == "groq": base_url = "https://api.groq.com/openai/v1"
+                elif self.provider == "openrouter": base_url = "https://openrouter.ai/api/v1"
+                elif self.provider == "zhipu": base_url = "https://open.bigmodel.cn/api/paas/v4"
+                elif self.provider == "nvidia": base_url = "https://integrate.api.nvidia.com/v1"
+
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
             
             msgs_dicts = [m.model_dump() for m in req.messages]
             kwargs: Dict[str, Any] = {"model": self.model_name, "messages": msgs_dicts, "stream": True}
@@ -104,7 +112,7 @@ class CloudEndpoint(ModelEndpoint):
             return Health(online=False, loaded=False, warm=False)
 
     def capabilities(self) -> Caps:
-        json_mode = self.provider in ("openai", "openai_compatible", "google")
+        json_mode = self.provider in ("openai", "openai_compatible", "google", "groq", "openrouter", "zhipu", "nvidia")
         return Caps(max_context=128000, json_mode=json_mode, tools=True, vision=True)
 
     def estimate_cost(self, req: GenRequest) -> Cost:

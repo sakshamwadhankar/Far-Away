@@ -15,6 +15,7 @@ import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
 import PublishModal from './components/PublishModal';
 import CustomNodeModal from './components/CustomNodeModal';
+import SettingsModal from './components/SettingsModal';
 import Tour from './components/Tour';
 import type { CustomNodeDef } from './panels/LeftSidebar';
 
@@ -51,6 +52,7 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showCustomNodeModal, setShowCustomNodeModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customNodes, setCustomNodes] = useState<CustomNodeDef[]>([]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>([]);
@@ -842,6 +844,15 @@ export default function App() {
                 </button>
                 <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
                 <button
+                  onClick={() => setShowSettingsModal(true)}
+                  title="Manage API Keys"
+                  className="nf-pill-btn"
+                  style={{ boxShadow: 'var(--shadow-sm)', color: 'var(--text)' }}
+                >
+                  ⚙ Settings
+                </button>
+                <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
+                <button
                   onClick={handleClearWorkspace}
                   title="Clear Workspace"
                   className="nf-pill-btn"
@@ -965,6 +976,7 @@ export default function App() {
         updateNodeData={updateNodeData} 
         availableModels={availableModels}
         onDeleteNode={(id) => deleteNodes([id])}
+        onManageApis={() => setShowSettingsModal(true)}
       />
 
       {showTrace && runId && (
@@ -999,6 +1011,15 @@ export default function App() {
         <CustomNodeModal
           onSave={handleSaveCustomNode}
           onCancel={() => setShowCustomNodeModal(false)}
+        />
+      )}
+      
+      {showSettingsModal && (
+        <SettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          backendPort={backendPort}
+          backendToken={backendToken}
+          API_BASE={API_BASE}
         />
       )}
     </div>
