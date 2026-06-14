@@ -1,1 +1,139 @@
-var e=Object.create,t=Object.defineProperty,n=Object.getOwnPropertyDescriptor,r=Object.getOwnPropertyNames,i=Object.getPrototypeOf,a=Object.prototype.hasOwnProperty,o=(e,i,o,s)=>{if(i&&typeof i==`object`||typeof i==`function`)for(var c=r(i),l=0,u=c.length,d;l<u;l++)d=c[l],!a.call(e,d)&&d!==o&&t(e,d,{get:(e=>i[e]).bind(null,d),enumerable:!(s=n(i,d))||s.enumerable});return e},s=(n,r,a)=>(a=n==null?{}:e(i(n)),o(r||!n||!n.__esModule?t(a,`default`,{value:n,enumerable:!0}):a,n));let c=require("electron"),l=require("node:path");l=s(l);let u=require("node:http");u=s(u);let d=require("node:crypto");d=s(d);let f=require("node:child_process"),p=require("node:net");p=s(p),process.env.DIST=l.default.join(__dirname,`../dist`),process.env.VITE_PUBLIC=c.app.isPackaged?process.env.DIST:l.default.join(process.env.DIST,`../public`);var m,h=process.env.VITE_DEV_SERVER_URL;function g(){u.default.get(`http://127.0.0.1:11434/`,e=>{e.statusCode!==200&&_()}).on(`error`,()=>{_()})}function _(){c.dialog.showMessageBox({type:`info`,title:`Ollama Not Detected`,message:`Ollama not detected — local models unavailable. Install from ollama.com and run 'ollama pull qwen2.5:3b'. Cloud models still work.`,buttons:[`OK`]})}function v(e){let t=d.default.randomUUID(),n=p.default.createServer();n.listen(0,`127.0.0.1`,()=>{let r=n.address().port;n.close(()=>{console.log(`[Backend] Starting Python backend on port ${r}...`);let n=process.platform===`win32`,i=c.app.isPackaged?l.default.join(process.resourcesPath,`backend`):l.default.join(__dirname,`../../../backend`),a;a=c.app.isPackaged?(0,f.spawn)(n?l.default.join(i,`komvos_backend.exe`):l.default.join(i,`komvos_backend`),[`--host`,`127.0.0.1`,`--port`,r.toString()],{cwd:i,env:{...process.env,NEURALFLOW_SESSION_TOKEN:t}}):(0,f.spawn)(n?l.default.join(i,`.venv`,`Scripts`,`python.exe`):l.default.join(i,`.venv`,`bin`,`python`),[`-m`,`uvicorn`,`neuralflow.api.main:app`,`--host`,`127.0.0.1`,`--port`,r.toString()],{cwd:i,env:{...process.env,NEURALFLOW_SESSION_TOKEN:t}}),a.stdout.on(`data`,e=>console.log(`[Backend] ${e}`)),a.stderr.on(`data`,e=>console.error(`[Backend ERR] ${e}`));let o=()=>{u.default.get(`http://127.0.0.1:${r}/health`,n=>{n.statusCode===200?(console.log(`[Backend] Ready on port ${r} with token ${t}`),e.webContents.send(`backend-ready`,{port:r,token:t})):setTimeout(o,500)}).on(`error`,()=>{setTimeout(o,500)})};setTimeout(o,500),c.app.on(`will-quit`,()=>{a.kill()})})})}function y(){c.Menu.setApplicationMenu(null),m=new c.BrowserWindow({icon:l.default.join(process.env.VITE_PUBLIC,`icon.png`),webPreferences:{preload:l.default.join(__dirname,`preload.mjs`)},width:1200,height:800,autoHideMenuBar:!0}),m.webContents.on(`did-finish-load`,()=>{m?.webContents.send(`main-process-message`,new Date().toLocaleString()),v(m),g()}),h?m.loadURL(h):m.loadFile(l.default.join(process.env.DIST,`index.html`))}c.app.on(`window-all-closed`,()=>{process.platform!==`darwin`&&(c.app.quit(),m=null)}),c.app.on(`activate`,()=>{c.BrowserWindow.getAllWindows().length===0&&y()}),c.app.whenReady().then(y);
+//#region \0rolldown/runtime.js
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+		key = keys[i];
+		if (!__hasOwnProp.call(to, key) && key !== except) __defProp(to, key, {
+			get: ((k) => from[k]).bind(null, key),
+			enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+		});
+	}
+	return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", {
+	value: mod,
+	enumerable: true
+}) : target, mod));
+//#endregion
+let electron = require("electron");
+let node_path = require("node:path");
+node_path = __toESM(node_path);
+let node_http = require("node:http");
+node_http = __toESM(node_http);
+let node_crypto = require("node:crypto");
+node_crypto = __toESM(node_crypto);
+let node_child_process = require("node:child_process");
+let node_net = require("node:net");
+node_net = __toESM(node_net);
+//#region src/main.ts
+process.env.DIST = node_path.default.join(__dirname, "../dist");
+process.env.VITE_PUBLIC = electron.app.isPackaged ? process.env.DIST : node_path.default.join(process.env.DIST, "../public");
+var win;
+var VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+function checkOllama() {
+	node_http.default.get("http://127.0.0.1:11434/", (res) => {
+		if (res.statusCode !== 200) showOllamaWarning();
+	}).on("error", () => {
+		showOllamaWarning();
+	});
+}
+function showOllamaWarning() {
+	electron.dialog.showMessageBox({
+		type: "info",
+		title: "Ollama Not Detected",
+		message: "Ollama not detected — local models unavailable. Install from ollama.com and run 'ollama pull qwen2.5:3b'. Cloud models still work.",
+		buttons: ["OK"]
+	});
+}
+function spawnBackend(win) {
+	const token = node_crypto.default.randomUUID();
+	const srv = node_net.default.createServer();
+	srv.listen(0, "127.0.0.1", () => {
+		const port = srv.address().port;
+		srv.close(() => {
+			console.log(`[Backend] Starting Python backend on port ${port}...`);
+			const isWin = process.platform === "win32";
+			const backendDir = electron.app.isPackaged ? node_path.default.join(process.resourcesPath, "backend") : node_path.default.join(__dirname, "../../../backend");
+			let backendProcess;
+			if (electron.app.isPackaged) backendProcess = (0, node_child_process.spawn)(isWin ? node_path.default.join(backendDir, "komvos_backend.exe") : node_path.default.join(backendDir, "komvos_backend"), [
+				"--host",
+				"127.0.0.1",
+				"--port",
+				port.toString()
+			], {
+				cwd: backendDir,
+				env: {
+					...process.env,
+					NEURALFLOW_SESSION_TOKEN: token
+				}
+			});
+			else backendProcess = (0, node_child_process.spawn)(isWin ? node_path.default.join(backendDir, ".venv", "Scripts", "python.exe") : node_path.default.join(backendDir, ".venv", "bin", "python"), [
+				"-m",
+				"uvicorn",
+				"neuralflow.api.main:app",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				port.toString()
+			], {
+				cwd: backendDir,
+				env: {
+					...process.env,
+					NEURALFLOW_SESSION_TOKEN: token
+				}
+			});
+			backendProcess.stdout.on("data", (data) => console.log(`[Backend] ${data}`));
+			backendProcess.stderr.on("data", (data) => console.error(`[Backend ERR] ${data}`));
+			const checkHealth = () => {
+				node_http.default.get(`http://127.0.0.1:${port}/health`, (res) => {
+					if (res.statusCode === 200) {
+						console.log(`[Backend] Ready on port ${port} with token ${token}`);
+						win.webContents.send("backend-ready", {
+							port,
+							token
+						});
+					} else setTimeout(checkHealth, 500);
+				}).on("error", () => {
+					setTimeout(checkHealth, 500);
+				});
+			};
+			setTimeout(checkHealth, 500);
+			electron.app.on("will-quit", () => {
+				backendProcess.kill();
+			});
+		});
+	});
+}
+function createWindow() {
+	electron.Menu.setApplicationMenu(null);
+	win = new electron.BrowserWindow({
+		icon: node_path.default.join(process.env.VITE_PUBLIC, "icon.png"),
+		webPreferences: { preload: node_path.default.join(__dirname, "preload.mjs") },
+		width: 1200,
+		height: 800,
+		autoHideMenuBar: true
+	});
+	win.webContents.on("did-finish-load", () => {
+		win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+		spawnBackend(win);
+		checkOllama();
+	});
+	if (VITE_DEV_SERVER_URL) win.loadURL(VITE_DEV_SERVER_URL);
+	else win.loadFile(node_path.default.join(process.env.DIST, "index.html"));
+}
+electron.app.on("window-all-closed", () => {
+	if (process.platform !== "darwin") {
+		electron.app.quit();
+		win = null;
+	}
+});
+electron.app.on("activate", () => {
+	if (electron.BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+electron.app.whenReady().then(createWindow);
+//#endregion
