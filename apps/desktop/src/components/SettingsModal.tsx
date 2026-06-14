@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -22,7 +22,7 @@ export default function SettingsModal({ onClose, backendToken, API_BASE }: Setti
   const [isSaving, setIsSaving] = useState(false);
 
   const providers = [
-    { id: 'ollama_base_url', label: 'Ollama Base URL', placeholder: 'http://127.0.0.1:11434', type: 'text' },
+    { id: 'ollama_base_url', label: 'Local / Ngrok Hosted URL (Ollama)', placeholder: 'http://127.0.0.1:11434', type: 'text' },
     { id: 'openai', label: 'OpenAI API Key', placeholder: 'sk-...', type: 'password' },
     { id: 'anthropic', label: 'Anthropic API Key', placeholder: 'sk-ant-...', type: 'password' },
     { id: 'google', label: 'Google Gemini API Key', placeholder: 'AIzaSy...', type: 'password' },

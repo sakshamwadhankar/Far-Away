@@ -7,7 +7,7 @@ import RightPanel from './panels/RightPanel';
 import MonitorPanel, { NodeStat } from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
-import ChatPanel from './panels/ChatPanel';
+import ChatPanel, { ChatMessage } from './panels/ChatPanel';
 import { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
 import { useUndoRedo } from './canvas/useUndoRedo';
@@ -63,7 +63,7 @@ export default function App() {
   const { showToast } = useToast();
 
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
-  const [pipelineEstimate, setPipelineEstimate] = useState<EstimateResponse | null>(null);
+
 
   // Undo/Redo
   const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
@@ -180,53 +180,7 @@ export default function App() {
     };
   }, [API_BASE]);
 
-  // Fetch estimates when pipeline schema changes
-  useEffect(() => {
-    if (!backendConnected) return;
-    const timeout = setTimeout(async () => {
-      try {
-        const schema = toPipelineSchema(nodesRef.current as Node<PipelineNodeData>[], edgesRef.current);
-        const scrubbed = scrubSecrets(schema);
-        if (scrubbed.nodes.length === 0) {
-          setPipelineEstimate(null);
-          return;
-        }
 
-        // Prevent 422 console spam: skip estimation if any model node lacks an endpoint
-        const hasIncompleteModels = scrubbed.nodes.some((n: any) => n.type === 'model' && !n.endpoint_ref);
-        if (hasIncompleteModels) {
-          setPipelineEstimate(null);
-          return;
-        }
-
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (backendToken) headers['Authorization'] = `Bearer ${backendToken}`;
-
-        const res = await fetch(`${API_BASE}/pipelines/estimate`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ pipeline: scrubbed }),
-        });
-
-        if (res.ok) {
-          const data: EstimateResponse = await res.json();
-          setPipelineEstimate(data);
-          // Apply estimates to nodes silently
-          setNodes((nds) => nds.map((n) => {
-            const est = data.nodes[n.id];
-            if (est) {
-              return { ...n, data: { ...n.data, estimate: est } };
-            }
-            return n;
-          }));
-        }
-      } catch (err) {
-        console.warn('Failed to estimate pipeline', err);
-      }
-    }, 1000); // debounce 1s
-
-    return () => clearTimeout(timeout);
-  }, [nodes, edges, API_BASE, backendToken, backendConnected, setNodes]);
 
   const onConnect = useCallback((params: Edge | Connection) => {
     const sourceHandleType = params.sourceHandle?.split(':')[0];
@@ -443,6 +397,16 @@ export default function App() {
 
   const runPipeline = async () => {
     if (nodes.length === 0) return;
+
+    // Validate: all model nodes must have an endpoint selected
+    const modelNodes = nodes.filter(n => n.data.type === 'model');
+    const missingEndpoint = modelNodes.filter(n => !n.data.endpoint_ref);
+    if (missingEndpoint.length > 0) {
+      const names = missingEndpoint.map(n => n.data.role || n.id).join(', ');
+      showToast(`Please select a model for: ${names}`, 'error');
+      return;
+    }
+
     setIsRunning(true);
     setRunId(null);
     setShowTrace(false);
@@ -603,19 +567,12 @@ export default function App() {
       takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
       const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
       
-      // Auto-fallback missing endpoint_refs to an available model
-      if (availableModels.length > 0) {
-        newNodes.forEach((node) => {
-          if (node.data.type === 'model' && node.data.endpoint_ref) {
-            const isAvailable = availableModels.some(m => m.endpoint_id === node.data.endpoint_ref);
-            if (!isAvailable) {
-              const provider = node.data.endpoint_ref.split(':')[0];
-              const fallback = availableModels.find(m => m.provider === provider) || availableModels[0];
-              node.data.endpoint_ref = fallback.endpoint_id;
-            }
-          }
-        });
-      }
+      // Clear hardcoded endpoint_refs so user must pick their own model
+      newNodes.forEach((node) => {
+        if (node.data.type === 'model') {
+          node.data.endpoint_ref = '';
+        }
+      });
 
       setNodes(newNodes);
       setEdges(newEdges);
@@ -634,7 +591,6 @@ export default function App() {
       setEdges([]);
       setChatMessages([]);
       setChatInputValues({});
-      setPipelineEstimate(null);
       setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
       showToast('Workspace cleared', 'success');
     }
@@ -762,6 +718,7 @@ export default function App() {
       <LeftSidebar
         backendPort={backendPort}
         backendToken={backendToken}
+        backendConnected={backendConnected}
         onLoadTemplate={loadPipelineFromJson}
         onPublishClick={() => setShowPublishModal(true)}
         onCreateCustomNode={() => setShowCustomNodeModal(true)}
@@ -795,27 +752,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Connection Status */}
-            <div
-              className={`nf-tag ${
-                backendConnected === null
-                  ? 'nf-tag--checking'
-                  : backendConnected
-                  ? 'nf-tag--connected'
-                  : 'nf-tag--disconnected'
-              }`}
-              style={{ boxShadow: 'var(--shadow-sm)' }}
-              title={!backendConnected ? 'Run start.bat to launch the backend' : undefined}
-            >
-              <div className={`nf-dot ${
-                backendConnected === null ? 'nf-dot--yellow' : backendConnected ? 'nf-dot--green' : 'nf-dot--red'
-              }`} style={{ width: 6, height: 6 }} />
-              {backendConnected === null
-                ? 'Checking…'
-                : backendConnected
-                ? 'Connected'
-                : 'Disconnected — run start.bat'}
-            </div>
 
             {appMode === 'edit' && (
               <>
@@ -851,16 +787,7 @@ export default function App() {
                   className="nf-pill-btn"
                   style={{ boxShadow: 'var(--shadow-sm)', color: 'var(--text)' }}
                 >
-                  ⚙ Settings
-                </button>
-                <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
-                <button
-                  onClick={handleClearWorkspace}
-                  title="Clear Workspace"
-                  className="nf-pill-btn"
-                  style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F' }}
-                >
-                  🗑 Clear
+                  ⚙ API
                 </button>
               </>
             )}
@@ -879,24 +806,7 @@ export default function App() {
                     ◉ View Trace
                   </button>
                 )}
-                {pipelineEstimate && (
-                  <div style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 11,
-                    color: 'var(--text-2)',
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-pill)',
-                    padding: '5px 12px',
-                    boxShadow: 'var(--shadow-sm)',
-                    lineHeight: 1.4,
-                  }}>
-                    <div>~${pipelineEstimate.total_usd.toFixed(4)} · ~{(pipelineEstimate.total_latency_ms/1000).toFixed(1)}s</div>
-                    {pipelineEstimate.loop_multiplier > 1 && (
-                      <div style={{ color: '#8A5A10', fontSize: 10 }}>⚠ Loop ×{pipelineEstimate.loop_multiplier}</div>
-                    )}
-                  </div>
-                )}
+
                 <button
                   data-testid="run-pipeline-button"
                   onClick={runPipeline}
@@ -957,6 +867,20 @@ export default function App() {
               inputValues={chatInputValues}
               setInputValues={setChatInputValues}
             />
+          )}
+
+          {/* Bottom Right Floating Controls */}
+          {appMode === 'edit' && (
+            <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}>
+              <button
+                onClick={handleClearWorkspace}
+                title="Clear Workspace"
+                className="nf-pill-btn"
+                style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F', background: 'var(--surface)' }}
+              >
+                🗑 Clear
+              </button>
+            </div>
           )}
         </div>
 

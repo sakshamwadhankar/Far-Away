@@ -420,30 +420,43 @@ async def list_models() -> ModelsResponse:
             )
 
     async with httpx.AsyncClient(timeout=3.0) as client:
-        # 1. Ollama
+        # 1. Ollama — always check localhost AND custom URL (e.g. ngrok)
         ollama_base = keyring.get_password("neuralflow", "ollama_base_url")
         if not ollama_base or not ollama_base.startswith("http"):
-            ollama_base = "http://127.0.0.1:11434"
-        ollama_base = ollama_base.rstrip("/")
-        
-        try:
-            resp = await client.get(f"{ollama_base}/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                for m in data.get("models", []):
-                    name = m.get("name")
-                    if name:
-                        infos.append(ModelInfo(
-                            endpoint_id=f"ollama:{name}",
-                            provider="ollama",
-                            model_name=name,
-                            max_context=8192,
-                            json_mode=True,
-                            tools=False,
-                            vision=False
-                        ))
-        except Exception:
-            pass
+            ollama_base = None
+
+        # Build list of Ollama URLs to probe (dedup)
+        ollama_urls: list[str] = ["http://127.0.0.1:11434"]
+        if ollama_base:
+            normalized = ollama_base.rstrip("/")
+            if normalized not in ollama_urls:
+                ollama_urls.append(normalized)
+
+        seen_ollama_ids: set[str] = set()
+        for base_url in ollama_urls:
+            try:
+                resp = await client.get(
+                    f"{base_url}/api/tags",
+                    headers={"ngrok-skip-browser-warning": "true"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("models", []):
+                        name = m.get("name")
+                        eid = f"ollama:{name}"
+                        if name and eid not in seen_ollama_ids:
+                            seen_ollama_ids.add(eid)
+                            infos.append(ModelInfo(
+                                endpoint_id=eid,
+                                provider="ollama",
+                                model_name=name,
+                                max_context=8192,
+                                json_mode=True,
+                                tools=False,
+                                vision=False
+                            ))
+            except Exception:
+                pass
 
         # 2. OpenAI
         openai_key = keyring.get_password("neuralflow", "openai")
@@ -588,6 +601,38 @@ async def list_models() -> ModelsResponse:
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_ollama_base(model_name: str, descriptor_base: str | None) -> str:
+    """
+    Resolve the correct base URL for an Ollama execution.
+    If a custom ngrok URL is saved, we still want local models (like qwen) to run
+    against localhost:11434 if they exist locally.
+    """
+    if descriptor_base:
+        return f"{descriptor_base.rstrip('/')}/v1"
+        
+    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
+    if not saved_base or not saved_base.startswith("http"):
+        return "http://127.0.0.1:11434/v1"
+        
+    # We have a custom ngrok URL. Let's see if the requested model exists on localhost.
+    try:
+        # trust_env=False prevents local proxies from intercepting localhost requests
+        async with httpx.AsyncClient(timeout=3.0, trust_env=False) as client:
+            resp = await client.get("http://127.0.0.1:11434/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                for m in data.get("models", []):
+                    # Check exact or prefix match just in case
+                    if m.get("name") == model_name or m.get("name", "").startswith(model_name + ":"):
+                        return "http://127.0.0.1:11434/v1"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to check local ollama tags for {model_name}: {e}")
+        
+    # Fallback to custom URL
+    return f"{saved_base.rstrip('/')}/v1"
+
+
 @app.post(
     "/pipelines/run",
     response_model=RunResponse,
@@ -639,18 +684,13 @@ async def start_run(body: RunRequest) -> RunResponse:
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
-                ollama_base = descriptor.base_url
-                if not ollama_base:
-                    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
-                    if saved_base:
-                        ollama_base = f"{saved_base.rstrip('/')}/v1"
-                    else:
-                        ollama_base = "http://127.0.0.1:11434/v1"
+                ollama_model = descriptor.model or "qwen2.5:3b"
+                ollama_base = await _resolve_ollama_base(ollama_model, descriptor.base_url)
 
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
                     base_url=ollama_base,
-                    model=descriptor.model or "qwen2.5:3b",
+                    model=ollama_model,
                 )
             else:
                 raise HTTPException(
@@ -745,18 +785,13 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
-                ollama_base = descriptor.base_url
-                if not ollama_base:
-                    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
-                    if saved_base and saved_base.startswith("http"):
-                        ollama_base = f"{saved_base.rstrip('/')}/v1"
-                    else:
-                        ollama_base = "http://127.0.0.1:11434/v1"
+                ollama_model = descriptor.model or "qwen2.5:3b"
+                ollama_base = await _resolve_ollama_base(ollama_model, descriptor.base_url)
 
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
                     base_url=ollama_base,
-                    model=descriptor.model or "qwen2.5:3b",
+                    model=ollama_model,
                 )
 
     from neuralflow.endpoints.base import GenRequest, Message

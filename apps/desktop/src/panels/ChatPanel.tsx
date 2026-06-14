@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { toPipelineSchema } from '../canvas/serializer';
@@ -89,6 +89,21 @@ export default function ChatPanel({
     const inputNodes = nodes.filter(n => n.data.type === 'input');
     const outputNodes = nodes.filter(n => n.data.type === 'output');
     if (!inputNodes.length || !outputNodes.length || isRunning || !compatible) return;
+
+    // Validate: all model nodes must have an endpoint selected
+    const modelNodes = nodes.filter(n => n.data.type === 'model');
+    const missingEndpoint = modelNodes.filter(n => !n.data.endpoint_ref);
+    if (missingEndpoint.length > 0) {
+      const names = missingEndpoint.map(n => n.data.role || n.id).join(', ');
+      const errMsg: ChatMessage = {
+        id: `msg-${Date.now()}-err`,
+        role: 'system',
+        content: `⚠️ Please select a model for: ${names}. Switch to Edit mode and pick an endpoint.`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errMsg]);
+      return;
+    }
 
     // Build a formatted user message containing all provided inputs
     const textChunks = inputNodes.map(n => {
@@ -228,7 +243,7 @@ export default function ChatPanel({
               } else {
                 // Multi-output mode! Wipes stream and sets distinct blocks.
                 hasStartedOutputs = true;
-                outputResults[data.node_id] = String(firstValue);
+                outputResults[data.node_id as string] = String(firstValue);
                 
                 const outputsArray = Object.entries(outputResults).map(([id, val]) => {
                   const outNode = outputNodes.find(n => n.id === id);
@@ -325,7 +340,7 @@ export default function ChatPanel({
     onWsEvent,
   ]);
 
-  const handleKeyDown = (e: React.KeyboardEvent, nodeId: string) => {
+  const handleKeyDown = (e: React.KeyboardEvent, _nodeId: string) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();

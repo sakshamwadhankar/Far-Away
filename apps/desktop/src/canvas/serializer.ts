@@ -20,7 +20,7 @@ export function toPipelineSchema(
     return {
       id: n.id,
       type: n.data.type,
-      endpoint_ref: n.data.endpoint_ref,
+      endpoint_ref: n.data.type === 'model' ? n.data.endpoint_ref : undefined,
       role: n.data.role,
       config: n.data.config,
       inputs: n.data.inputs,

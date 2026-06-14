@@ -53,6 +53,7 @@ export interface CustomNodeDef {
 interface LeftSidebarProps {
   backendPort: number | null;
   backendToken: string | null;
+  backendConnected: boolean | null;
   onLoadTemplate?: (schema: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
   onPublishClick?: () => void;
   onCreateCustomNode?: () => void;
@@ -61,22 +62,15 @@ interface LeftSidebarProps {
   API_BASE: string;
 }
 
-export default function LeftSidebar({ backendPort: _backendPort, backendToken, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, API_BASE }: LeftSidebarProps) {
+export default function LeftSidebar({ backendPort: _backendPort, backendToken, backendConnected, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, API_BASE }: LeftSidebarProps) {
   const [templates, setTemplates] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([]);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'nodes' | 'templates' | 'library'>('nodes');
 
   useEffect(() => {
-    fetch(`${API_BASE}/health`)
-      .then(r => { if (r.ok) setIsConnected(true); else setIsConnected(false); })
-      .catch(() => setIsConnected(false));
-  }, [API_BASE]);
-
-  useEffect(() => {
-    if (!isConnected || !backendToken) return;
+    if (!backendConnected || !backendToken) return;
     setTemplateError(null);
     fetch(`${API_BASE}/pipelines/templates`, { headers: { 'Authorization': `Bearer ${backendToken}` } })
       .then(r => {
@@ -88,11 +82,11 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
         console.warn('Failed to fetch templates:', e);
         setTemplateError('Backend not reachable');
       });
-  }, [isConnected, API_BASE, backendToken]);
+  }, [backendConnected, API_BASE, backendToken]);
 
   // Fetch library templates
   const fetchLibrary = useCallback(() => {
-    if (!isConnected || !backendToken) return;
+    if (!backendConnected || !backendToken) return;
     setLibraryError(null);
     fetch(`${API_BASE}/library/templates`, { headers: { 'Authorization': `Bearer ${backendToken}` } })
       .then(r => {
@@ -104,7 +98,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
         console.warn('Failed to fetch library templates:', e);
         setLibraryError('Could not load library');
       });
-  }, [isConnected, API_BASE, backendToken]);
+  }, [backendConnected, API_BASE, backendToken]);
 
   useEffect(() => {
     if (activeSection === 'library') fetchLibrary();
@@ -145,12 +139,15 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
     <div
       data-tour="palette"
       className="nf-sidebar"
-      style={{ width: 240, padding: '16px 12px', gap: 0 }}
+      style={{ width: 240, padding: '16px 12px', gap: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}
     >
       {/* Header */}
-      <div style={{ padding: '4px 4px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center' }}>
+      <div style={{ padding: '4px 4px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <img src={KomvosLogo} alt="Komvos Logo" style={{ height: 32, objectFit: 'contain' }} />
       </div>
+
+      {/* Scrollable Content */}
+      <div className="nf-scrollable" style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', paddingBottom: 16 }}>
 
       {/* Section toggle */}
       <div style={{ display: 'flex', gap: 4, marginTop: 14, marginBottom: 12 }}>
@@ -176,7 +173,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               boxShadow: activeSection === s ? '0 1px 4px rgba(200,217,74,0.35)' : 'none',
             }}
           >
-            {s === 'library' ? '📚 Library' : s}
+            {s}
           </button>
         ))}
       </div>
@@ -337,7 +334,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
               onClick={onPublishClick}
               style={{ marginBottom: 4 }}
             >
-              📤 Publish Current Pipeline
+              Publish Current Pipeline
             </button>
           )}
 
@@ -406,13 +403,14 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, o
           )}
         </div>
       )}
+      </div>
 
       {/* Footer: backend status */}
-      <div style={{ marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+      <div style={{ paddingTop: 14, borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div className={`nf-dot ${isConnected ? 'nf-dot--green' : 'nf-dot--red'}`} />
-          <span style={{ fontSize: 11, color: isConnected ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-mono)' }}>
-            {isConnected ? `Connected · ${API_BASE.split(':').pop()}` : 'Disconnected'}
+          <div className={`nf-dot ${backendConnected ? 'nf-dot--green' : 'nf-dot--red'}`} />
+          <span style={{ fontSize: 11, color: backendConnected ? 'var(--success)' : 'var(--error)', fontFamily: 'var(--font-mono)' }}>
+            {backendConnected ? `Connected · ${API_BASE.split(':').pop()}` : 'Disconnected'}
           </span>
         </div>
       </div>

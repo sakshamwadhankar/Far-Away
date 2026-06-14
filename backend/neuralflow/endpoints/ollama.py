@@ -44,7 +44,8 @@ class OllamaEndpoint:
             async with client.stream(
                 "POST", 
                 f"{self._base_url}/chat/completions",
-                json=payload
+                json=payload,
+                headers={"ngrok-skip-browser-warning": "true"}
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():

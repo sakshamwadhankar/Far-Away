@@ -64,11 +64,15 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
   }, {} as Record<string, ModelInfo[]>);
 
   const providerNames: Record<string, string> = {
-    ollama:    'Local (Ollama)',
-    openai:    'OpenAI',
-    anthropic: 'Anthropic',
-    google:    'Google',
-    mock:      'Mock (Testing)',
+    ollama:      'Local / Ngrok (Ollama)',
+    openai:      'OpenAI',
+    anthropic:   'Anthropic',
+    google:      'Google',
+    groq:        'Groq',
+    openrouter:  'OpenRouter',
+    nvidia:      'Nvidia NIM',
+    zhipu:       'Zhipu (GLM)',
+    mock:        'Mock (Testing)',
   };
 
   return (
@@ -258,32 +262,6 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                 <option value="max_numeric">Max Numeric</option>
               </select>
             </div>
-            <div className="nf-field-group">
-              <label className="nf-label">Endpoint</label>
-              <select
-                value={data.endpoint_ref || ''}
-                onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)}
-                className="nf-input"
-              >
-                <option value="" disabled>Select a model…</option>
-                {Object.entries(groupedModels).map(([provider, models]) => (
-                  <optgroup key={provider} label={providerNames[provider] || provider}>
-                    {models.map(m => (
-                      <option key={m.endpoint_id} value={m.endpoint_id}>{m.model_name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div className="nf-field-group">
-              <label className="nf-label">System Prompt</label>
-              <textarea
-                rows={3}
-                value={config.system_prompt || ''}
-                onChange={(e) => handleConfigChange('system_prompt', e.target.value)}
-                className="nf-input"
-              />
-            </div>
           </>
         )}
 
@@ -291,32 +269,6 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
         {data.type === 'router' && (
           <>
             <div className="nf-section-header">Router Config</div>
-            <div className="nf-field-group">
-              <label className="nf-label">Endpoint</label>
-              <select
-                value={data.endpoint_ref || ''}
-                onChange={(e) => handleBaseChange('endpoint_ref', e.target.value)}
-                className="nf-input"
-              >
-                <option value="" disabled>Select a model…</option>
-                {Object.entries(groupedModels).map(([provider, models]) => (
-                  <optgroup key={provider} label={providerNames[provider] || provider}>
-                    {models.map(m => (
-                      <option key={m.endpoint_id} value={m.endpoint_id}>{m.model_name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div className="nf-field-group">
-              <label className="nf-label">System Prompt</label>
-              <textarea
-                rows={3}
-                value={config.system_prompt || ''}
-                onChange={(e) => handleConfigChange('system_prompt', e.target.value)}
-                className="nf-input"
-              />
-            </div>
             <RouterConfig config={config} onConfigChange={handleConfigChange} />
           </>
         )}

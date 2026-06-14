@@ -493,7 +493,7 @@ describe('App - WS node_done flips node visual state', () => {
     }
   });
   it('shows error toast for invalid imported pipeline JSON', () => {
-    const { getByText, getByLabelText, queryByText } = render(
+    const { getByText, getByLabelText } = render(
       <ToastProvider>
         <App />
       </ToastProvider>
