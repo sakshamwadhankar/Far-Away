@@ -598,6 +598,21 @@ export default function App() {
     try {
       takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
       const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
+      
+      // Auto-fallback missing endpoint_refs to an available model
+      if (availableModels.length > 0) {
+        newNodes.forEach((node) => {
+          if (node.data.type === 'model' && node.data.endpoint_ref) {
+            const isAvailable = availableModels.some(m => m.endpoint_id === node.data.endpoint_ref);
+            if (!isAvailable) {
+              const provider = node.data.endpoint_ref.split(':')[0];
+              const fallback = availableModels.find(m => m.provider === provider) || availableModels[0];
+              node.data.endpoint_ref = fallback.endpoint_id;
+            }
+          }
+        });
+      }
+
       setNodes(newNodes);
       setEdges(newEdges);
       setChatMessages([]);
@@ -605,6 +620,19 @@ export default function App() {
     } catch (err: any) {
       console.error('Failed to load pipeline from JSON', err);
       showToast(err.message || 'Invalid pipeline JSON', 'error');
+    }
+  };
+
+  const handleClearWorkspace = () => {
+    if (window.confirm('Are you sure you want to clear the entire workspace?')) {
+      takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
+      setNodes([]);
+      setEdges([]);
+      setChatMessages([]);
+      setChatInputValues({});
+      setPipelineEstimate(null);
+      setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 });
+      showToast('Workspace cleared', 'success');
     }
   };
 
@@ -811,6 +839,15 @@ export default function App() {
                   style={{ boxShadow: 'var(--shadow-sm)' }}
                 >
                   ↪
+                </button>
+                <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
+                <button
+                  onClick={handleClearWorkspace}
+                  title="Clear Workspace"
+                  className="nf-pill-btn"
+                  style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F' }}
+                >
+                  🗑 Clear
                 </button>
               </>
             )}
