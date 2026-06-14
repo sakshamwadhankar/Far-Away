@@ -59,9 +59,10 @@ jobs:
 
     - name: Package Electron app
       working-directory: apps/desktop
-      run: npx electron-builder --${{ runner.os == 'Windows' && 'win' || runner.os == 'macOS' && 'mac' || 'linux' }}
+      run: npx electron-builder --publish never --${{ runner.os == 'Windows' && 'win' || runner.os == 'macOS' && 'mac' || 'linux' }}
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CSC_IDENTITY_AUTO_DISCOVERY: false
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
