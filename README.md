@@ -1,6 +1,6 @@
 <div align="center">
 
-# Komvos
+<img src="apps/desktop/src/assets/KomvosLogo.png" alt="Komvos Logo" width="400" />
 
 ### A visual desktop platform for building and running multi-model AI pipelines.
 
