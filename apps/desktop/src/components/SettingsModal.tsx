@@ -22,13 +22,14 @@ export default function SettingsModal({ onClose, backendToken, API_BASE }: Setti
   const [isSaving, setIsSaving] = useState(false);
 
   const providers = [
-    { id: 'openai', label: 'OpenAI API Key', placeholder: 'sk-...' },
-    { id: 'anthropic', label: 'Anthropic API Key', placeholder: 'sk-ant-...' },
-    { id: 'google', label: 'Google Gemini API Key', placeholder: 'AIzaSy...' },
-    { id: 'groq', label: 'Groq API Key', placeholder: 'gsk_...' },
-    { id: 'openrouter', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...' },
-    { id: 'zhipu', label: 'Zhipu (GLM) API Key', placeholder: '...' },
-    { id: 'nvidia', label: 'Nvidia NIM API Key', placeholder: 'nvapi-...' },
+    { id: 'ollama_base_url', label: 'Ollama Base URL', placeholder: 'http://127.0.0.1:11434', type: 'text' },
+    { id: 'openai', label: 'OpenAI API Key', placeholder: 'sk-...', type: 'password' },
+    { id: 'anthropic', label: 'Anthropic API Key', placeholder: 'sk-ant-...', type: 'password' },
+    { id: 'google', label: 'Google Gemini API Key', placeholder: 'AIzaSy...', type: 'password' },
+    { id: 'groq', label: 'Groq API Key', placeholder: 'gsk_...', type: 'password' },
+    { id: 'openrouter', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', type: 'password' },
+    { id: 'zhipu', label: 'Zhipu (GLM) API Key', placeholder: '...', type: 'password' },
+    { id: 'nvidia', label: 'Nvidia NIM API Key', placeholder: 'nvapi-...', type: 'password' },
   ];
 
   useEffect(() => {
@@ -49,6 +50,27 @@ export default function SettingsModal({ onClose, backendToken, API_BASE }: Setti
 
   const handleChange = (id: string, value: string) => {
     setKeys(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!backendToken) return;
+    try {
+      const res = await fetch(`${API_BASE}/settings/api-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${backendToken}`
+        },
+        body: JSON.stringify({ keys: { [id]: '__DELETE__' } })
+      });
+      if (res.ok) {
+        setStatus(prev => ({ ...prev, [id]: false }));
+        setKeys(prev => ({ ...prev, [id]: '' }));
+        window.dispatchEvent(new Event('focus'));
+      }
+    } catch (err) {
+      console.error('Failed to delete key', err);
+    }
   };
 
   const handleSave = async () => {
@@ -104,16 +126,28 @@ export default function SettingsModal({ onClose, backendToken, API_BASE }: Setti
 
             {providers.map(p => (
               <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
-                  {p.label} {status[p.id] && <span style={{ color: 'var(--success)', marginLeft: 8, fontSize: 11 }}>✓ Configured</span>}
+                <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{p.label} {status[p.id] && <span style={{ color: 'var(--success)', marginLeft: 8, fontSize: 11 }}>✓ Configured</span>}</span>
+                  {status[p.id] && (
+                    <span 
+                      onClick={() => handleDelete(p.id)}
+                      style={{ color: 'var(--danger, #ff4d4f)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Clear
+                    </span>
+                  )}
                 </label>
                 <input
-                  type="password"
-                  value={keys[p.id] || ''}
+                  type={p.type}
+                  value={keys[p.id] ?? ''}
                   onChange={e => handleChange(p.id, e.target.value)}
-                  placeholder={status[p.id] ? '•••••••••••••••• (Leave blank to keep)' : p.placeholder}
+                  placeholder={status[p.id] && p.type === 'password' ? '•••••••••••••••• (Leave blank to keep)' : p.placeholder}
                   className="nf-input"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                  autoComplete="off"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  spellCheck={false}
                 />
               </div>
             ))}

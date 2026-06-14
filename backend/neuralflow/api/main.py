@@ -361,7 +361,7 @@ async def publish_custom_node(node_id: str) -> PublishTemplateResponse:
 @app.get("/settings/api-keys", response_model=ApiKeysResponse, dependencies=[Depends(verify_token)])
 async def get_api_keys_status() -> ApiKeysResponse:
     """Return which API keys are set (boolean status only)."""
-    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia"]
+    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia", "ollama_base_url"]
     status = {}
     for p in providers:
         status[p] = bool(keyring.get_password("neuralflow", p))
@@ -373,7 +373,8 @@ async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiKeysResponse:
     """Update API keys in OS keychain."""
     for provider, key in req.keys.items():
         if key.strip() == "":
-            # Delete if empty
+            continue # Leave blank to keep
+        elif key.strip() == "__DELETE__":
             try:
                 keyring.delete_password("neuralflow", provider)
             except Exception:
@@ -382,7 +383,7 @@ async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiKeysResponse:
             keyring.set_password("neuralflow", provider, key.strip())
             
     # Return updated status
-    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia"]
+    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia", "ollama_base_url"]
     status = {}
     for p in providers:
         status[p] = bool(keyring.get_password("neuralflow", p))
@@ -420,8 +421,13 @@ async def list_models() -> ModelsResponse:
 
     async with httpx.AsyncClient(timeout=3.0) as client:
         # 1. Ollama
+        ollama_base = keyring.get_password("neuralflow", "ollama_base_url")
+        if not ollama_base or not ollama_base.startswith("http"):
+            ollama_base = "http://127.0.0.1:11434"
+        ollama_base = ollama_base.rstrip("/")
+        
         try:
-            resp = await client.get("http://127.0.0.1:11434/api/tags")
+            resp = await client.get(f"{ollama_base}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
                 for m in data.get("models", []):
@@ -617,7 +623,7 @@ async def start_run(body: RunRequest) -> RunResponse:
             # Test override takes priority
             run_endpoints[ref] = global_ep[ref]
         else:
-            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible"):
+            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible", "groq", "openrouter", "zhipu", "nvidia"):
                 run_endpoints[ref] = CloudEndpoint(
                     provider=descriptor.kind,
                     model_name=descriptor.model or "gpt-4o-mini",
@@ -633,9 +639,17 @@ async def start_run(body: RunRequest) -> RunResponse:
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
+                ollama_base = descriptor.base_url
+                if not ollama_base:
+                    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
+                    if saved_base:
+                        ollama_base = f"{saved_base.rstrip('/')}/v1"
+                    else:
+                        ollama_base = "http://127.0.0.1:11434/v1"
+
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
-                    base_url=descriptor.base_url or "http://127.0.0.1:11434/v1",
+                    base_url=ollama_base,
                     model=descriptor.model or "qwen2.5:3b",
                 )
             else:
@@ -720,7 +734,7 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
         if ref in global_ep:
             run_endpoints[ref] = global_ep[ref]
         else:
-            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible"):
+            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible", "groq", "openrouter", "zhipu", "nvidia"):
                 run_endpoints[ref] = CloudEndpoint(
                     provider=descriptor.kind,
                     model_name=descriptor.model or "gpt-4o-mini",
@@ -731,9 +745,17 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
+                ollama_base = descriptor.base_url
+                if not ollama_base:
+                    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
+                    if saved_base and saved_base.startswith("http"):
+                        ollama_base = f"{saved_base.rstrip('/')}/v1"
+                    else:
+                        ollama_base = "http://127.0.0.1:11434/v1"
+
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
-                    base_url=descriptor.base_url or "http://127.0.0.1:11434/v1",
+                    base_url=ollama_base,
                     model=descriptor.model or "qwen2.5:3b",
                 )
 

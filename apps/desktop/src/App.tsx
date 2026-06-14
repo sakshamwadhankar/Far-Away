@@ -147,9 +147,11 @@ export default function App() {
         setAvailableModels([]);
       }
     };
-    
     fetchModels();
-  }, [API_BASE, backendToken, showToast]);
+
+    window.addEventListener('focus', fetchModels);
+    return () => window.removeEventListener('focus', fetchModels);
+  }, [API_BASE, backendToken, backendPort]);
 
   // Polling for backend connection status
   useEffect(() => {
