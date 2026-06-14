@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['..\\backend\\neuralflow_api_entry.py'],
+    ['..\\backend\\komvos_api_entry.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['uvicorn', 'fastapi', 'pydantic', 'httpx', 'keyring', 'jinja2'],
+    hiddenimports=['uvicorn', 'fastapi', 'pydantic', 'pydantic_core', 'httpx', 'keyring', 'jinja2'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
