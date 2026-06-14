@@ -1,0 +1,75 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/desktop/package-lock.json
+
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+        pip install pyinstaller
+
+    - name: Build backend executable
+      run: |
+        cd packaging
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          powershell -ExecutionPolicy Bypass -File build_backend.ps1
+        else
+          chmod +x build_backend.sh
+          ./build_backend.sh
+        fi
+      shell: bash
+
+    - name: Install frontend dependencies
+      working-directory: apps/desktop
+      run: npm ci
+
+    - name: Build frontend
+      working-directory: apps/desktop
+      run: npm run build
+
+    - name: Package Electron app
+      working-directory: apps/desktop
+      run: npx electron-builder --${{ runner.os == 'Windows' && 'win' || runner.os == 'macOS' && 'mac' || 'linux' }}
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: komvos-${{ matrix.os }}
+        path: |
+          apps/dist/*.exe
+          apps/dist/*.AppImage
+          apps/dist/*.deb
+          apps/dist/*.dmg
+          apps/dist/*.zip
+        if-no-files-found: ignore

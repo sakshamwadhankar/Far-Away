@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -12,6 +12,25 @@ const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+
+function checkOllama() {
+  http.get('http://127.0.0.1:11434/', (res) => {
+    if (res.statusCode !== 200) {
+      showOllamaWarning();
+    }
+  }).on('error', () => {
+    showOllamaWarning();
+  });
+}
+
+function showOllamaWarning() {
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Ollama Not Detected',
+    message: "Ollama not detected — local models unavailable. Install from ollama.com and run 'ollama pull qwen2.5:3b'. Cloud models still work.",
+    buttons: ['OK']
+  });
+}
 
 function spawnBackend(win: BrowserWindow) {
   const token = crypto.randomUUID();
@@ -28,21 +47,41 @@ function spawnBackend(win: BrowserWindow) {
         ? path.join(process.resourcesPath, 'backend')
         : path.join(__dirname, '../../../backend');
       
-      const venvPython = isWin
-        ? path.join(backendDir, '.venv', 'Scripts', 'python.exe')
-        : path.join(backendDir, '.venv', 'bin', 'python');
-      
-      const backendProcess = spawn(
-        venvPython,
-        ['-m', 'uvicorn', 'neuralflow.api.main:app', '--host', '127.0.0.1', '--port', port.toString()],
-        {
-          cwd: backendDir,
-          env: {
-            ...process.env,
-            NEURALFLOW_SESSION_TOKEN: token,
+      let backendProcess;
+
+      if (app.isPackaged) {
+        const backendExe = isWin
+          ? path.join(backendDir, 'komvos_backend.exe')
+          : path.join(backendDir, 'komvos_backend');
+          
+        backendProcess = spawn(
+          backendExe,
+          ['--host', '127.0.0.1', '--port', port.toString()],
+          {
+            cwd: backendDir,
+            env: {
+              ...process.env,
+              NEURALFLOW_SESSION_TOKEN: token,
+            }
           }
-        }
-      );
+        );
+      } else {
+        const venvPython = isWin
+          ? path.join(backendDir, '.venv', 'Scripts', 'python.exe')
+          : path.join(backendDir, '.venv', 'bin', 'python');
+        
+        backendProcess = spawn(
+          venvPython,
+          ['-m', 'uvicorn', 'neuralflow.api.main:app', '--host', '127.0.0.1', '--port', port.toString()],
+          {
+            cwd: backendDir,
+            env: {
+              ...process.env,
+              NEURALFLOW_SESSION_TOKEN: token,
+            }
+          }
+        );
+      }
 
       backendProcess.stdout.on('data', (data) => console.log(`[Backend] ${data}`));
       backendProcess.stderr.on('data', (data) => console.error(`[Backend ERR] ${data}`));
@@ -59,6 +98,7 @@ function spawnBackend(win: BrowserWindow) {
           setTimeout(checkHealth, 500);
         });
       };
+
       
       setTimeout(checkHealth, 500);
 
@@ -87,6 +127,7 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString());
     spawnBackend(win!);
+    checkOllama();
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -110,3 +151,4 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(createWindow);
+

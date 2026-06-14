@@ -15,9 +15,32 @@
     "format": "prettier --write src",
     "typecheck": "tsc --noEmit"
   },
+  "build": {
+    "appId": "com.komvos.app",
+    "productName": "Komvos",
+    "directories": {
+      "output": "../dist"
+    },
+    "extraResources": [
+      {
+        "from": "../../packaging/dist",
+        "to": "backend",
+        "filter": ["komvos_backend.exe", "komvos_backend"]
+      }
+    ],
+    "mac": {
+      "target": ["dmg"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  },
+  "author": "NeuralFlow Team",
   "dependencies": {
     "diff": "^9.0.0",
-    "electron": "^42.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4"
@@ -32,6 +55,7 @@
     "@typescript-eslint/eslint-plugin": "^7.13.0",
     "@typescript-eslint/parser": "^7.13.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^42.4.0",
     "electron-builder": "^26.15.3",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
