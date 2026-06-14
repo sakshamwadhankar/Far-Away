@@ -103,6 +103,9 @@ npm run dev
 
 ---
 
+<img width="800" height="600" alt="Dead_PixelIntro-ezgif com-optimize" src="https://github.com/user-attachments/assets/ebfa2537-09f5-4dfa-b9d4-eb2384f3800e" />
+
+
 ## 🧠 How It Works
 
 A flagship pipeline — the DeepSeek-style verification loop — looks like this:
