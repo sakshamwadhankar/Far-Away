@@ -46,15 +46,32 @@ Pipelines run on a **local-first execution engine** that treats every model (clo
 
 ## 📦 Download
 
-Pre-built installers are available on the [**Releases**](../../releases) page.
+Pre-built installers are available on the [**Releases**](../../releases) page. This release includes setup files for **Windows, macOS, and Linux**.
 
-| Platform    | File                                                                 |
-| ----------- | -------------------------------------------------------------------- |
-| **Windows** | `Komvos Setup 0.1.0.exe` (installer) · `Komvos 0.1.0.exe` (portable) |
-| **macOS**   | `Komvos-0.1.0.dmg`                                                   |
-| **Linux**   | `Komvos-0.1.0.AppImage` · `.deb`                                     |
+### 🪟 Windows Instructions
+We provide two different files for Windows depending on your preference:
+* **`Komvos.Setup.0.1.0.exe` (Recommended)**: This is the standard installer. It will install the app on your computer permanently and create a desktop shortcut.
+* **`Komvos.0.1.0.exe`**: This is a "Portable" version. It does not install anything; it simply launches the app immediately when you double-click it.
 
-> The application is currently distributed unsigned. On Windows, click **More info → Run anyway** at the SmartScreen prompt. Code-signing is planned for the public release.
+**How to run:**
+1. Download either the Setup or Portable `.exe` file.
+2. Double-click to run it.
+3. *Note: Since the app is currently unsigned, Windows SmartScreen will show a blue "Windows protected your PC" popup. Click **"More info"** and then **"Run anyway"**.*
+
+### 🍎 Mac Instructions (Apple Silicon)
+* **`Komvos-0.1.0-arm64.dmg`**: The installer for modern Mac computers (M1, M2, M3 chips).
+
+**How to run:**
+1. Download the `.dmg` file.
+2. Double click the `.dmg` file to open it.
+3. Drag and drop the Komvos app icon into your **Applications** folder.
+4. *Note: Since the app is unsigned, macOS might block it from opening the first time. To bypass this, go to your Applications folder, **Right-click** (or Control-click) the Komvos app, and select **Open**.*
+
+### 🐧 Linux Instructions
+We provide a few different options for Linux users:
+* **`Komvos-0.1.0.AppImage` (Recommended)**: A portable app that works on almost all Linux distributions without installation. Download it, right-click it → Properties → Permissions → Check "Allow executing file as program", and double click to run.
+* **`komvos_0.1.0_amd64.deb`**: The standard installer package for Debian/Ubuntu-based systems (like Mint, Pop!_OS). Install it by double-clicking or running `sudo dpkg -i komvos_0.1.0_amd64.deb`.
+* **`komvos-0.1.0.tar.gz`**: A standalone compressed archive for manual extraction and custom setups.
 
 ---
 
