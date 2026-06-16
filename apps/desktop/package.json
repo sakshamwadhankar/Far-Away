@@ -39,7 +39,15 @@
       "target": ["AppImage", "deb"]
     }
   },
-  "author": "NeuralFlow Team",
+  "author": {
+    "name": "NeuralFlow Team",
+    "email": "team@neuralflow.com"
+  },
+  "homepage": "https://github.com/sakshamwadhankar/Far-Away",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sakshamwadhankar/Far-Away.git"
+  },
   "dependencies": {
     "diff": "^9.0.0",
     "react": "^18.3.1",
