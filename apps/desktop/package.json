@@ -1,7 +1,7 @@
 {
-  "name": "neuralflow-desktop",
+  "name": "komvos",
   "version": "0.1.0",
-  "description": "NeuralFlow desktop application — Electron + React + TypeScript + React Flow",
+  "description": "Komvos desktop application — Electron + React + TypeScript + React Flow",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
