@@ -5,7 +5,7 @@ a = Analysis(
     ['..\\backend\\komvos_api_entry.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('..\\templates', 'templates')],
     hiddenimports=['uvicorn', 'fastapi', 'pydantic', 'pydantic_core', 'httpx', 'keyring', 'jinja2'],
     hookspath=[],
     hooksconfig={},

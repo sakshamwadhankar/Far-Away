@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 import uuid
 from typing import Any
 
@@ -84,12 +85,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -150,7 +146,10 @@ async def health_ollama() -> dict[str, Any]:
 
 @app.get("/pipelines/templates", dependencies=[Depends(verify_token)])
 async def get_templates() -> list[dict[str, Any]]:
-    templates_dir = Path(__file__).parent.parent.parent.parent / "templates"
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        templates_dir = Path(sys._MEIPASS) / "templates"
+    else:
+        templates_dir = Path(__file__).parent.parent.parent.parent / "templates"
     templates = []
     if not templates_dir.exists():
         return []
