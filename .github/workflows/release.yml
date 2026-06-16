@@ -73,4 +73,5 @@ jobs:
           apps/dist/*.AppImage
           apps/dist/*.deb
           apps/dist/*.dmg
+          apps/dist/*.tar.gz
           apps/dist/*.zip
