@@ -8,6 +8,44 @@ another test file (which reads as an unused import to linters).
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+
+import pytest
+
+from neuralflow.api.auth import DEV_MODE_ENV_VAR
 from tests.test_api import client, slow_client
 
 __all__ = ["client", "slow_client"]
+
+
+@pytest.fixture(autouse=True)
+def _dev_mode(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """
+    Opt every test into dev-mode auth explicitly.
+
+    Auth fails closed: with no NEURALFLOW_SESSION_TOKEN configured, requests are
+    rejected unless KOMVOS_DEV=1 is set deliberately. The suite drives the API
+    without Electron, so it sets that flag itself rather than leaning on an
+    implicit fallback. Tests that exercise the fail-closed path delete the var
+    with their own monkeypatch.
+    """
+    monkeypatch.setenv(DEV_MODE_ENV_VAR, "1")
+    # Never inherit a real session token from the developer's shell.
+    monkeypatch.delenv("NEURALFLOW_SESSION_TOKEN", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_env() -> Iterator[None]:
+    """
+    Snapshot and restore os.environ around every test.
+
+    Several tests set NEURALFLOW_SESSION_TOKEN or the mock-endpoint gate
+    directly rather than through monkeypatch; this keeps that from leaking into
+    the next test.
+    """
+    saved = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(saved)

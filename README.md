@@ -111,6 +111,13 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -e ".[dev]"
+
+# KOMVOS_DEV=1 is required when running the backend by hand. Auth fails closed:
+# without a session token from Electron, requests are rejected unless you opt
+# in explicitly. It also allows the Vite dev origin through CORS and enables
+# /docs. Never set it for a packaged build.
+#   Windows (PowerShell):  $env:KOMVOS_DEV = "1"
+#   macOS/Linux:           export KOMVOS_DEV=1
 uvicorn neuralflow.api.main:app --host 127.0.0.1 --port 8000
 ```
 

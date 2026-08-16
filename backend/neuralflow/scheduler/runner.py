@@ -107,6 +107,24 @@ class PipelineRunner:
         self._stopped_by_user = True
         self._cancel.cancel("Run stopped by user.")
 
+    async def _persist_status(self, status: str) -> None:
+        """
+        Record the run's terminal status and accumulated totals.
+
+        No-op when no StateManager was injected. Runs off the event loop for
+        the same reason as the trace writes in `run()`.
+        """
+        if self._state_manager is None:
+            return
+        await asyncio.to_thread(
+            self._state_manager.update_run_status,
+            self.run_id,
+            status,
+            self._cumulative_cost,
+            self._total_tokens_in,
+            self._total_tokens_out,
+        )
+
     async def run(self, queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
         """
         Execute the pipeline in the background.
@@ -118,8 +136,15 @@ class PipelineRunner:
 
         resume_state = None
         if self._state_manager:
-            resume_state = self._state_manager.load_run_state(self.run_id)
-            self._state_manager.save_run(self.run_id, self._dag.pipeline.id, "running")
+            resume_state = await asyncio.to_thread(
+                self._state_manager.load_run_state, self.run_id
+            )
+            await asyncio.to_thread(
+                self._state_manager.save_run,
+                self.run_id,
+                self._dag.pipeline.id,
+                "running",
+            )
 
         # Pre-budget check for each model node: wrap registry endpoints
         # to call estimate_cost() before generate() starts.
@@ -133,9 +158,14 @@ class PipelineRunner:
         )
 
         async def _event_callback(event: SchedulerEvent) -> None:
+            # Every trace write goes through asyncio.to_thread: sqlite3 is a
+            # blocking C extension, and doing these on the event loop stalls the
+            # WebSocket pump for the duration of the write. Under a fast
+            # multi-node streaming run that shows up as a stuttering monitor.
             if self._state_manager:
                 if event.kind == EventKind.NODE_DONE:
-                    self._state_manager.save_node_execution(
+                    await asyncio.to_thread(
+                        self._state_manager.save_node_execution,
                         self.run_id,
                         event.node_id or "",
                         inputs=event.data.get("inputs"),
@@ -145,13 +175,15 @@ class PipelineRunner:
                         tokens_out=event.data.get("tokens_out"),
                     )
                 elif event.kind == EventKind.NODE_ERROR:
-                    self._state_manager.save_node_execution(
+                    await asyncio.to_thread(
+                        self._state_manager.save_node_execution,
                         self.run_id,
                         event.node_id or "",
                         error=event.data.get("error"),
                     )
                 elif event.kind == EventKind.LOOP_ITERATION:
-                    self._state_manager.save_loop_iteration(
+                    await asyncio.to_thread(
+                        self._state_manager.save_loop_iteration,
                         self.run_id,
                         event.data.get("loop_id", ""),
                         event.data.get("iteration", 0),
@@ -196,14 +228,7 @@ class PipelineRunner:
             )
         except Exception as exc:
             logger.exception("Unhandled error in pipeline run %s", self.run_id)
-            if self._state_manager:
-                self._state_manager.update_run_status(
-                    self.run_id,
-                    "error",
-                    self._cumulative_cost,
-                    self._total_tokens_in,
-                    self._total_tokens_out,
-                )
+            await self._persist_status("error")
             await queue.put(WsRunErrorEvent(run_id=self.run_id, error=str(exc)))
             await queue.put(None)
             return
@@ -211,14 +236,7 @@ class PipelineRunner:
         elapsed_ms = int(time.time() * 1000) - self._start_ms
 
         if result.completed:
-            if self._state_manager:
-                self._state_manager.update_run_status(
-                    self.run_id,
-                    "completed",
-                    self._cumulative_cost,
-                    self._total_tokens_in,
-                    self._total_tokens_out,
-                )
+            await self._persist_status("completed")
             await queue.put(
                 WsRunCompletedEvent(
                     run_id=self.run_id,
@@ -231,24 +249,10 @@ class PipelineRunner:
         else:
             # Cancelled: determine cause
             if self._stopped_by_user:
-                if self._state_manager:
-                    self._state_manager.update_run_status(
-                        self.run_id,
-                        "stopped",
-                        self._cumulative_cost,
-                        self._total_tokens_in,
-                        self._total_tokens_out,
-                    )
+                await self._persist_status("stopped")
                 await queue.put(WsRunStoppedEvent(run_id=self.run_id))
             elif budget_registry.budget_exceeded:
-                if self._state_manager:
-                    self._state_manager.update_run_status(
-                        self.run_id,
-                        "budget_exceeded",
-                        self._cumulative_cost,
-                        self._total_tokens_in,
-                        self._total_tokens_out,
-                    )
+                await self._persist_status("budget_exceeded")
                 await queue.put(
                     WsBudgetExceededEvent(
                         run_id=self.run_id,
@@ -258,14 +262,7 @@ class PipelineRunner:
                     )
                 )
             else:
-                if self._state_manager:
-                    self._state_manager.update_run_status(
-                        self.run_id,
-                        "halted",
-                        self._cumulative_cost,
-                        self._total_tokens_in,
-                        self._total_tokens_out,
-                    )
+                await self._persist_status("halted")
                 await queue.put(
                     WsRunHaltedEvent(
                         run_id=self.run_id,

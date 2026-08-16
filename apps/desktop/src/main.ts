@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -11,7 +11,7 @@ process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.
 let win: BrowserWindow | null;
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import net from 'node:net';
 
 function checkOllama() {
@@ -63,8 +63,7 @@ function spawnBackend(win: BrowserWindow) {
         ? path.join(process.resourcesPath, 'backend')
         : path.join(__dirname, '../../../backend');
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let backendProcess: any;
+      let backendProcess: ChildProcessWithoutNullStreams;
 
       if (app.isPackaged) {
         const backendExe = isWin
@@ -79,15 +78,21 @@ function spawnBackend(win: BrowserWindow) {
           return;
         }
 
+        // A packaged app is never in dev mode. Strip the flag rather than
+        // inheriting it, so a KOMVOS_DEV left exported in the user's shell
+        // cannot widen CORS or expose /docs in a shipped build.
+        const packagedEnv: NodeJS.ProcessEnv = {
+          ...process.env,
+          NEURALFLOW_SESSION_TOKEN: token,
+        };
+        delete packagedEnv.KOMVOS_DEV;
+
         backendProcess = spawn(
           backendExe,
           ['--host', '127.0.0.1', '--port', port.toString()],
           {
             cwd: backendDir,
-            env: {
-              ...process.env,
-              NEURALFLOW_SESSION_TOKEN: token,
-            }
+            env: packagedEnv,
           }
         );
       } else {
@@ -105,6 +110,10 @@ function spawnBackend(win: BrowserWindow) {
             env: {
               ...process.env,
               NEURALFLOW_SESSION_TOKEN: token,
+              // Unpackaged only. The renderer is served by the Vite dev server,
+              // so the backend has to allow that origin through CORS — and
+              // /docs is useful while developing. Never set for a packaged app.
+              KOMVOS_DEV: '1',
             }
           }
         );
@@ -156,6 +165,55 @@ function spawnBackend(win: BrowserWindow) {
   });
 }
 
+/**
+ * Origins the app window is allowed to navigate to.
+ *
+ * Renderer-initiated navigation anywhere else is blocked: model output is
+ * untrusted text, and a link in it must never be able to replace the app UI
+ * with a remote page that shares the preload bridge.
+ */
+/**
+ * Hand a URL to the user's default browser, but only for http(s).
+ *
+ * shell.openExternal will happily launch `file:`, `smb:` or a registered custom
+ * protocol handler, so anything else from renderer-controlled content is
+ * dropped rather than forwarded to the OS.
+ */
+function openExternally(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    void shell.openExternal(rawUrl);
+  }
+}
+
+function isAllowedNavigation(rawUrl: string): boolean {
+  // The splash screen the main process loads before the backend is ready.
+  if (rawUrl.startsWith('data:text/html')) return true;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  // Packaged builds load the bundled renderer from disk.
+  if (parsed.protocol === 'file:') return true;
+
+  // Dev builds load it from the Vite dev server.
+  if (VITE_DEV_SERVER_URL) {
+    const devServer = new URL(VITE_DEV_SERVER_URL);
+    if (parsed.origin === devServer.origin) return true;
+  }
+
+  return false;
+}
+
 function createWindow() {
   // Remove native menu bar (File / Edit / View / Window)
   Menu.setApplicationMenu(null);
@@ -164,10 +222,33 @@ function createWindow() {
     icon: path.join(process.env.VITE_PUBLIC as string, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      // These match Electron's current defaults. Stated explicitly so a future
+      // Electron upgrade or a stray edit cannot silently weaken the renderer
+      // sandbox. preload.ts uses only contextBridge/ipcRenderer, so it is
+      // compatible with sandbox: true.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
     width: 1200,
     height: 800,
     autoHideMenuBar: true,
+  });
+
+  // ── Navigation guards ────────────────────────────────────────────────────
+  // Send external links to the user's real browser instead of opening an
+  // unrestricted Electron window for them.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternally(url);
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigation(url)) {
+      event.preventDefault();
+      openExternally(url);
+    }
   });
 
   // Load a splash screen

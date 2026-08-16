@@ -28,12 +28,26 @@ class StateManager:
     def _get_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=5.0)
         conn.row_factory = sqlite3.Row
+        # `synchronous` is a per-connection setting and this class opens a fresh
+        # connection per operation, so it has to be re-applied here — unlike
+        # `journal_mode`, which is persisted in the database file by _init_db.
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     def _init_db(self) -> None:
-        """Create tables if they don't exist."""
+        """Create tables if they don't exist, and set the durability pragmas."""
         conn = self._get_conn()
         try:
+            # WAL lets readers proceed while a write is in flight. Without it,
+            # a live run's trace writes and a concurrent /runs/{id}/trace read
+            # contend on a single global lock, and `timeout=5.0` in _get_conn
+            # turns that contention into multi-second stalls.
+            #
+            # journal_mode is persisted in the database file, so this only has
+            # to be asserted once. synchronous is per-connection and is set in
+            # _get_conn instead.
+            conn.execute("PRAGMA journal_mode=WAL")
+
             with conn:
                 conn.execute(
                     """

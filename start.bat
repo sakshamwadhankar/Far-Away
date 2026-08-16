@@ -114,7 +114,11 @@ if not exist "%FRONTEND_DIR%\node_modules" (
 
 :: ── 6. Start FastAPI backend ──────────────────────────────────────────────────
 echo  Starting FastAPI backend on http://127.0.0.1:8000 ...
-start "NeuralFlow - Backend" /D "%BACKEND_DIR%" /MIN cmd /k "%VENV_PYTHON% -m uvicorn neuralflow.api.main:app --host 127.0.0.1 --port 8000"
+:: KOMVOS_DEV=1 is required when running the backend without Electron: auth
+:: fails closed without a session token, and the Vite dev origin is only
+:: allowed through CORS in dev mode. Never set this for a packaged build.
+set "KOMVOS_DEV=1"
+start "NeuralFlow - Backend" /D "%BACKEND_DIR%" /MIN cmd /k "set KOMVOS_DEV=1&& %VENV_PYTHON% -m uvicorn neuralflow.api.main:app --host 127.0.0.1 --port 8000"
 :: Give the backend a moment to bind before the frontend tries to connect
 timeout /t 3 /nobreak >nul
 echo  [OK] Backend window launched (minimized).

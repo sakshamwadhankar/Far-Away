@@ -43,7 +43,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-from neuralflow.api.auth import verify_token
+from neuralflow.api.auth import check_token, is_dev_mode, verify_token
 from neuralflow.api.models import (
     ApiKeysResponse,
     ApiKeysUpdateRequest,
@@ -78,20 +78,55 @@ from neuralflow.state.sqlite import StateManager
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# CORS allowlist
+#
+# The renderer is an Electron window, not a website. In a packaged build it is
+# loaded with win.loadFile(), so its requests to 127.0.0.1 are cross-origin and
+# Chromium labels them with the opaque origin "null" (older Electron builds send
+# the literal "file://"). Both are accepted; neither is reachable from a page on
+# the public web.
+#
+# The Vite dev server origins are added ONLY under KOMVOS_DEV=1. Without that
+# opt-in no http(s) origin is allowed, so a site the user happens to be visiting
+# cannot drive their pipelines or spend their API credits.
+# ---------------------------------------------------------------------------
+
+_ELECTRON_RENDERER_ORIGINS = ["null", "file://"]
+
+_DEV_SERVER_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
+def _allowed_origins() -> list[str]:
+    """Build the CORS allowlist for this process."""
+    origins = list(_ELECTRON_RENDERER_ORIGINS)
+    if is_dev_mode():
+        origins.extend(_DEV_SERVER_ORIGINS)
+    return origins
+
+
+_DEV_MODE = is_dev_mode()
+
 app = FastAPI(
     title="NeuralFlow Backend",
     version="0.1.0",
     description="Local execution backend for NeuralFlow — bound to 127.0.0.1.",
-    docs_url="/docs",
+    # The interactive docs enumerate the entire API surface, so they are a
+    # developer convenience only.
+    docs_url="/docs" if _DEV_MODE else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if _DEV_MODE else None,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ---------------------------------------------------------------------------
@@ -991,7 +1026,10 @@ async def stop_run(run_id: str) -> StopResponse:
 async def get_run_trace(run_id: str) -> dict[str, Any]:
     """Return the full execution trace from SQLite."""
     sm = _global_state_manager()
-    trace = sm.get_full_trace(run_id)
+    # Unbounded work: three queries plus a JSON parse of every node's inputs and
+    # outputs. Off the event loop, so pulling a large trace cannot stall the
+    # WebSocket pump of a run that is still streaming.
+    trace = await asyncio.to_thread(sm.get_full_trace, run_id)
     if trace is None:
         raise HTTPException(status_code=404, detail="Run not found in trace database.")
     return trace
@@ -1000,8 +1038,6 @@ async def get_run_trace(run_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # WebSocket /ws/run/{run_id}
 # ---------------------------------------------------------------------------
-
-_SESSION_TOKEN = os.environ.get("NEURALFLOW_SESSION_TOKEN")
 
 
 @app.websocket("/ws/run/{run_id}")
@@ -1015,12 +1051,10 @@ async def ws_run(
     Authenticated via ?token= query parameter.
     """
     # ── Auth ──────────────────────────────────────────────────────────────────
-    session_token = os.environ.get("NEURALFLOW_SESSION_TOKEN")
-    if session_token and token != session_token:
-        await websocket.close(code=4001, reason="Invalid session token.")
-        return
-    if not token:
-        await websocket.close(code=4001, reason="Missing token.")
+    # Same fail-closed rule as the HTTP routes: an unset session token is only
+    # a pass under an explicit KOMVOS_DEV=1, never on its own.
+    if not check_token(token):
+        await websocket.close(code=4001, reason="Invalid or missing session token.")
         return
 
     # ── Wait for run to be registered (POST may still be returning) ───────────

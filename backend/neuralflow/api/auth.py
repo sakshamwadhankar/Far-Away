@@ -1,18 +1,25 @@
 """
 backend/neuralflow/api/auth.py
 
-Per-session bearer token authentication dependency for FastAPI.
+Per-session bearer token authentication for FastAPI (HTTP and WebSocket).
 
 The session token is set by Electron at backend spawn time via the
 NEURALFLOW_SESSION_TOKEN environment variable.
 
-DEV MODE: if NEURALFLOW_SESSION_TOKEN is not set, any non-empty bearer token
-is accepted and a warning is logged. This allows pytest and manual curl testing
-without Electron present.
+SECURITY — fail closed. There are exactly two ways a request authenticates:
+
+  1. NEURALFLOW_SESSION_TOKEN is set, and the caller presents that exact token.
+  2. NEURALFLOW_SESSION_TOKEN is unset *and* KOMVOS_DEV=1, in which case any
+     non-empty token is accepted so pytest and curl can drive the API.
+
+Anything else is a 401. In particular, an unset session token on its own is
+NOT a bypass: without an explicit KOMVOS_DEV=1 opt-in, a backend started with
+no token configured rejects every request rather than accepting every request.
 """
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 
@@ -23,6 +30,55 @@ logger = logging.getLogger(__name__)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
+#: Env var that must be exactly "1" to enable developer conveniences —
+#: the tokenless auth fallback, localhost CORS origins, and /docs.
+DEV_MODE_ENV_VAR = "KOMVOS_DEV"
+
+SESSION_TOKEN_ENV_VAR = "NEURALFLOW_SESSION_TOKEN"
+
+
+def is_dev_mode() -> bool:
+    """
+    True only when KOMVOS_DEV is explicitly set to "1".
+
+    Read at call time, not import time, so tests and the Electron spawn path
+    can set it per-process without import-order surprises.
+    """
+    return os.environ.get(DEV_MODE_ENV_VAR) == "1"
+
+
+def session_token() -> str | None:
+    """The configured session token, or None if the backend started without one."""
+    return os.environ.get(SESSION_TOKEN_ENV_VAR)
+
+
+def check_token(provided: str | None) -> bool:
+    """
+    Core auth decision, shared by the HTTP dependency and the WebSocket handler.
+
+    Returns True if `provided` authenticates. Compared with
+    `hmac.compare_digest` so a wrong token cannot be recovered by timing.
+    """
+    if not provided:
+        return False
+
+    configured = session_token()
+
+    if configured is None:
+        # No token configured. Only a deliberate KOMVOS_DEV=1 opt-in makes this
+        # acceptable; otherwise fail closed.
+        if not is_dev_mode():
+            return False
+        logger.warning(
+            "%s is not set and %s=1: accepting any non-empty bearer token. "
+            "DO NOT use this outside local development.",
+            SESSION_TOKEN_ENV_VAR,
+            DEV_MODE_ENV_VAR,
+        )
+        return True
+
+    return hmac.compare_digest(provided, configured)
+
 
 def verify_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
@@ -31,10 +87,8 @@ def verify_token(
     FastAPI dependency — validates the bearer token.
 
     Returns the token string on success.
-    Raises HTTP 401 if the token is missing or invalid.
+    Raises HTTP 401 if the token is missing, empty, or invalid.
     """
-    session_token = os.environ.get("NEURALFLOW_SESSION_TOKEN")
-
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -47,24 +101,10 @@ def verify_token(
 
     provided = credentials.credentials
 
-    if session_token is None:
-        # Dev mode: no token configured — accept any non-empty value
-        logger.warning(
-            "NEURALFLOW_SESSION_TOKEN is not set. Running in dev mode: "
-            "accepting any bearer token. DO NOT use in production."
-        )
-        if not provided:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Empty bearer token.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return provided
-
-    if provided != session_token:
+    if not check_token(provided):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid session token.",
+            detail="Invalid or missing session token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
