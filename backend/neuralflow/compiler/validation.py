@@ -21,8 +21,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 
-from neuralflow.compiler.models import Edge, Node, Pipeline, Port, PortType
-
+from neuralflow.compiler.models import Node, Pipeline, PortType
 
 # ---------------------------------------------------------------------------
 # Custom exception types
@@ -75,9 +74,7 @@ def _loop_body_edges(pipeline: Pipeline) -> frozenset[tuple[str, str]]:
     These edges are excluded from the acyclicity check on the main graph
     (loops are subgraphs, not back-edges — TRD §4 rule 1).
     """
-    loop_node_sets: list[frozenset[str]] = [
-        frozenset(lp.body) for lp in pipeline.loops
-    ]
+    loop_node_sets: list[frozenset[str]] = [frozenset(lp.body) for lp in pipeline.loops]
     # An edge is a "loop-internal" edge if BOTH endpoints are in the same loop body.
     internal: set[tuple[str, str]] = set()
     for edge in pipeline.edges:
@@ -107,7 +104,7 @@ def _check_acyclic(pipeline: Pipeline, errors: list[str]) -> None:
 
     # Build adjacency and in-degree, skipping loop-internal edges.
     adjacency: dict[str, list[str]] = defaultdict(list)
-    in_degree: dict[str, int] = {nid: 0 for nid in node_ids}
+    in_degree: dict[str, int] = dict.fromkeys(node_ids, 0)
 
     for edge in pipeline.edges:
         src = edge.source_node()
@@ -132,7 +129,8 @@ def _check_acyclic(pipeline: Pipeline, errors: list[str]) -> None:
 
     if visited != len(node_ids):
         errors.append(
-            f"[Graph Cycle] Pipeline '{pipeline.name}' contains a cycle in the main graph. "
+            f"[Graph Cycle] Pipeline '{pipeline.name}' contains a cycle "
+            "in the main graph. "
             f"Only {visited} of {len(node_ids)} nodes could be topologically sorted. "
             "Loops must be declared as subgraphs in 'loops[]', not as back-edges."
         )
@@ -163,12 +161,14 @@ def _check_port_type_compatibility(pipeline: Pipeline, errors: list[str]) -> Non
 
         if src_node_id not in node_index:
             errors.append(
-                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': source node '{src_node_id}' not found."
+                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': "
+                f"source node '{src_node_id}' not found."
             )
             continue
         if dst_node_id not in node_index:
             errors.append(
-                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': target node '{dst_node_id}' not found."
+                f"[Unknown Node] Edge '{edge.from_}' -> '{edge.to}': "
+                f"target node '{dst_node_id}' not found."
             )
             continue
 
@@ -216,7 +216,8 @@ def _check_loop_bodies(pipeline: Pipeline, errors: list[str]) -> None:
         for body_node_id in loop.body:
             if body_node_id not in node_ids:
                 errors.append(
-                    f"[Invalid Loop Body] Loop '{loop.id}' references node '{body_node_id}' "
+                    f"[Invalid Loop Body] Loop '{loop.id}' references "
+                    f"node '{body_node_id}' "
                     f"in its body, but no node with that ID exists. "
                     f"Available node IDs: {sorted(node_ids)}."
                 )

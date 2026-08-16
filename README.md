@@ -6,10 +6,9 @@
 
 Design AI workflows by connecting nodes on a canvas — combining cloud frontier models (OpenAI, Anthropic, Google) with local open-source models (via Ollama) in a single hybrid pipeline.
 
-[![Build](https://img.shields.io/badge/build-CI-blue)](#)
+[![Build](https://github.com/sakshamwadhankar/Far-Away/actions/workflows/build.yml/badge.svg)](https://github.com/sakshamwadhankar/Far-Away/actions/workflows/build.yml)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#)
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-144%20passing-success)](#)
-[![License](https://img.shields.io/badge/license-MIT-green)](#)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [Download](#-download) · [Features](#-features) · [How It Works](#-how-it-works) · [Quick Start](#-quick-start) · [Architecture](#-architecture)
 
@@ -112,7 +111,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -e ".[dev]"
-uvicorn Komvos.api.main:app --port 8000
+uvicorn neuralflow.api.main:app --host 127.0.0.1 --port 8000
 ```
 
 **2. Frontend (Node 18+)**
@@ -186,7 +185,8 @@ The **Solver** drafts an answer (local model), the **Verifier** checks it (retur
 
 ## ✅ Quality & Testing
 
-- **144 backend tests** (compiler, scheduler, executors, endpoints, API, schema) + frontend unit tests.
+- **150 backend tests** (compiler, scheduler, executors, endpoints, API, schema) + 37 frontend unit tests — all run in CI on every push, and the build job is blocked on them.
+- **Lint and types enforced in CI**: `ruff` and `mypy --strict` on the backend, ESLint (with `no-explicit-any` as an error) and `tsc --noEmit` on the desktop app.
 - **End-to-end verified** against a real local model (`qwen2.5:3b`): full pipeline execution, streaming, loop termination, JSON-repair, cancellation, and partial-trace persistence.
 - **Packaged-binary verified** — the bundled backend was tested standalone (running a real pipeline through the PyInstaller executable, not just in dev).
 - Strict contracts: typed pipeline schema mirrored across JSON Schema, Python (Pydantic), and TypeScript.

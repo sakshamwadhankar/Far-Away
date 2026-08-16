@@ -7,6 +7,7 @@ Phase 3 — Tests for SQLite StateManager and resume logic.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -26,10 +27,8 @@ def temp_db() -> Path:
     with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as f:
         path = Path(f.name)
     yield path
-    try:
+    with contextlib.suppress(PermissionError):
         path.unlink(missing_ok=True)
-    except PermissionError:
-        pass
 
 
 def test_state_manager_init(temp_db: Path) -> None:
@@ -37,7 +36,8 @@ def test_state_manager_init(temp_db: Path) -> None:
     # Check tables
     with sm._get_conn() as conn:
         tables = [
-            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         ]
         assert "runs" in tables
         assert "node_executions" in tables
@@ -67,14 +67,10 @@ async def test_scheduler_resume_skips_nodes() -> None:
     registry = EndpointRegistry({"mock:model": endpoint})
     dag = compile(LINEAR_PIPELINE)
 
-    resume_state = {
-        "model": {"output": "Old cached text"}
-    }
+    resume_state = {"model": {"output": "Old cached text"}}
 
     scheduler = Scheduler(dag, registry)
-    result = await scheduler.run(
-        {"in": {"prompt": "Hi"}}, resume_state=resume_state
-    )
+    result = await scheduler.run({"in": {"prompt": "Hi"}}, resume_state=resume_state)
 
     assert result.completed is True
     # The 'out' node should receive 'Old cached text' from 'model' instead of 'New text'
@@ -103,7 +99,9 @@ async def test_runner_records_and_resumes(temp_db: Path) -> None:
     assert "out" in state
 
     with sm._get_conn() as conn:
-        row = conn.execute("SELECT status FROM runs WHERE run_id = 'run_xyz'").fetchone()
+        row = conn.execute(
+            "SELECT status FROM runs WHERE run_id = 'run_xyz'"
+        ).fetchone()
         assert row["status"] == "completed"
 
 
@@ -124,12 +122,16 @@ async def test_runner_halt_saves_trace(temp_db: Path) -> None:
     await task
 
     with sm._get_conn() as conn:
-        row = conn.execute("SELECT status FROM runs WHERE run_id = 'run_halt'").fetchone()
+        row = conn.execute(
+            "SELECT status FROM runs WHERE run_id = 'run_halt'"
+        ).fetchone()
         assert row["status"] == "stopped"
 
-        cursor = conn.execute("SELECT node_id, error FROM node_executions WHERE run_id = 'run_halt'")
+        cursor = conn.execute(
+            "SELECT node_id, error FROM node_executions WHERE run_id = 'run_halt'"
+        )
         nodes = {r["node_id"]: r["error"] for r in cursor}
-        
+
         assert "in" in nodes
         assert nodes["in"] is None
         assert "model" in nodes

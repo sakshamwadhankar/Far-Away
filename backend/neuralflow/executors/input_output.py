@@ -26,15 +26,18 @@ class InputExecutor(BaseExecutor):
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
         from neuralflow.scheduler.engine import EventKind, SchedulerEvent
+
         ctx.check_cancel()
-        await ctx.emit(SchedulerEvent(
-            kind=EventKind.NODE_DONE,
-            node_id=ctx.node.id,
-            data={
-                "inputs": {},
-                "outputs": ctx.inputs,
-            },
-        ))
+        await ctx.emit(
+            SchedulerEvent(
+                kind=EventKind.NODE_DONE,
+                node_id=ctx.node.id,
+                data={
+                    "inputs": {},
+                    "outputs": ctx.inputs,
+                },
+            )
+        )
         return ctx.inputs
 
 
@@ -46,13 +49,16 @@ class OutputExecutor(BaseExecutor):
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
         from neuralflow.scheduler.engine import EventKind, SchedulerEvent
+
         ctx.check_cancel()
-        await ctx.emit(SchedulerEvent(
-            kind=EventKind.NODE_DONE,
-            node_id=ctx.node.id,
-            data={
-                "inputs": ctx.inputs,
-                "outputs": ctx.inputs,
-            },
-        ))
+        await ctx.emit(
+            SchedulerEvent(
+                kind=EventKind.NODE_DONE,
+                node_id=ctx.node.id,
+                data={
+                    "inputs": ctx.inputs,
+                    "outputs": ctx.inputs,
+                },
+            )
+        )
         return ctx.inputs

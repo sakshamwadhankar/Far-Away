@@ -1,45 +1,46 @@
+import contextlib
 import json
-from pathlib import Path
-
-from neuralflow.compiler.models import Pipeline
-
-def test_all_templates_valid() -> None:
-    """
-    Ensure every JSON file in templates/ is a valid v2 pipeline.
-    This also verifies they contain no secrets (Pipeline.model_validate will ensure it matches schema).
-    """
-    templates_dir = Path(__file__).parent.parent.parent / "templates"
-    template_files = list(templates_dir.glob("*.json"))
-    
-    assert len(template_files) >= 10, "There should be at least 10 templates."
-    
-    for tf in template_files:
-        with open(tf, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
-        try:
-            # model_validate will throw an exception if invalid
-            pipeline = Pipeline.model_validate(data)
-            
-            # Additional asserts
-            assert pipeline.schema_version == "2.0"
-            assert len(pipeline.nodes) > 0
-        except Exception as e:
-            raise AssertionError(f"Template {tf.name} failed validation: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Library template tests (community sharing)
-# ---------------------------------------------------------------------------
-
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from neuralflow.api.main import app
+from neuralflow.compiler.models import Pipeline
 from neuralflow.state.sqlite import StateManager
+
+
+def test_all_templates_valid() -> None:
+    """
+    Ensure every JSON file in templates/ is a valid v2 pipeline.
+    This also verifies they contain no secrets (Pipeline.model_validate will
+    ensure it matches schema).
+    """
+    templates_dir = Path(__file__).parent.parent.parent / "templates"
+    template_files = list(templates_dir.glob("*.json"))
+
+    assert len(template_files) >= 10, "There should be at least 10 templates."
+
+    for tf in template_files:
+        with open(tf, encoding="utf-8") as f:
+            data = json.load(f)
+
+        try:
+            # model_validate will throw an exception if invalid
+            pipeline = Pipeline.model_validate(data)
+
+            # Additional asserts
+            assert pipeline.schema_version == "2.0"
+            assert len(pipeline.nodes) > 0
+        except Exception as e:
+            raise AssertionError(f"Template {tf.name} failed validation: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Library template tests (community sharing)
+# ---------------------------------------------------------------------------
 
 # A minimal valid pipeline for library publish tests
 _VALID_PIPELINE: dict = {
@@ -47,14 +48,27 @@ _VALID_PIPELINE: dict = {
     "id": "test-lib-pipeline-001",
     "name": "Library Test Pipeline",
     "version": "1.0.0",
-    "endpoints": {
-        "ollama:qwen2.5:3b": {"kind": "ollama", "model": "qwen2.5:3b"}
-    },
+    "endpoints": {"ollama:qwen2.5:3b": {"kind": "ollama", "model": "qwen2.5:3b"}},
     "nodes": [
-        {"id": "in", "type": "input", "inputs": [], "outputs": [{"name": "prompt", "type": "text"}]},
-        {"id": "bot", "type": "model", "endpoint_ref": "ollama:qwen2.5:3b",
-         "inputs": [{"name": "input", "type": "text"}], "outputs": [{"name": "reply", "type": "text"}]},
-        {"id": "out", "type": "output", "inputs": [{"name": "result", "type": "text"}], "outputs": []},
+        {
+            "id": "in",
+            "type": "input",
+            "inputs": [],
+            "outputs": [{"name": "prompt", "type": "text"}],
+        },
+        {
+            "id": "bot",
+            "type": "model",
+            "endpoint_ref": "ollama:qwen2.5:3b",
+            "inputs": [{"name": "input", "type": "text"}],
+            "outputs": [{"name": "reply", "type": "text"}],
+        },
+        {
+            "id": "out",
+            "type": "output",
+            "inputs": [{"name": "result", "type": "text"}],
+            "outputs": [],
+        },
     ],
     "edges": [
         {"from": "in.prompt", "to": "bot.input"},
@@ -71,10 +85,8 @@ def _setup_test_db():
     sm = StateManager(db_path)
     app.state.state_manager = sm
     yield sm
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(db_path)
-    except OSError:
-        pass
 
 
 @pytest.mark.asyncio

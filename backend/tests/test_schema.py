@@ -36,14 +36,19 @@ from neuralflow.compiler.validation import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_repo_root() -> pathlib.Path:
     current = pathlib.Path(__file__).resolve().parent
     for parent in [current, *current.parents]:
         if (parent / "shared" / "pipeline.schema.json").exists():
             return parent
-    raise RuntimeError("Could not find repository root containing shared/pipeline.schema.json")
+    raise RuntimeError(
+        "Could not find repository root containing shared/pipeline.schema.json"
+    )
+
 
 SCHEMA_PATH = _get_repo_root() / "shared" / "pipeline.schema.json"
+
 
 def _load_schema() -> dict[str, Any]:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -116,7 +121,11 @@ VALID_SOLVER_VERIFIER_JUDGE: dict[str, Any] = {
             "id": "refine",
             "body": ["solver", "verifier"],
             "max_iterations": 5,
-            "stop_when": {"field": "verifier.output.verified", "op": "==", "value": True},
+            "stop_when": {
+                "field": "verifier.output.verified",
+                "op": "==",
+                "value": True,
+            },
             "on_max": "return_best",
         }
     ],
@@ -182,7 +191,9 @@ INVALID_TYPE_MISMATCH: dict[str, Any] = {
             "id": "consumer",
             "type": "model",
             "endpoint_ref": "cloud:gpt-4o",
-            "inputs": [{"name": "score", "type": "number"}],  # expects number — mismatch!
+            "inputs": [
+                {"name": "score", "type": "number"}
+            ],  # expects number — mismatch!
             "outputs": [{"name": "result", "type": "text"}],
         },
     ],
@@ -224,7 +235,8 @@ def test_valid_pipeline_endpoint_refs_resolve() -> None:
     for node in pipeline.nodes:
         if node.endpoint_ref is not None:
             assert node.endpoint_ref in endpoint_keys, (
-                f"Node '{node.id}' endpoint_ref '{node.endpoint_ref}' not in endpoints map."
+                f"Node '{node.id}' endpoint_ref '{node.endpoint_ref}' "
+                "not in endpoints map."
             )
 
 
@@ -234,14 +246,18 @@ def test_valid_pipeline_endpoint_refs_resolve() -> None:
 
 
 def test_cyclic_pipeline_fails_json_schema() -> None:
-    """Cyclic pipeline must still be structurally valid JSON Schema — cycles are a semantic error."""
+    """Cyclic pipeline must still be structurally valid JSON Schema.
+
+    Cycles are a semantic error, not a structural one.
+    """
     # JSON Schema cannot detect cycles; this confirms the document is otherwise valid.
     # The cycle is caught by validate_pipeline() (compiler), tested below.
     _assert_json_schema_valid(INVALID_CYCLIC)
 
 
 def test_cyclic_pipeline_rejected_by_compiler() -> None:
-    """validate_pipeline() must raise PipelineValidationErrors for a graph with a back-edge."""
+    """validate_pipeline() must raise PipelineValidationErrors for a graph
+    with a back-edge."""
     pipeline = Pipeline.model_validate(INVALID_CYCLIC)
     with pytest.raises(PipelineValidationErrors) as exc_info:
         validate_pipeline(pipeline)
@@ -254,7 +270,10 @@ def test_cyclic_pipeline_rejected_by_compiler() -> None:
 
 
 def test_type_mismatch_pipeline_fails_json_schema() -> None:
-    """Type-mismatch pipeline must also be structurally valid JSON Schema — port types are semantic."""
+    """Type-mismatch pipeline must also be structurally valid JSON Schema.
+
+    Port types are a semantic concern, not a structural one.
+    """
     _assert_json_schema_valid(INVALID_TYPE_MISMATCH)
 
 
@@ -287,8 +306,7 @@ def test_wrong_schema_version_rejected() -> None:
 def test_model_node_without_endpoint_ref_rejected() -> None:
     bad = dict(VALID_SOLVER_VERIFIER_JUDGE)
     bad_nodes = [
-        {**n, "endpoint_ref": None} if n["type"] == "model" else n
-        for n in bad["nodes"]
+        {**n, "endpoint_ref": None} if n["type"] == "model" else n for n in bad["nodes"]
     ]
     # Remove endpoint_ref key entirely from model nodes
     cleaned = []

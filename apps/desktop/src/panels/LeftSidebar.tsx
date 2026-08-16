@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { NodeType } from '@shared/types';
+import type { NodeType, Pipeline, PortType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import KomvosLogo from '../assets/KomvosLogo.png';
 
@@ -32,9 +32,19 @@ export interface LibraryTemplate {
   description: string;
   author: string;
   tags: string;
-  pipeline: Record<string, unknown>;
+  pipeline: Pipeline;
   created_at: number;
   downloads: number;
+}
+
+const PORT_TYPES: readonly PortType[] = ['text', 'number', 'boolean', 'json', 'image', 'audio'];
+
+/**
+ * Custom nodes are user-authored and stored by the backend with free-form port
+ * type strings. Narrow to the schema's PortType, falling back to 'text'.
+ */
+function toPortType(raw: string): PortType {
+  return PORT_TYPES.includes(raw as PortType) ? (raw as PortType) : 'text';
 }
 
 export interface CustomNodeDef {
@@ -54,7 +64,7 @@ interface LeftSidebarProps {
   backendPort: number | null;
   backendToken: string | null;
   backendConnected: boolean | null;
-  onLoadTemplate?: (schema: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
+  onLoadTemplate?: (schema: Pipeline) => void;
   onPublishClick?: () => void;
   onCreateCustomNode?: () => void;
   customNodes?: CustomNodeDef[];
@@ -63,7 +73,7 @@ interface LeftSidebarProps {
 }
 
 export default function LeftSidebar({ backendPort: _backendPort, backendToken, backendConnected, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, API_BASE }: LeftSidebarProps) {
-  const [templates, setTemplates] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [templates, setTemplates] = useState<Pipeline[]>([]);
   const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([]);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -223,9 +233,9 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
                 <div
                   key={cn.id}
                   draggable
-                  onDragStart={(e) => onDragStart(e, 'transform' as any, {
-                    inputs: cn.inputs.map(p => ({ name: p.name, type: p.type as any })),
-                    outputs: cn.outputs.map(p => ({ name: p.name, type: p.type as any })),
+                  onDragStart={(e) => onDragStart(e, 'transform', {
+                    inputs: cn.inputs.map(p => ({ name: p.name, type: toPortType(p.type) })),
+                    outputs: cn.outputs.map(p => ({ name: p.name, type: toPortType(p.type) })),
                     config: {
                       system_prompt: cn.template,
                       custom_node_id: cn.id,

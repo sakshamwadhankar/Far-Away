@@ -90,18 +90,14 @@ def _resolve_field(field_path: str, state: dict[str, dict[str, Any]]) -> Any:
     # Traverse remaining path segments through nested dicts
     for segment in remaining:
         if not isinstance(value, dict):
-            prior = ".".join(
-                remaining[: remaining.index(segment)]
-            )
+            prior = ".".join(remaining[: remaining.index(segment)])
             raise StopFieldResolutionError(
                 f"Cannot traverse into non-dict value at "
                 f"'{node_id}.{port_name}.{prior}'. "
                 f"Got {type(value).__name__}, expected dict."
             )
         if segment not in value:
-            prior = ".".join(
-                remaining[: remaining.index(segment) + 1]
-            )
+            prior = ".".join(remaining[: remaining.index(segment) + 1])
             raise StopFieldResolutionError(
                 f"Key '{segment}' not found at path "
                 f"'{node_id}.{port_name}.{prior}'. "
@@ -156,16 +152,16 @@ def _apply_op(op: StopOp, resolved: Any, target: StopValue) -> bool:
     if isinstance(resolved, bool) or isinstance(target, bool):
         # Don't coerce bools to float — compare directly
         if op == "==":
-            return resolved == target
+            return bool(resolved == target)
         if op == "!=":
-            return resolved != target
+            return bool(resolved != target)
         raise StopConditionTypeError(
             f"Cannot apply '{op}' to boolean values. "
             "Use '==' or '!=' for boolean comparisons."
         )
 
     # Both numeric? Compare as floats.
-    if isinstance(resolved, (int, float)) and isinstance(target, (int, float)):
+    if isinstance(resolved, int | float) and isinstance(target, int | float):
         r_val = float(resolved)
         t_val = float(target)
         if op == "==":
@@ -199,9 +195,9 @@ def _apply_op(op: StopOp, resolved: Any, target: StopValue) -> bool:
 
     # Direct equality/inequality for mixed types
     if op == "==":
-        return resolved == target
+        return bool(resolved == target)
     if op == "!=":
-        return resolved != target
+        return bool(resolved != target)
 
     raise StopConditionTypeError(
         f"Cannot apply '{op}' between {type(resolved).__name__} "

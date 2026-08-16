@@ -25,7 +25,6 @@ import pytest
 from neuralflow.compiler.dag import CompiledDAG, compile
 from neuralflow.compiler.validation import PipelineValidationErrors
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — inline pipeline documents
 # ---------------------------------------------------------------------------
@@ -302,7 +301,10 @@ def test_compile_rejects_bad_loop_body() -> None:
     """compile() raises PipelineValidationErrors for nonexistent node in body."""
     with pytest.raises(PipelineValidationErrors) as exc_info:
         compile(INVALID_LOOP_BODY)
-    assert any("[Invalid Loop Body]" in err and "nonexistent_node" in err for err in exc_info.value.errors)
+    assert any(
+        "[Invalid Loop Body]" in err and "nonexistent_node" in err
+        for err in exc_info.value.errors
+    )
 
 
 # ---------------------------------------------------------------------------

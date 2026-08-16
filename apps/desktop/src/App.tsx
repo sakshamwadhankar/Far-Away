@@ -18,8 +18,21 @@ import CustomNodeModal from './components/CustomNodeModal';
 import SettingsModal from './components/SettingsModal';
 import Tour from './components/Tour';
 import type { CustomNodeDef } from './panels/LeftSidebar';
+import type { Pipeline } from '@shared/types';
 
 export type AppMode = 'edit' | 'use';
+
+/** A single entry of FastAPI's 422 `detail` array. */
+interface ValidationDetail {
+  msg?: string;
+  loc?: (string | number)[];
+  type?: string;
+}
+
+/** Extract a human-readable message from an unknown thrown value. */
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
 
 export interface ModelInfo {
   endpoint_id: string;
@@ -63,6 +76,7 @@ export default function App() {
   const { showToast } = useToast();
 
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
+  const [pipelineEstimate, setPipelineEstimate] = useState<EstimateResponse | null>(null);
 
 
   // Undo/Redo
@@ -180,7 +194,43 @@ export default function App() {
     };
   }, [API_BASE]);
 
+  // Fetch cost/latency estimates whenever the pipeline changes (debounced).
+  // Feeds both the per-node badge on PipelineNode and the toolbar total.
+  useEffect(() => {
+    if (!backendConnected) return;
+    const timeout = setTimeout(async () => {
+      try {
+        const schema = toPipelineSchema(nodesRef.current, edgesRef.current);
+        const scrubbed = scrubSecrets(schema);
+        if (scrubbed.nodes.length === 0) {
+          setPipelineEstimate(null);
+          return;
+        }
 
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (backendToken) headers['Authorization'] = `Bearer ${backendToken}`;
+
+        const res = await fetch(`${API_BASE}/pipelines/estimate`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pipeline: scrubbed }),
+        });
+        if (!res.ok) return;
+
+        const data: EstimateResponse = await res.json();
+        setPipelineEstimate(data);
+        // Attach per-node estimates without pushing an undo snapshot.
+        setNodes((nds) => nds.map((n) => {
+          const est = data.nodes[n.id];
+          return est ? { ...n, data: { ...n.data, estimate: est } } : n;
+        }));
+      } catch (err) {
+        console.warn('Failed to estimate pipeline', err);
+      }
+    }, 1000); // debounce
+
+    return () => clearTimeout(timeout);
+  }, [nodes, edges, API_BASE, backendToken, backendConnected, setNodes]);
 
   const onConnect = useCallback((params: Edge | Connection) => {
     const sourceHandleType = params.sourceHandle?.split(':')[0];
@@ -437,7 +487,7 @@ export default function App() {
           try {
             const errData = JSON.parse(text);
             if (Array.isArray(errData.detail)) {
-              errData.detail.forEach((e: any) => {
+              errData.detail.forEach((e: ValidationDetail) => {
                 showToast(`Validation failed: ${e.msg || JSON.stringify(e)}`, 'error');
               });
             } else {
@@ -542,7 +592,7 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const jsonStr = e.target?.result as string;
-        const schema = JSON.parse(jsonStr);
+        const schema: Pipeline = JSON.parse(jsonStr);
         if (schema.schema_version !== "2.0") {
           throw new Error("Invalid or missing schema_version. Expected '2.0'.");
         }
@@ -551,9 +601,9 @@ export default function App() {
         }
         loadPipelineFromJson(schema);
         showToast('Pipeline imported successfully', 'success');
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to load pipeline', err);
-        showToast(err.message || 'Invalid pipeline JSON file', 'error');
+        showToast(errorMessage(err, 'Invalid pipeline JSON file'), 'error');
       }
       // Reset input so the same file can be loaded again if needed
       event.target.value = '';
@@ -561,8 +611,7 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const loadPipelineFromJson = (schema: any) => {
+  const loadPipelineFromJson = (schema: Pipeline) => {
     try {
       takeSnapshot({ nodes: nodesRef.current, edges: edgesRef.current });
       const { nodes: newNodes, edges: newEdges } = fromPipelineSchema(schema);
@@ -578,9 +627,9 @@ export default function App() {
       setEdges(newEdges);
       setChatMessages([]);
       setChatInputValues({});
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load pipeline from JSON', err);
-      showToast(err.message || 'Invalid pipeline JSON', 'error');
+      showToast(errorMessage(err, 'Invalid pipeline JSON'), 'error');
     }
   };
 
@@ -828,6 +877,31 @@ export default function App() {
                     </>
                   ) : '▶ Run Pipeline'}
                 </button>
+
+                {pipelineEstimate && (
+                  <div
+                    data-testid="pipeline-estimate"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      fontSize: 11,
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--text-2)',
+                      marginLeft: 4,
+                    }}
+                  >
+                    <div>
+                      Est: ~${pipelineEstimate.total_usd.toFixed(4)} ·
+                      {' '}~{(pipelineEstimate.total_latency_ms / 1000).toFixed(1)}s
+                    </div>
+                    {pipelineEstimate.loop_multiplier > 1 && (
+                      <div style={{ fontSize: 10, color: 'var(--warning, #f59e0b)' }}>
+                        ⚠ Loop ×{pipelineEstimate.loop_multiplier} applied
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

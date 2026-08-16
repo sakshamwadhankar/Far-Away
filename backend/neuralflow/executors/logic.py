@@ -9,10 +9,10 @@ from typing import Any
 
 from jinja2.sandbox import SandboxedEnvironment
 
-_SANDBOX = SandboxedEnvironment()
-
 from neuralflow.executors.base import BaseExecutor, ExecutorContext
 from neuralflow.scheduler.engine import EventKind, SchedulerEvent
+
+_SANDBOX = SandboxedEnvironment()
 
 
 class JudgeExecutor(BaseExecutor):
@@ -25,13 +25,21 @@ class JudgeExecutor(BaseExecutor):
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
         ctx.check_cancel()
 
-        score_field = ctx.node.config.score_field if ctx.node.config and ctx.node.config.score_field else "score"
-        strategy = ctx.node.config.strategy if ctx.node.config and ctx.node.config.strategy else "max_numeric"
+        score_field = (
+            ctx.node.config.score_field
+            if ctx.node.config and ctx.node.config.score_field
+            else "score"
+        )
+        strategy = (
+            ctx.node.config.strategy
+            if ctx.node.config and ctx.node.config.strategy
+            else "max_numeric"
+        )
 
         best_candidate: Any = None
         best_score = float("-inf")
 
-        for port_name, value in ctx.inputs.items():
+        for _port_name, value in ctx.inputs.items():
             if isinstance(value, dict) and score_field in value:
                 if strategy == "max_numeric":
                     try:
@@ -41,13 +49,15 @@ class JudgeExecutor(BaseExecutor):
                             best_candidate = value
                     except (ValueError, TypeError):
                         pass
-                elif strategy == "truthy":
-                    if bool(value[score_field]):
-                        best_candidate = value
-                        break
+                elif strategy == "truthy" and bool(value[score_field]):
+                    best_candidate = value
+                    break
 
         if best_candidate is None:
-            raise ValueError(f"Judge found no candidate matching score_field '{score_field}' with strategy '{strategy}'.")
+            raise ValueError(
+                f"Judge found no candidate matching score_field "
+                f"'{score_field}' with strategy '{strategy}'."
+            )
 
         outputs: dict[str, Any] = {}
         for port in ctx.node.outputs:
@@ -76,8 +86,12 @@ class RouterExecutor(BaseExecutor):
         condition_val = str(ctx.inputs.get("condition", ""))
         text_val = ctx.inputs.get("text", "")
 
-        routing_map = ctx.node.config.routing_map if ctx.node.config and ctx.node.config.routing_map else None
-        
+        routing_map = (
+            ctx.node.config.routing_map
+            if ctx.node.config and ctx.node.config.routing_map
+            else None
+        )
+
         matched_port = None
         if routing_map:
             matched_port = routing_map.get(str(condition_val))
@@ -86,9 +100,11 @@ class RouterExecutor(BaseExecutor):
                 if str(condition_val) == port.name:
                     matched_port = port.name
                     break
-        
+
         if not matched_port or matched_port not in [p.name for p in ctx.node.outputs]:
-            raise ValueError(f"Router condition '{condition_val}' matched no valid output port.")
+            raise ValueError(
+                f"Router condition '{condition_val}' matched no valid output port."
+            )
 
         outputs: dict[str, Any] = {}
         for port in ctx.node.outputs:
@@ -155,25 +171,31 @@ class CompareExecutor(BaseExecutor):
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
         ctx.check_cancel()
-        
+
         import difflib
 
         val1 = ctx.inputs.get("input1")
         val2 = ctx.inputs.get("input2")
 
-        str1 = json.dumps(val1, indent=2) if isinstance(val1, (dict, list)) else str(val1)
-        str2 = json.dumps(val2, indent=2) if isinstance(val2, (dict, list)) else str(val2)
+        str1 = (
+            json.dumps(val1, indent=2) if isinstance(val1, dict | list) else str(val1)
+        )
+        str2 = (
+            json.dumps(val2, indent=2) if isinstance(val2, dict | list) else str(val2)
+        )
 
         is_different = str1 != str2
 
         if is_different:
-            diff_lines = list(difflib.unified_diff(
-                str1.splitlines(),
-                str2.splitlines(),
-                fromfile="input1",
-                tofile="input2",
-                lineterm=""
-            ))
+            diff_lines = list(
+                difflib.unified_diff(
+                    str1.splitlines(),
+                    str2.splitlines(),
+                    fromfile="input1",
+                    tofile="input2",
+                    lineterm="",
+                )
+            )
             diff_text = "\n".join(diff_lines)
         else:
             diff_text = ""

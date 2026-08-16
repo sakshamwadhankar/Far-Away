@@ -14,7 +14,7 @@ Announce before modifying.
 from __future__ import annotations
 
 import time
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -108,18 +108,18 @@ class WsNodeErrorEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
-WsEvent = Union[
-    WsNodeStartedEvent,
-    WsTokenEvent,
-    WsNodeDoneEvent,
-    WsNodeErrorEvent,
-    WsLoopIterationEvent,
-    WsRunHaltedEvent,
-    WsRunCompletedEvent,
-    WsRunErrorEvent,
-    WsBudgetExceededEvent,
-    WsRunStoppedEvent,
-]
+WsEvent = (
+    WsNodeStartedEvent
+    | WsTokenEvent
+    | WsNodeDoneEvent
+    | WsNodeErrorEvent
+    | WsLoopIterationEvent
+    | WsRunHaltedEvent
+    | WsRunCompletedEvent
+    | WsRunErrorEvent
+    | WsBudgetExceededEvent
+    | WsRunStoppedEvent
+)
 
 # Terminal event types — WS handler stops streaming after these
 WS_TERMINAL_EVENTS = (

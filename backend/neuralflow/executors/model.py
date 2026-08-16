@@ -27,7 +27,6 @@ class ModelExecutor(BaseExecutor):
             raise RuntimeError(f"Model node '{node.id}' has no endpoint_ref.")
 
         endpoint = ctx.registry.resolve(node.endpoint_ref)
-        caps = endpoint.capabilities()
 
         # Gather inputs into a single combined string
         input_text_parts: list[str] = []
@@ -75,7 +74,8 @@ class ModelExecutor(BaseExecutor):
         for attempt in range(1, max_attempts + 1):
             ctx.check_cancel()
 
-            # For json mode, some endpoints require "json" in the prompt even if format is set.
+            # For json mode, some endpoints require "json" in the prompt
+            # even if the format is set.
             # But we rely on the system_prompt or the user's prompt.
             req = GenRequest(
                 messages=messages,
@@ -129,7 +129,11 @@ class ModelExecutor(BaseExecutor):
                         messages.append(
                             Message(
                                 role="user",
-                                content=f"The previous output was invalid JSON. Please fix this parsing error and return ONLY valid JSON: {exc}",
+                                content=(
+                                    "The previous output was invalid JSON. "
+                                    "Please fix this parsing error and "
+                                    f"return ONLY valid JSON: {exc}"
+                                ),
                             )
                         )
                     else:
@@ -139,9 +143,10 @@ class ModelExecutor(BaseExecutor):
                         # We must fail cleanly but preserve raw output.
                         # We'll raise a ValueError that includes the raw output.
                         raise ValueError(
-                            f"Failed to generate valid JSON after {max_attempts} attempts. "
+                            f"Failed to generate valid JSON after "
+                            f"{max_attempts} attempts. "
                             f"Last error: {last_error}. Raw output: {last_output_text}"
-                        )
+                        ) from exc
             else:
                 outputs = self._build_outputs(node, output_text)
                 await self._emit_done(

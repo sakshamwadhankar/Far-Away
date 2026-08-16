@@ -15,10 +15,9 @@ No application logic here — pure data models and field-level validation only.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Port
@@ -32,7 +31,9 @@ class Port(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    name: str = Field(min_length=1, description="Port identifier, unique within the node's port list.")
+    name: str = Field(
+        min_length=1, description="Port identifier, unique within the node's port list."
+    )
     type: PortType
 
 
@@ -40,7 +41,9 @@ class Port(BaseModel):
 # Node
 # ---------------------------------------------------------------------------
 
-NodeType = Literal["input", "output", "model", "loop", "judge", "router", "transform", "compare"]
+NodeType = Literal[
+    "input", "output", "model", "loop", "judge", "router", "transform", "compare"
+]
 
 
 class NodeConfig(BaseModel):
@@ -58,10 +61,17 @@ class NodeConfig(BaseModel):
     strategy: Literal["max_numeric", "truthy"] | None = Field(default="max_numeric")
     default_value: str | None = None
     label: str | None = None
-    # Custom node display metadata (used by transform nodes created from custom definitions)
-    custom_node_id: str | None = Field(default=None, description="ID of the custom node definition.")
-    custom_label: str | None = Field(default=None, description="Display label overriding 'transform'.")
-    custom_color: str | None = Field(default=None, description="Hex accent color for this custom node.")
+    # Custom node display metadata (used by transform nodes created from
+    # custom definitions)
+    custom_node_id: str | None = Field(
+        default=None, description="ID of the custom node definition."
+    )
+    custom_label: str | None = Field(
+        default=None, description="Display label overriding 'transform'."
+    )
+    custom_color: str | None = Field(
+        default=None, description="Hex accent color for this custom node."
+    )
 
 
 class Node(BaseModel):
@@ -69,7 +79,9 @@ class Node(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    id: str = Field(min_length=1, description="Unique node identifier within this pipeline.")
+    id: str = Field(
+        min_length=1, description="Unique node identifier within this pipeline."
+    )
     type: NodeType
     endpoint_ref: str | None = Field(
         default=None,
@@ -81,19 +93,25 @@ class Node(BaseModel):
     )
     role: str | None = Field(
         default=None,
-        description="Semantic role hint (e.g. 'solver', 'verifier'). Informational only.",
+        description=(
+            "Semantic role hint (e.g. 'solver', 'verifier'). Informational only."
+        ),
     )
     config: NodeConfig | None = None
     inputs: list[Port] = Field(default_factory=list)
     outputs: list[Port] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validate_model_node_endpoint(self) -> "Node":
+    def _validate_model_node_endpoint(self) -> Node:
         if self.type == "model" and not self.endpoint_ref:
-            raise ValueError(f"[Missing Endpoint] Node '{self.id}' of type 'model' must define an 'endpoint_ref'.")
+            raise ValueError(
+                f"[Missing Endpoint] Node '{self.id}' of type 'model' "
+                "must define an 'endpoint_ref'."
+            )
         if self.type != "model" and self.endpoint_ref is not None:
             raise ValueError(
-                f"[Invalid Endpoint] Only 'model' nodes may have 'endpoint_ref'; node '{self.id}' has type '{self.type}'."
+                "[Invalid Endpoint] Only 'model' nodes may have "
+                f"'endpoint_ref'; node '{self.id}' has type '{self.type}'."
             )
         return self
 
@@ -105,7 +123,7 @@ class Node(BaseModel):
 StopOp = Literal["==", "!=", ">", "<", ">=", "<=", "contains"]
 
 # Scalar value: string, number, or boolean — no raw code / eval.
-StopValue = Union[str, float, bool]
+StopValue = str | float | bool
 
 
 class StopCondition(BaseModel):
@@ -117,7 +135,13 @@ class StopCondition(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    field: Annotated[str, Field(min_length=1, description="Dot-path to the field, e.g. 'verify.output.verified'.")]
+    field: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="Dot-path to the field, e.g. 'verify.output.verified'.",
+        ),
+    ]
     op: StopOp
     value: StopValue
 
@@ -135,8 +159,12 @@ class Loop(BaseModel):
     model_config = {"extra": "forbid"}
 
     id: str = Field(min_length=1)
-    body: list[str] = Field(min_length=1, description="Ordered node IDs forming the loop body.")
-    max_iterations: int = Field(ge=1, le=100, description="Hard upper bound. No infinite loops.")
+    body: list[str] = Field(
+        min_length=1, description="Ordered node IDs forming the loop body."
+    )
+    max_iterations: int = Field(
+        ge=1, le=100, description="Hard upper bound. No infinite loops."
+    )
     stop_when: StopCondition
     on_max: OnMax
 
@@ -181,7 +209,18 @@ class Edge(BaseModel):
 
 # TODO(R0 Polish Phase): Keep "mock" out of the production schema entirely
 # and inject it dynamically in the test environment to avoid schema pollution.
-EndpointKind = Literal["openai", "anthropic", "google", "openai_compatible", "ollama", "mock", "groq", "openrouter", "zhipu", "nvidia"]
+EndpointKind = Literal[
+    "openai",
+    "anthropic",
+    "google",
+    "openai_compatible",
+    "ollama",
+    "mock",
+    "groq",
+    "openrouter",
+    "zhipu",
+    "nvidia",
+]
 
 
 class EndpointDescriptor(BaseModel):
@@ -198,7 +237,9 @@ class EndpointDescriptor(BaseModel):
         default=None,
         description="Optional override base URL for openai_compatible or ollama.",
     )
-    model: str | None = Field(default=None, description="Default model name for this endpoint ref.")
+    model: str | None = Field(
+        default=None, description="Default model name for this endpoint ref."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +261,12 @@ class Pipeline(BaseModel):
     schema_version: Literal["2.0"] = Field(alias="schema_version")
     id: str = Field(description="UUID v4 pipeline identifier.")
     name: str = Field(min_length=1)
-    description: str = Field(default="", description="Optional description for shared/exported pipelines.")
-    version: str = Field(pattern=r"^\d+\.\d+\.\d+$", description="Semantic version, e.g. '1.0.0'.")
+    description: str = Field(
+        default="", description="Optional description for shared/exported pipelines."
+    )
+    version: str = Field(
+        pattern=r"^\d+\.\d+\.\d+$", description="Semantic version, e.g. '1.0.0'."
+    )
     nodes: list[Node] = Field(min_length=1)
     loops: list[Loop] = Field(default_factory=list)  # Optional in schema
     edges: list[Edge]  # Required in schema, but can be empty
@@ -234,7 +279,9 @@ class Pipeline(BaseModel):
         if len(ids) != len(set(ids)):
             seen: set[str] = set()
             dupes = [n for n in ids if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
-            raise ValueError(f"[Duplicate Node ID] Duplicate node IDs found: {', '.join(dupes)}")
+            raise ValueError(
+                f"[Duplicate Node ID] Duplicate node IDs found: {', '.join(dupes)}"
+            )
         return nodes
 
     @field_validator("loops")
@@ -244,16 +291,19 @@ class Pipeline(BaseModel):
         if len(ids) != len(set(ids)):
             seen: set[str] = set()
             dupes = [n for n in ids if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
-            raise ValueError(f"[Duplicate Loop ID] Duplicate loop IDs found: {', '.join(dupes)}")
+            raise ValueError(
+                f"[Duplicate Loop ID] Duplicate loop IDs found: {', '.join(dupes)}"
+            )
         return loops
 
     @model_validator(mode="after")
-    def _endpoint_refs_resolve(self) -> "Pipeline":
+    def _endpoint_refs_resolve(self) -> Pipeline:
         """Every endpoint_ref used by a model node must exist in endpoints."""
         for node in self.nodes:
             if node.endpoint_ref and node.endpoint_ref not in self.endpoints:
                 raise ValueError(
-                    f"[Unresolved Endpoint] Node '{node.id}' references endpoint_ref '{node.endpoint_ref}' "
+                    f"[Unresolved Endpoint] Node '{node.id}' references "
+                    f"endpoint_ref '{node.endpoint_ref}' "
                     f"which is not defined in the 'endpoints' map."
                 )
         return self

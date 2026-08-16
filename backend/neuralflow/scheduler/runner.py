@@ -26,21 +26,27 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from neuralflow.state.sqlite import StateManager
 
-from neuralflow.compiler.dag import CompiledDAG, compile
-from neuralflow.compiler.models import Pipeline
-from neuralflow.endpoints.base import GenRequest, ModelEndpoint
+from neuralflow.compiler.dag import CompiledDAG
+from neuralflow.endpoints.base import (
+    Caps,
+    Cost,
+    GenRequest,
+    Health,
+    ModelEndpoint,
+    Token,
+)
 from neuralflow.scheduler.engine import (
     CancelToken,
     EndpointRegistry,
     EventKind,
     Scheduler,
     SchedulerEvent,
-    SchedulerResult,
 )
 from neuralflow.scheduler.events import (
     WsBudgetExceededEvent,
@@ -79,7 +85,7 @@ class PipelineRunner:
         *,
         budget_usd: float | None = None,
         budget_wall_clock_seconds: float | None = None,
-        state_manager: "StateManager | None" = None,
+        state_manager: StateManager | None = None,
     ) -> None:
         self.run_id = run_id
         self._dag = dag
@@ -113,9 +119,7 @@ class PipelineRunner:
         resume_state = None
         if self._state_manager:
             resume_state = self._state_manager.load_run_state(self.run_id)
-            self._state_manager.save_run(
-                self.run_id, self._dag.pipeline.id, "running"
-            )
+            self._state_manager.save_run(self.run_id, self._dag.pipeline.id, "running")
 
         # Pre-budget check for each model node: wrap registry endpoints
         # to call estimate_cost() before generate() starts.
@@ -179,7 +183,8 @@ class PipelineRunner:
                     node.id: {
                         port.name: (
                             getattr(node.config, "default_value", "")
-                            if getattr(node, "config", None) and getattr(node.config, "default_value", None)
+                            if getattr(node, "config", None)
+                            and getattr(node.config, "default_value", None)
                             else ""
                         )
                         for port in node.outputs
@@ -193,11 +198,13 @@ class PipelineRunner:
             logger.exception("Unhandled error in pipeline run %s", self.run_id)
             if self._state_manager:
                 self._state_manager.update_run_status(
-                    self.run_id, "error", self._cumulative_cost, self._total_tokens_in, self._total_tokens_out
+                    self.run_id,
+                    "error",
+                    self._cumulative_cost,
+                    self._total_tokens_in,
+                    self._total_tokens_out,
                 )
-            await queue.put(
-                WsRunErrorEvent(run_id=self.run_id, error=str(exc))
-            )
+            await queue.put(WsRunErrorEvent(run_id=self.run_id, error=str(exc)))
             await queue.put(None)
             return
 
@@ -206,7 +213,11 @@ class PipelineRunner:
         if result.completed:
             if self._state_manager:
                 self._state_manager.update_run_status(
-                    self.run_id, "completed", self._cumulative_cost, self._total_tokens_in, self._total_tokens_out
+                    self.run_id,
+                    "completed",
+                    self._cumulative_cost,
+                    self._total_tokens_in,
+                    self._total_tokens_out,
                 )
             await queue.put(
                 WsRunCompletedEvent(
@@ -222,13 +233,21 @@ class PipelineRunner:
             if self._stopped_by_user:
                 if self._state_manager:
                     self._state_manager.update_run_status(
-                        self.run_id, "stopped", self._cumulative_cost, self._total_tokens_in, self._total_tokens_out
+                        self.run_id,
+                        "stopped",
+                        self._cumulative_cost,
+                        self._total_tokens_in,
+                        self._total_tokens_out,
                     )
                 await queue.put(WsRunStoppedEvent(run_id=self.run_id))
             elif budget_registry.budget_exceeded:
                 if self._state_manager:
                     self._state_manager.update_run_status(
-                        self.run_id, "budget_exceeded", self._cumulative_cost, self._total_tokens_in, self._total_tokens_out
+                        self.run_id,
+                        "budget_exceeded",
+                        self._cumulative_cost,
+                        self._total_tokens_in,
+                        self._total_tokens_out,
                     )
                 await queue.put(
                     WsBudgetExceededEvent(
@@ -241,7 +260,11 @@ class PipelineRunner:
             else:
                 if self._state_manager:
                     self._state_manager.update_run_status(
-                        self.run_id, "halted", self._cumulative_cost, self._total_tokens_in, self._total_tokens_out
+                        self.run_id,
+                        "halted",
+                        self._cumulative_cost,
+                        self._total_tokens_in,
+                        self._total_tokens_out,
                     )
                 await queue.put(
                     WsRunHaltedEvent(
@@ -276,6 +299,7 @@ class PipelineRunner:
             )
         if event.kind == EventKind.NODE_ERROR:
             from neuralflow.scheduler.events import WsNodeErrorEvent
+
             return WsNodeErrorEvent(
                 run_id=self.run_id,
                 node_id=node_id,
@@ -361,33 +385,36 @@ class _BudgetCheckingEndpoint:
         self._registry = registry
         self.id = wrapped.id
 
-    async def generate(self, req: GenRequest):  # type: ignore[override]
+    async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         runner = self._registry._runner
         estimated = self._wrapped.estimate_cost(req)
         runner._total_tokens_in += estimated.tokens_in
 
-        if self._budget_usd is not None:
-            if runner._cumulative_cost + estimated.usd > self._budget_usd:
-                self._registry.budget_exceeded = True
-                self._registry.exceeded_at_node = self.id
-                self._cancel.cancel(
-                    f"Budget exceeded: ${runner._cumulative_cost + estimated.usd:.6f} "
-                    f"> ${self._budget_usd:.6f}"
-                )
-                # Raise so the scheduler stops — will be caught as PipelineCancelled
-                from neuralflow.scheduler.engine import PipelineCancelled
-                raise PipelineCancelled(self._cancel.reason)
-        
+        if (
+            self._budget_usd is not None
+            and runner._cumulative_cost + estimated.usd > self._budget_usd
+        ):
+            self._registry.budget_exceeded = True
+            self._registry.exceeded_at_node = self.id
+            self._cancel.cancel(
+                f"Budget exceeded: ${runner._cumulative_cost + estimated.usd:.6f} "
+                f"> ${self._budget_usd:.6f}"
+            )
+            # Raise so the scheduler stops — will be caught as PipelineCancelled
+            from neuralflow.scheduler.engine import PipelineCancelled
+
+            raise PipelineCancelled(self._cancel.reason)
+
         runner._cumulative_cost += estimated.usd
 
         async for token in self._wrapped.generate(req):
             yield token
 
-    async def health(self):  # type: ignore[override]
+    async def health(self) -> Health:
         return await self._wrapped.health()
 
-    def capabilities(self):  # type: ignore[override]
+    def capabilities(self) -> Caps:
         return self._wrapped.capabilities()
 
-    def estimate_cost(self, req: GenRequest):  # type: ignore[override]
+    def estimate_cost(self, req: GenRequest) -> Cost:
         return self._wrapped.estimate_cost(req)

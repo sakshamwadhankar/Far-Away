@@ -38,14 +38,12 @@ from neuralflow.scheduler.engine import (
     PipelineCancelled,
     Scheduler,
     SchedulerEvent,
-    SchedulerResult,
 )
 from neuralflow.scheduler.stop_eval import (
     StopConditionTypeError,
     StopFieldResolutionError,
     evaluate_stop_condition,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -215,15 +213,15 @@ async def test_parallel_branches() -> None:
         predefined_text="Response from B",
     )
 
-    registry = EndpointRegistry({
-        "mock:a": endpoint_a,
-        "mock:b": endpoint_b,
-    })
+    registry = EndpointRegistry(
+        {
+            "mock:a": endpoint_a,
+            "mock:b": endpoint_b,
+        }
+    )
 
     dag = compile(DIAMOND_PIPELINE)
-    scheduler = Scheduler(
-        dag, registry, event_callback=collect_events
-    )
+    scheduler = Scheduler(dag, registry, event_callback=collect_events)
 
     start = time.monotonic()
     result = await scheduler.run({"in": {"prompt": "test input"}})
@@ -231,12 +229,8 @@ async def test_parallel_branches() -> None:
 
     # Both branches completed with correct outputs
     assert result.completed is True
-    assert result.node_results["branch_a"].outputs["output"] == (
-        "Response from A"
-    )
-    assert result.node_results["branch_b"].outputs["output"] == (
-        "Response from B"
-    )
+    assert result.node_results["branch_a"].outputs["output"] == ("Response from A")
+    assert result.node_results["branch_b"].outputs["output"] == ("Response from B")
 
     # --- Primary assertion: event ordering proves concurrency ---
     # Extract node_started / node_done events for the two branches
@@ -252,20 +246,18 @@ async def test_parallel_branches() -> None:
     # If parallel:   [started_a, started_b, ..., done_a, done_b]
     #                  (or started_b, started_a, ...)
     started_indices = [
-        i for i, (kind, _) in enumerate(branch_events)
-        if kind == EventKind.NODE_STARTED
+        i for i, (kind, _) in enumerate(branch_events) if kind == EventKind.NODE_STARTED
     ]
     done_indices = [
-        i for i, (kind, _) in enumerate(branch_events)
-        if kind == EventKind.NODE_DONE
+        i for i, (kind, _) in enumerate(branch_events) if kind == EventKind.NODE_DONE
     ]
 
-    assert len(started_indices) == 2, (
-        f"Expected 2 node_started events, got {len(started_indices)}"
-    )
-    assert len(done_indices) == 2, (
-        f"Expected 2 node_done events, got {len(done_indices)}"
-    )
+    assert (
+        len(started_indices) == 2
+    ), f"Expected 2 node_started events, got {len(started_indices)}"
+    assert (
+        len(done_indices) == 2
+    ), f"Expected 2 node_done events, got {len(done_indices)}"
 
     # Both starts must happen before EITHER finish
     max_start_idx = max(started_indices)
@@ -316,10 +308,12 @@ async def test_loop_stops_on_condition() -> None:
         response_fn=verify_response_fn,
     )
 
-    registry = EndpointRegistry({
-        "mock:solver": solver_endpoint,
-        "mock:verify": verify_endpoint,
-    })
+    registry = EndpointRegistry(
+        {
+            "mock:solver": solver_endpoint,
+            "mock:verify": verify_endpoint,
+        }
+    )
 
     dag = compile(LOOP_PIPELINE)
     scheduler = Scheduler(dag, registry)
@@ -330,9 +324,9 @@ async def test_loop_stops_on_condition() -> None:
     assert "refine" in result.loop_histories
 
     history = result.loop_histories["refine"]
-    assert len(history) == 3, (
-        f"Expected loop to stop at iteration 3, but ran {len(history)} iterations."
-    )
+    assert (
+        len(history) == 3
+    ), f"Expected loop to stop at iteration 3, but ran {len(history)} iterations."
 
     # Verify per-iteration records exist
     assert history[0].iteration == 1
@@ -366,10 +360,12 @@ async def test_loop_hits_max_iterations() -> None:
         predefined_text="Solver attempt",
     )
 
-    registry = EndpointRegistry({
-        "mock:solver": solver_endpoint,
-        "mock:verify": verify_endpoint,
-    })
+    registry = EndpointRegistry(
+        {
+            "mock:solver": solver_endpoint,
+            "mock:verify": verify_endpoint,
+        }
+    )
 
     dag = compile(LOOP_PIPELINE)
     scheduler = Scheduler(dag, registry)
@@ -380,9 +376,9 @@ async def test_loop_hits_max_iterations() -> None:
     assert "refine" in result.loop_histories
 
     history = result.loop_histories["refine"]
-    assert len(history) == 5, (
-        f"Expected loop to run max_iterations=5 times, but ran {len(history)}."
-    )
+    assert (
+        len(history) == 5
+    ), f"Expected loop to run max_iterations=5 times, but ran {len(history)}."
 
     # All iterations should have verified=False
     for record in history:
@@ -409,10 +405,12 @@ async def test_loop_on_max_fail() -> None:
         predefined_text="Solver attempt",
     )
 
-    registry = EndpointRegistry({
-        "mock:solver": solver_endpoint,
-        "mock:verify": verify_endpoint,
-    })
+    registry = EndpointRegistry(
+        {
+            "mock:solver": solver_endpoint,
+            "mock:verify": verify_endpoint,
+        }
+    )
 
     pipeline_data = _make_loop_pipeline_fail()
     dag = compile(pipeline_data)
@@ -437,54 +435,67 @@ class TestStopEvalOperators:
         return StopCondition(field="node.port", op=op, value=target)  # type: ignore[arg-type]
 
     def test_eq_true(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("==", True), self._make_state(True)
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond("==", True), self._make_state(True))
+            is True
+        )
 
     def test_eq_false(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("==", True), self._make_state(False)
-        ) is False
+        assert (
+            evaluate_stop_condition(self._cond("==", True), self._make_state(False))
+            is False
+        )
 
     def test_ne(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("!=", "bad"), self._make_state("good")
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond("!=", "bad"), self._make_state("good"))
+            is True
+        )
 
     def test_gt(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond(">", 0.5), self._make_state(0.9)
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond(">", 0.5), self._make_state(0.9)) is True
+        )
 
     def test_gt_false(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond(">", 0.5), self._make_state(0.3)
-        ) is False
+        assert (
+            evaluate_stop_condition(self._cond(">", 0.5), self._make_state(0.3))
+            is False
+        )
 
     def test_lt(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("<", 10.0), self._make_state(5.0)
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond("<", 10.0), self._make_state(5.0))
+            is True
+        )
 
     def test_ge(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond(">=", 0.5), self._make_state(0.5)
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond(">=", 0.5), self._make_state(0.5))
+            is True
+        )
 
     def test_le(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("<=", 0.5), self._make_state(0.5)
-        ) is True
+        assert (
+            evaluate_stop_condition(self._cond("<=", 0.5), self._make_state(0.5))
+            is True
+        )
 
     def test_contains(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("contains", "success"), self._make_state("task success!")
-        ) is True
+        assert (
+            evaluate_stop_condition(
+                self._cond("contains", "success"), self._make_state("task success!")
+            )
+            is True
+        )
 
     def test_contains_false(self) -> None:
-        assert evaluate_stop_condition(
-            self._cond("contains", "fail"), self._make_state("task success!")
-        ) is False
+        assert (
+            evaluate_stop_condition(
+                self._cond("contains", "fail"), self._make_state("task success!")
+            )
+            is False
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -502,9 +513,7 @@ def test_stop_eval_nested_json_field() -> None:
             "output": {"result": {"verified": True, "score": 0.9}},
         }
     }
-    cond = StopCondition(
-        field="verify.output.result.verified", op="==", value=True
-    )
+    cond = StopCondition(field="verify.output.result.verified", op="==", value=True)
     assert evaluate_stop_condition(cond, state) is True
 
 
@@ -518,9 +527,7 @@ def test_stop_eval_json_string_auto_parse() -> None:
             "output": '{"verified": true, "score": 0.9}',
         }
     }
-    cond = StopCondition(
-        field="verify.output.verified", op="==", value=True
-    )
+    cond = StopCondition(field="verify.output.verified", op="==", value=True)
     assert evaluate_stop_condition(cond, state) is True
 
 
@@ -617,12 +624,8 @@ async def test_linear_pipeline_end_to_end() -> None:
     result = await scheduler.run({"in": {"prompt": "Hi"}})
 
     assert result.completed is True
-    assert result.node_results["model"].outputs["output"] == (
-        "Hello from mock"
-    )
-    assert result.node_results["out"].outputs["result"] == (
-        "Hello from mock"
-    )
+    assert result.node_results["model"].outputs["output"] == ("Hello from mock")
+    assert result.node_results["out"].outputs["result"] == ("Hello from mock")
 
 
 # ---------------------------------------------------------------------------
@@ -652,7 +655,8 @@ async def test_cancel_token_halts_pipeline() -> None:
     token.cancel("Budget exceeded $5.00")
 
     scheduler = Scheduler(
-        dag, registry,
+        dag,
+        registry,
         event_callback=collect,
         cancel_token=token,
     )
@@ -660,10 +664,7 @@ async def test_cancel_token_halts_pipeline() -> None:
 
     assert result.completed is False
 
-    halt_events = [
-        e for e in events
-        if e.kind == EventKind.RUN_HALTED
-    ]
+    halt_events = [e for e in events if e.kind == EventKind.RUN_HALTED]
     assert len(halt_events) == 1
     assert "Budget exceeded" in halt_events[0].data["reason"]
 
@@ -693,9 +694,7 @@ async def test_event_stream_linear_pipeline() -> None:
     registry = EndpointRegistry({"mock:model": endpoint})
 
     dag = compile(LINEAR_PIPELINE)
-    scheduler = Scheduler(
-        dag, registry, event_callback=collect
-    )
+    scheduler = Scheduler(dag, registry, event_callback=collect)
     result = await scheduler.run({"in": {"prompt": "Hi"}})
 
     assert result.completed is True
@@ -711,10 +710,7 @@ async def test_event_stream_linear_pipeline() -> None:
     assert kinds.count(EventKind.TOKEN) == 2
 
     # Model's token events must be between its started and done
-    model_events = [
-        (e.kind, e.node_id) for e in events
-        if e.node_id == "model"
-    ]
+    model_events = [(e.kind, e.node_id) for e in events if e.node_id == "model"]
     assert model_events[0] == (EventKind.NODE_STARTED, "model")
     assert model_events[-1] == (EventKind.NODE_DONE, "model")
     # All middle events should be tokens
@@ -753,9 +749,9 @@ async def test_budget_cap_halts_pipeline() -> None:
     Verify that PipelineRunner enforcing a strict USD budget cap halts execution
     and emits WsBudgetExceededEvent when the estimate_cost exceeds the cap.
     """
-    from neuralflow.scheduler.runner import PipelineRunner
     from neuralflow.endpoints.base import Cost
     from neuralflow.scheduler.events import WsBudgetExceededEvent
+    from neuralflow.scheduler.runner import PipelineRunner
 
     class ExpensiveMockEndpoint(MockEndpoint):
         def estimate_cost(self, req: Any) -> Cost:
@@ -810,7 +806,7 @@ async def test_budget_cap_halts_pipeline() -> None:
     }
 
     dag = compile(expensive_pipeline)
-    
+
     runner = PipelineRunner(
         run_id="run-budget-123",
         dag=dag,
@@ -818,18 +814,18 @@ async def test_budget_cap_halts_pipeline() -> None:
         budget_usd=15.0,  # Cap at $15
     )
     queue: asyncio.Queue = asyncio.Queue()
-    
+
     await runner.run(queue)
-    
+
     events = []
     while not queue.empty():
         evt = await queue.get()
         if evt is not None:
             events.append(evt)
-            
+
     budget_events = [e for e in events if isinstance(e, WsBudgetExceededEvent)]
     assert len(budget_events) == 1
-    
+
     # model_1 costs $10 (passes, cumulative $10)
     # model_2 costs $10 (fails, $20 > $15)
     assert budget_events[0].cumulative_cost_usd == 10.0

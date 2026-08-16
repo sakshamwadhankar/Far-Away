@@ -17,13 +17,13 @@ RULES:
 """
 
 import pytest
+
 from neuralflow.endpoints.base import (
     GenRequest,
     Message,
     ModelEndpoint,
 )
 from neuralflow.endpoints.mock import MockEndpoint
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,8 +74,7 @@ async def test_gen_request_flows_through_mock_endpoint() -> None:
         tokens.append(tok.text)
 
     assert "".join(tokens) == predefined, (
-        f"Token stream reassembled as {' '.join(tokens)!r}, "
-        f"expected {predefined!r}"
+        f"Token stream reassembled as {' '.join(tokens)!r}, " f"expected {predefined!r}"
     )
 
 

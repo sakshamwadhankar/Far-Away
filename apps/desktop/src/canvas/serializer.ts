@@ -1,6 +1,38 @@
-import type { Pipeline, Node as SchemaNode, Edge as SchemaEdge, EndpointDescriptor } from '@shared/types';
+import type {
+  Pipeline,
+  Node as SchemaNode,
+  Edge as SchemaEdge,
+  EndpointDescriptor,
+  EndpointKind,
+} from '@shared/types';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from './nodes/PipelineNode';
+
+const ENDPOINT_KINDS: readonly EndpointKind[] = [
+  'openai',
+  'anthropic',
+  'google',
+  'openai_compatible',
+  'ollama',
+  'mock',
+];
+
+/**
+ * Narrow the provider prefix of an `endpoint_ref` to a schema `EndpointKind`.
+ * Unknown providers are treated as `openai_compatible`, which is the schema's
+ * catch-all for third-party OpenAI-shaped services.
+ */
+function toEndpointKind(provider: string): EndpointKind {
+  return ENDPOINT_KINDS.includes(provider as EndpointKind)
+    ? (provider as EndpointKind)
+    : 'openai_compatible';
+}
+
+/**
+ * A pipeline edge as it may appear on disk. The backend pydantic model aliases
+ * `from` to `from_`, so files written by older backend versions carry that key.
+ */
+type SerializedEdge = SchemaEdge & { from_?: string };
 
 // Generate a random UUID v4
 function uuidv4() {
@@ -55,7 +87,7 @@ export function toPipelineSchema(
           };
         } else {
           endpoints[n.endpoint_ref] = {
-            kind: provider as any,
+            kind: toEndpointKind(provider),
             model: modelName,
           };
         }
@@ -91,8 +123,8 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
     };
   });
 
-  const edges: RFEdge[] = pipeline.edges.map((e: any, index) => {
-    const fromStr = e.from || e.from_;
+  const edges: RFEdge[] = (pipeline.edges as SerializedEdge[]).map((e, index) => {
+    const fromStr = e.from || e.from_ || '';
     const [sourceNode, sourcePort] = fromStr.split('.');
     const [targetNode, targetPort] = e.to.split('.');
 

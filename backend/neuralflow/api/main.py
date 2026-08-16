@@ -20,12 +20,17 @@ ROUTES:
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
 import os
 import sys
 import uuid
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
+import httpx
+import keyring
 from fastapi import (
     Depends,
     FastAPI,
@@ -35,35 +40,35 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
-import json
-from pathlib import Path
-import httpx
-import keyring
-from neuralflow.compiler.models import Pipeline
 
 from neuralflow.api.auth import verify_token
 from neuralflow.api.models import (
-    HealthResponse,
-    ModelInfo,
-    ModelsResponse,
-    RunRequest,
-    RunResponse,
-    StopResponse,
-    EstimateResponse,
-    NodeEstimate,
-    PublishTemplateRequest,
-    LibraryTemplateResponse,
-    PublishTemplateResponse,
-    SaveCustomNodeRequest,
-    CustomNodeResponse,
-    SaveCustomNodeResponse,
     ApiKeysResponse,
     ApiKeysUpdateRequest,
+    CustomNodeResponse,
+    EstimateResponse,
+    HealthResponse,
+    LibraryTemplateResponse,
+    ModelInfo,
+    ModelsResponse,
+    NodeEstimate,
+    PublishTemplateRequest,
+    PublishTemplateResponse,
+    RunRequest,
+    RunResponse,
+    SaveCustomNodeRequest,
+    SaveCustomNodeResponse,
+    StopResponse,
 )
 from neuralflow.api.registry import run_registry
 from neuralflow.compiler.dag import compile as compile_pipeline
-from neuralflow.compiler.validation import PipelineValidationError, PipelineValidationErrors
+from neuralflow.compiler.models import Pipeline
+from neuralflow.compiler.validation import (
+    PipelineValidationError,
+    PipelineValidationErrors,
+)
 from neuralflow.endpoints.base import ModelEndpoint
 from neuralflow.endpoints.cloud import CloudEndpoint
 from neuralflow.scheduler.engine import EndpointRegistry
@@ -72,8 +77,6 @@ from neuralflow.scheduler.runner import PipelineRunner
 from neuralflow.state.sqlite import StateManager
 
 logger = logging.getLogger(__name__)
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="NeuralFlow Backend",
@@ -100,19 +103,22 @@ app.add_middleware(
 def _global_registry() -> dict[str, ModelEndpoint]:
     """Return the process-level endpoint registry or test override."""
     if hasattr(app.state, "endpoint_registry"):
-        return app.state.endpoint_registry  # type: ignore[return-value]
+        # Starlette's State is untyped (Any); assert the contract explicitly.
+        return cast("dict[str, ModelEndpoint]", app.state.endpoint_registry)
     return {}
 
 
 def _global_state_manager() -> StateManager:
     """Return the global StateManager or test override."""
     if hasattr(app.state, "state_manager"):
-        return app.state.state_manager
+        return cast("StateManager", app.state.state_manager)
     import os
     from pathlib import Path
+
     db_dir = Path(os.path.expanduser("~/.neuralflow"))
     db_dir.mkdir(parents=True, exist_ok=True)
     return StateManager(str(db_dir / "neuralflow.db"))
+
 
 # ---------------------------------------------------------------------------
 # GET /health  (no auth — liveness probe used by Electron after spawn)
@@ -127,6 +133,7 @@ async def health() -> HealthResponse:
 # ---------------------------------------------------------------------------
 # GET /health/ollama  (no auth — used for onboarding)
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health/ollama")
 async def health_ollama() -> dict[str, Any]:
@@ -144,25 +151,26 @@ async def health_ollama() -> dict[str, Any]:
 # GET /pipelines/templates  (auth required)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/pipelines/templates", dependencies=[Depends(verify_token)])
 async def get_templates() -> list[dict[str, Any]]:
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         templates_dir = Path(sys._MEIPASS) / "templates"
     else:
         templates_dir = Path(__file__).parent.parent.parent.parent / "templates"
     templates = []
     if not templates_dir.exists():
         return []
-    
+
     for file in templates_dir.glob("*.json"):
         try:
-            with open(file, "r", encoding="utf-8") as f:
+            with open(file, encoding="utf-8") as f:
                 data = json.load(f)
                 pipeline = Pipeline.model_validate(data)
                 templates.append(pipeline.model_dump(exclude_none=True, by_alias=True))
         except Exception as e:
             logger.warning("Failed to load template %s: %s", file.name, e)
-            
+
     return templates
 
 
@@ -177,13 +185,15 @@ async def get_templates() -> list[dict[str, Any]]:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_token)],
 )
-async def publish_library_template(body: PublishTemplateRequest) -> PublishTemplateResponse:
+async def publish_library_template(
+    body: PublishTemplateRequest,
+) -> PublishTemplateResponse:
     """Validate a pipeline and publish it to the community library."""
     # Validate pipeline schema
     try:
         Pipeline.model_validate(body.pipeline)
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid pipeline: {exc}")
+        raise HTTPException(status_code=422, detail=f"Invalid pipeline: {exc}") from exc
 
     template_id = str(uuid.uuid4())
     sm = _global_state_manager()
@@ -229,7 +239,9 @@ async def delete_library_template(template_id: str) -> dict[str, Any]:
     sm = _global_state_manager()
     deleted = sm.delete_library_template(template_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Template '{template_id}' not found."
+        )
     return {"deleted": True, "id": template_id}
 
 
@@ -293,7 +305,9 @@ async def delete_custom_node(node_id: str) -> dict[str, Any]:
     sm = _global_state_manager()
     deleted = sm.delete_custom_node(node_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Custom node '{node_id}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Custom node '{node_id}' not found."
+        )
     return {"deleted": True, "id": node_id}
 
 
@@ -313,7 +327,9 @@ async def publish_custom_node(node_id: str) -> PublishTemplateResponse:
     sm = _global_state_manager()
     cn = sm.get_custom_node(node_id)
     if cn is None:
-        raise HTTPException(status_code=404, detail=f"Custom node '{node_id}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Custom node '{node_id}' not found."
+        )
 
     # Build a single-node pipeline from the custom node definition
     pipeline = {
@@ -357,32 +373,56 @@ async def publish_custom_node(node_id: str) -> PublishTemplateResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/settings/api-keys", response_model=ApiKeysResponse, dependencies=[Depends(verify_token)])
+@app.get(
+    "/settings/api-keys",
+    response_model=ApiKeysResponse,
+    dependencies=[Depends(verify_token)],
+)
 async def get_api_keys_status() -> ApiKeysResponse:
     """Return which API keys are set (boolean status only)."""
-    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia", "ollama_base_url"]
+    providers = [
+        "openai",
+        "anthropic",
+        "google",
+        "groq",
+        "openrouter",
+        "zhipu",
+        "nvidia",
+        "ollama_base_url",
+    ]
     status = {}
     for p in providers:
         status[p] = bool(keyring.get_password("neuralflow", p))
     return ApiKeysResponse(keys=status)
 
 
-@app.post("/settings/api-keys", response_model=ApiKeysResponse, dependencies=[Depends(verify_token)])
+@app.post(
+    "/settings/api-keys",
+    response_model=ApiKeysResponse,
+    dependencies=[Depends(verify_token)],
+)
 async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiKeysResponse:
     """Update API keys in OS keychain."""
     for provider, key in req.keys.items():
         if key.strip() == "":
-            continue # Leave blank to keep
+            continue  # Leave blank to keep
         elif key.strip() == "__DELETE__":
-            try:
+            with contextlib.suppress(Exception):
                 keyring.delete_password("neuralflow", provider)
-            except Exception:
-                pass
         else:
             keyring.set_password("neuralflow", provider, key.strip())
-            
+
     # Return updated status
-    providers = ["openai", "anthropic", "google", "groq", "openrouter", "zhipu", "nvidia", "ollama_base_url"]
+    providers = [
+        "openai",
+        "anthropic",
+        "google",
+        "groq",
+        "openrouter",
+        "zhipu",
+        "nvidia",
+        "ollama_base_url",
+    ]
     status = {}
     for p in providers:
         status[p] = bool(keyring.get_password("neuralflow", p))
@@ -436,7 +476,7 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     f"{base_url}/api/tags",
-                    headers={"ngrok-skip-browser-warning": "true"}
+                    headers={"ngrok-skip-browser-warning": "true"},
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -445,15 +485,17 @@ async def list_models() -> ModelsResponse:
                         eid = f"ollama:{name}"
                         if name and eid not in seen_ollama_ids:
                             seen_ollama_ids.add(eid)
-                            infos.append(ModelInfo(
-                                endpoint_id=eid,
-                                provider="ollama",
-                                model_name=name,
-                                max_context=8192,
-                                json_mode=True,
-                                tools=False,
-                                vision=False
-                            ))
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=eid,
+                                    provider="ollama",
+                                    model_name=name,
+                                    max_context=8192,
+                                    json_mode=True,
+                                    tools=False,
+                                    vision=False,
+                                )
+                            )
             except Exception:
                 pass
 
@@ -463,22 +505,24 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {openai_key}"}
+                    headers={"Authorization": f"Bearer {openai_key}"},
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     for m in data.get("data", []):
                         name = m.get("id")
                         if name and ("gpt" in name or "o1" in name or "o3" in name):
-                            infos.append(ModelInfo(
-                                endpoint_id=f"openai:{name}",
-                                provider="openai",
-                                model_name=name,
-                                max_context=128000,
-                                json_mode=True,
-                                tools=True,
-                                vision=True
-                            ))
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"openai:{name}",
+                                    provider="openai",
+                                    model_name=name,
+                                    max_context=128000,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=True,
+                                )
+                            )
             except Exception:
                 pass
 
@@ -488,22 +532,27 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     "https://api.anthropic.com/v1/models",
-                    headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"}
+                    headers={
+                        "x-api-key": anthropic_key,
+                        "anthropic-version": "2023-06-01",
+                    },
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     for m in data.get("data", []):
                         name = m.get("id")
                         if name:
-                            infos.append(ModelInfo(
-                                endpoint_id=f"anthropic:{name}",
-                                provider="anthropic",
-                                model_name=name,
-                                max_context=200000,
-                                json_mode=True,
-                                tools=True,
-                                vision=True
-                            ))
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"anthropic:{name}",
+                                    provider="anthropic",
+                                    model_name=name,
+                                    max_context=200000,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=True,
+                                )
+                            )
             except Exception:
                 pass
 
@@ -511,21 +560,25 @@ async def list_models() -> ModelsResponse:
         google_key = keyring.get_password("neuralflow", "google")
         if google_key:
             try:
-                resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={google_key}")
+                resp = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={google_key}"
+                )
                 if resp.status_code == 200:
                     data = resp.json()
                     for m in data.get("models", []):
                         name = m.get("name", "").replace("models/", "")
                         if "gemini" in name:
-                            infos.append(ModelInfo(
-                                endpoint_id=f"google:{name}",
-                                provider="google",
-                                model_name=name,
-                                max_context=1048576,
-                                json_mode=True,
-                                tools=True,
-                                vision=True
-                            ))
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"google:{name}",
+                                    provider="google",
+                                    model_name=name,
+                                    max_context=1048576,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=True,
+                                )
+                            )
             except Exception:
                 pass
 
@@ -535,17 +588,25 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     "https://api.groq.com/openai/v1/models",
-                    headers={"Authorization": f"Bearer {groq_key}"}
+                    headers={"Authorization": f"Bearer {groq_key}"},
                 )
                 if resp.status_code == 200:
                     for m in resp.json().get("data", []):
                         name = m.get("id")
                         if name:
-                            infos.append(ModelInfo(
-                                endpoint_id=f"groq:{name}", provider="groq", model_name=name,
-                                max_context=8192, json_mode=True, tools=True, vision=False
-                            ))
-            except Exception: pass
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"groq:{name}",
+                                    provider="groq",
+                                    model_name=name,
+                                    max_context=8192,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=False,
+                                )
+                            )
+            except Exception:
+                pass
 
         # 6. OpenRouter
         openrouter_key = keyring.get_password("neuralflow", "openrouter")
@@ -553,17 +614,25 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     "https://openrouter.ai/api/v1/models",
-                    headers={"Authorization": f"Bearer {openrouter_key}"}
+                    headers={"Authorization": f"Bearer {openrouter_key}"},
                 )
                 if resp.status_code == 200:
                     for m in resp.json().get("data", []):
                         name = m.get("id")
                         if name:
-                            infos.append(ModelInfo(
-                                endpoint_id=f"openrouter:{name}", provider="openrouter", model_name=name,
-                                max_context=128000, json_mode=True, tools=True, vision=True
-                            ))
-            except Exception: pass
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"openrouter:{name}",
+                                    provider="openrouter",
+                                    model_name=name,
+                                    max_context=128000,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=True,
+                                )
+                            )
+            except Exception:
+                pass
 
         # 7. Nvidia
         nvidia_key = keyring.get_password("neuralflow", "nvidia")
@@ -571,26 +640,41 @@ async def list_models() -> ModelsResponse:
             try:
                 resp = await client.get(
                     "https://integrate.api.nvidia.com/v1/models",
-                    headers={"Authorization": f"Bearer {nvidia_key}"}
+                    headers={"Authorization": f"Bearer {nvidia_key}"},
                 )
                 if resp.status_code == 200:
                     for m in resp.json().get("data", []):
                         name = m.get("id")
                         if name:
-                            infos.append(ModelInfo(
-                                endpoint_id=f"nvidia:{name}", provider="nvidia", model_name=name,
-                                max_context=128000, json_mode=True, tools=True, vision=True
-                            ))
-            except Exception: pass
+                            infos.append(
+                                ModelInfo(
+                                    endpoint_id=f"nvidia:{name}",
+                                    provider="nvidia",
+                                    model_name=name,
+                                    max_context=128000,
+                                    json_mode=True,
+                                    tools=True,
+                                    vision=True,
+                                )
+                            )
+            except Exception:
+                pass
 
         # 8. Zhipu (GLM)
         zhipu_key = keyring.get_password("neuralflow", "zhipu")
         if zhipu_key:
             for name in ["glm-4", "glm-4v", "glm-4-plus", "glm-3-turbo"]:
-                infos.append(ModelInfo(
-                    endpoint_id=f"zhipu:{name}", provider="zhipu", model_name=name,
-                    max_context=128000, json_mode=True, tools=True, vision=(name=="glm-4v")
-                ))
+                infos.append(
+                    ModelInfo(
+                        endpoint_id=f"zhipu:{name}",
+                        provider="zhipu",
+                        model_name=name,
+                        max_context=128000,
+                        json_mode=True,
+                        tools=True,
+                        vision=(name == "glm-4v"),
+                    )
+                )
 
     return ModelsResponse(models=infos)
 
@@ -608,11 +692,11 @@ async def _resolve_ollama_base(model_name: str, descriptor_base: str | None) -> 
     """
     if descriptor_base:
         return f"{descriptor_base.rstrip('/')}/v1"
-        
+
     saved_base = keyring.get_password("neuralflow", "ollama_base_url")
     if not saved_base or not saved_base.startswith("http"):
         return "http://127.0.0.1:11434/v1"
-        
+
     # We have a custom ngrok URL. Let's see if the requested model exists on localhost.
     try:
         # trust_env=False prevents local proxies from intercepting localhost requests
@@ -622,12 +706,17 @@ async def _resolve_ollama_base(model_name: str, descriptor_base: str | None) -> 
                 data = resp.json()
                 for m in data.get("models", []):
                     # Check exact or prefix match just in case
-                    if m.get("name") == model_name or m.get("name", "").startswith(model_name + ":"):
+                    if m.get("name") == model_name or m.get("name", "").startswith(
+                        model_name + ":"
+                    ):
                         return "http://127.0.0.1:11434/v1"
     except Exception as e:
         import logging
-        logging.getLogger(__name__).warning(f"Failed to check local ollama tags for {model_name}: {e}")
-        
+
+        logging.getLogger(__name__).warning(
+            f"Failed to check local ollama tags for {model_name}: {e}"
+        )
+
     # Fallback to custom URL
     return f"{saved_base.rstrip('/')}/v1"
 
@@ -650,13 +739,13 @@ async def start_run(body: RunRequest) -> RunResponse:
     try:
         dag = compile_pipeline(body.pipeline)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors())
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
     except PipelineValidationErrors as exc:
-        raise HTTPException(status_code=422, detail=exc.errors)
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
     except PipelineValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # ── 2. Build endpoint registry for this run ───────────────────────────────
     global_ep = _global_registry()
@@ -667,7 +756,16 @@ async def start_run(body: RunRequest) -> RunResponse:
             # Test override takes priority
             run_endpoints[ref] = global_ep[ref]
         else:
-            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible", "groq", "openrouter", "zhipu", "nvidia"):
+            if descriptor.kind in (
+                "openai",
+                "anthropic",
+                "google",
+                "openai_compatible",
+                "groq",
+                "openrouter",
+                "zhipu",
+                "nvidia",
+            ):
                 run_endpoints[ref] = CloudEndpoint(
                     provider=descriptor.kind,
                     model_name=descriptor.model or "gpt-4o-mini",
@@ -680,11 +778,15 @@ async def start_run(body: RunRequest) -> RunResponse:
                         detail="Mock endpoints are disabled in this environment.",
                     )
                 from neuralflow.endpoints.mock import MockEndpoint
+
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
+
                 ollama_model = descriptor.model or "qwen2.5:3b"
-                ollama_base = await _resolve_ollama_base(ollama_model, descriptor.base_url)
+                ollama_base = await _resolve_ollama_base(
+                    ollama_model, descriptor.base_url
+                )
 
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
@@ -695,8 +797,9 @@ async def start_run(body: RunRequest) -> RunResponse:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"Unsupported endpoint kind '{descriptor.kind}' for ref '{ref}'. "
-                        "Supported: openai, anthropic, google, openai_compatible, ollama."
+                        f"Unsupported endpoint kind '{descriptor.kind}' "
+                        f"for ref '{ref}'. Supported: openai, anthropic, "
+                        "google, openai_compatible, ollama."
                     ),
                 )
 
@@ -737,6 +840,7 @@ async def _run_task(
     except Exception as exc:
         logger.exception("Unhandled error in run %s", run_id)
         from neuralflow.scheduler.events import WsRunErrorEvent
+
         await queue.put(WsRunErrorEvent(run_id=run_id, error=str(exc)))
         await queue.put(None)
 
@@ -758,13 +862,13 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
     try:
         dag = compile_pipeline(body.pipeline)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors())
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
     except PipelineValidationErrors as exc:
-        raise HTTPException(status_code=422, detail=exc.errors)
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
     except PipelineValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     global_ep = _global_registry()
     run_endpoints: dict[str, ModelEndpoint] = {}
@@ -773,7 +877,16 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
         if ref in global_ep:
             run_endpoints[ref] = global_ep[ref]
         else:
-            if descriptor.kind in ("openai", "anthropic", "google", "openai_compatible", "groq", "openrouter", "zhipu", "nvidia"):
+            if descriptor.kind in (
+                "openai",
+                "anthropic",
+                "google",
+                "openai_compatible",
+                "groq",
+                "openrouter",
+                "zhipu",
+                "nvidia",
+            ):
                 run_endpoints[ref] = CloudEndpoint(
                     provider=descriptor.kind,
                     model_name=descriptor.model or "gpt-4o-mini",
@@ -781,11 +894,15 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
                 )
             elif descriptor.kind == "mock":
                 from neuralflow.endpoints.mock import MockEndpoint
+
                 run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
             elif descriptor.kind == "ollama":
                 from neuralflow.endpoints.ollama import OllamaEndpoint
+
                 ollama_model = descriptor.model or "qwen2.5:3b"
-                ollama_base = await _resolve_ollama_base(ollama_model, descriptor.base_url)
+                ollama_base = await _resolve_ollama_base(
+                    ollama_model, descriptor.base_url
+                )
 
                 run_endpoints[ref] = OllamaEndpoint(
                     id=f"ollama:{descriptor.model or 'default'}",
@@ -794,36 +911,41 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
                 )
 
     from neuralflow.endpoints.base import GenRequest, Message
-    dummy_req = GenRequest(messages=[Message(role="user", content="Test " * 100)]) # ~100 tokens input
-    
+
+    dummy_req = GenRequest(
+        messages=[Message(role="user", content="Test " * 100)]
+    )  # ~100 tokens input
+
     nodes_est: dict[str, NodeEstimate] = {}
     total_usd = 0.0
     total_latency = 0
     loop_multiplier = 1
-    
+
     for node in dag.pipeline.nodes:
         if node.type == "model":
             ep_ref = node.endpoint_ref
             if ep_ref and ep_ref in run_endpoints:
                 ep = run_endpoints[ep_ref]
-                
+
                 req = dummy_req.model_copy(update={})
-                if hasattr(node, "config") and node.config and "max_tokens" in node.config:
-                    req.max_tokens = node.config["max_tokens"]
-                
+                if node.config and node.config.max_tokens is not None:
+                    req.max_tokens = node.config.max_tokens
+
                 cost = ep.estimate_cost(req)
-                is_local = (ep_ref.startswith("ollama:") or ep_ref.startswith("mock:"))
+                is_local = ep_ref.startswith("ollama:") or ep_ref.startswith("mock:")
                 lat = 2000 if is_local else 5000
-                
-                nodes_est[node.id] = NodeEstimate(usd=cost.usd, latency_ms=lat, is_local=is_local)
+
+                nodes_est[node.id] = NodeEstimate(
+                    usd=cost.usd, latency_ms=lat, is_local=is_local
+                )
                 total_usd += cost.usd
                 total_latency += lat
-        
-        elif node.type == "loop":
-            iters = node.config.get("max_iterations", 1) if getattr(node, "config", None) else 1
-            if isinstance(iters, int) and iters > 1:
-                loop_multiplier = max(loop_multiplier, iters)
-                
+
+    # Loop bounds live on the pipeline's `loops[]` declarations, not on the
+    # loop node's config. Use the widest declared bound as the multiplier.
+    for loop in dag.pipeline.loops or []:
+        loop_multiplier = max(loop_multiplier, loop.max_iterations)
+
     total_usd *= loop_multiplier
     total_latency *= loop_multiplier
 
@@ -831,7 +953,7 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
         nodes=nodes_est,
         total_usd=total_usd,
         total_latency_ms=total_latency,
-        loop_multiplier=loop_multiplier
+        loop_multiplier=loop_multiplier,
     )
 
 
@@ -930,7 +1052,5 @@ async def ws_run(
                 break
     finally:
         run_registry.remove(run_id)
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close()
-        except Exception:
-            pass

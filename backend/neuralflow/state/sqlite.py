@@ -136,7 +136,16 @@ class StateManager:
                         tokens_out=excluded.tokens_out,
                         updated_at=excluded.updated_at
                     """,
-                    (run_id, pipeline_id, status, cost, tokens_in, tokens_out, now, now),
+                    (
+                        run_id,
+                        pipeline_id,
+                        status,
+                        cost,
+                        tokens_in,
+                        tokens_out,
+                        now,
+                        now,
+                    ),
                 )
         finally:
             conn.close()
@@ -157,7 +166,8 @@ class StateManager:
                 conn.execute(
                     """
                     UPDATE runs
-                    SET status = ?, cost = ?, tokens_in = ?, tokens_out = ?, updated_at = ?
+                    SET status = ?, cost = ?, tokens_in = ?,
+                        tokens_out = ?, updated_at = ?
                     WHERE run_id = ?
                     """,
                     (status, cost, tokens_in, tokens_out, now, run_id),
@@ -182,7 +192,9 @@ class StateManager:
             with conn:
                 conn.execute(
                     """
-                    INSERT INTO node_executions (run_id, node_id, inputs_json, outputs_json, cost, tokens_in, tokens_out, error)
+                    INSERT INTO node_executions
+                        (run_id, node_id, inputs_json, outputs_json,
+                         cost, tokens_in, tokens_out, error)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id, node_id) DO UPDATE SET
                         inputs_json=excluded.inputs_json,
@@ -220,7 +232,8 @@ class StateManager:
             with conn:
                 conn.execute(
                     """
-                    INSERT INTO loop_iterations (run_id, loop_id, iteration, inputs_json, outputs_json)
+                    INSERT INTO loop_iterations
+                        (run_id, loop_id, iteration, inputs_json, outputs_json)
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(run_id, loop_id, iteration) DO UPDATE SET
                         inputs_json=excluded.inputs_json,
@@ -246,7 +259,8 @@ class StateManager:
         conn = self._get_conn()
         try:
             cursor = conn.execute(
-                "SELECT node_id, outputs_json FROM node_executions WHERE run_id = ? AND error IS NULL",
+                "SELECT node_id, outputs_json FROM node_executions "
+                "WHERE run_id = ? AND error IS NULL",
                 (run_id,),
             )
             for row in cursor:
@@ -267,13 +281,19 @@ class StateManager:
         """Fetch the full trace for a run."""
         conn = self._get_conn()
         try:
-            run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            run = conn.execute(
+                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
             if not run:
                 return None
-            
-            nodes = conn.execute("SELECT * FROM node_executions WHERE run_id = ?", (run_id,)).fetchall()
-            loops = conn.execute("SELECT * FROM loop_iterations WHERE run_id = ?", (run_id,)).fetchall()
-            
+
+            nodes = conn.execute(
+                "SELECT * FROM node_executions WHERE run_id = ?", (run_id,)
+            ).fetchall()
+            loops = conn.execute(
+                "SELECT * FROM loop_iterations WHERE run_id = ?", (run_id,)
+            ).fetchall()
+
             # Helper to parse JSON fields safely
             def _parse_json(val: str | None) -> Any:
                 if val is None:
@@ -291,8 +311,8 @@ class StateManager:
                 parsed_nodes.append(d)
 
             parsed_loops = []
-            for l in loops:
-                d = dict(l)
+            for loop_row in loops:
+                d = dict(loop_row)
                 d["inputs"] = _parse_json(d.pop("inputs_json", None))
                 d["outputs"] = _parse_json(d.pop("outputs_json", None))
                 parsed_loops.append(d)
@@ -326,7 +346,8 @@ class StateManager:
                 conn.execute(
                     """
                     INSERT INTO library_templates
-                        (id, name, description, author, tags, pipeline_json, created_at, downloads)
+                        (id, name, description, author, tags,
+                         pipeline_json, created_at, downloads)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                     ON CONFLICT(id) DO UPDATE SET
                         name=excluded.name,
@@ -345,7 +366,8 @@ class StateManager:
         conn = self._get_conn()
         try:
             cursor = conn.execute(
-                "SELECT id, name, description, author, tags, pipeline_json, created_at, downloads "
+                "SELECT id, name, description, author, tags, "
+                "pipeline_json, created_at, downloads "
                 "FROM library_templates ORDER BY created_at DESC"
             )
             results: list[dict[str, Any]] = []
@@ -366,7 +388,8 @@ class StateManager:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT id, name, description, author, tags, pipeline_json, created_at, downloads "
+                "SELECT id, name, description, author, tags, "
+                "pipeline_json, created_at, downloads "
                 "FROM library_templates WHERE id = ?",
                 (template_id,),
             ).fetchone()
@@ -401,7 +424,8 @@ class StateManager:
         try:
             with conn:
                 conn.execute(
-                    "UPDATE library_templates SET downloads = downloads + 1 WHERE id = ?",
+                    "UPDATE library_templates SET downloads = downloads + 1 "
+                    "WHERE id = ?",
                     (template_id,),
                 )
         finally:
@@ -431,7 +455,8 @@ class StateManager:
                 conn.execute(
                     """
                     INSERT INTO custom_nodes
-                        (id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at)
+                        (id, name, description, author, icon_color,
+                         inputs_json, outputs_json, template, tags, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         name=excluded.name,
@@ -443,7 +468,18 @@ class StateManager:
                         template=excluded.template,
                         tags=excluded.tags
                     """,
-                    (node_id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, now),
+                    (
+                        node_id,
+                        name,
+                        description,
+                        author,
+                        icon_color,
+                        inputs_json,
+                        outputs_json,
+                        template,
+                        tags,
+                        now,
+                    ),
                 )
         finally:
             conn.close()
@@ -453,7 +489,8 @@ class StateManager:
         conn = self._get_conn()
         try:
             cursor = conn.execute(
-                "SELECT id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at "
+                "SELECT id, name, description, author, icon_color, "
+                "inputs_json, outputs_json, template, tags, created_at "
                 "FROM custom_nodes ORDER BY created_at DESC"
             )
             results: list[dict[str, Any]] = []
@@ -479,7 +516,8 @@ class StateManager:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT id, name, description, author, icon_color, inputs_json, outputs_json, template, tags, created_at "
+                "SELECT id, name, description, author, icon_color, "
+                "inputs_json, outputs_json, template, tags, created_at "
                 "FROM custom_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()

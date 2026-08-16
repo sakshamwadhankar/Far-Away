@@ -16,11 +16,12 @@ from __future__ import annotations
 import asyncio
 import os
 from typing import Any
+from unittest.mock import patch
 
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-import httpx
 from httpx_ws import aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 
@@ -67,7 +68,13 @@ PIPELINE: dict[str, Any] = {
 }
 
 AUTH = {"Authorization": "Bearer test-token"}
-TERMINAL = {"run_completed", "run_stopped", "budget_exceeded", "run_error", "run_halted"}
+TERMINAL = {
+    "run_completed",
+    "run_stopped",
+    "budget_exceeded",
+    "run_error",
+    "run_halted",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -79,19 +86,19 @@ async def _ws_events(run_id: str, token: str = "test-token") -> list[dict[str, A
     events: list[dict[str, Any]] = []
     # Create the WS transport + client dynamically per WS connection
     # to avoid AnyIO fixture cancel scope leakage
-    async with ASGIWebSocketTransport(app=app) as transport:
-        async with AsyncClient(
-            transport=transport, base_url="http://127.0.0.1"
-        ) as ws_client:
-            async with aconnect_ws(
-                f"ws://127.0.0.1/ws/run/{run_id}?token={token}",
-                ws_client,
-            ) as ws:
-                while True:
-                    msg = await ws.receive_json()
-                    events.append(msg)
-                    if msg.get("event") in TERMINAL:
-                        break
+    async with (
+        ASGIWebSocketTransport(app=app) as transport,
+        AsyncClient(transport=transport, base_url="http://127.0.0.1") as ws_client,
+        aconnect_ws(
+            f"ws://127.0.0.1/ws/run/{run_id}?token={token}",
+            ws_client,
+        ) as ws,
+    ):
+        while True:
+            msg = await ws.receive_json()
+            events.append(msg)
+            if msg.get("event") in TERMINAL:
+                break
     return events
 
 
@@ -198,16 +205,21 @@ async def test_run_and_stream(client: AsyncClient) -> None:
     assert types[-1] == "run_completed"
 
     model_start_idx = next(
-        (i for i, e in enumerate(events)
-         if e["event"] == "node_started" and e.get("node_id") == "model_node"),
+        (
+            i
+            for i, e in enumerate(events)
+            if e["event"] == "node_started" and e.get("node_id") == "model_node"
+        ),
         None,
     )
-    first_token_idx = next((i for i, e in enumerate(events) if e["event"] == "token"), None)
-    
+    first_token_idx = next(
+        (i for i, e in enumerate(events) if e["event"] == "token"), None
+    )
+
     assert model_start_idx is not None
     assert first_token_idx is not None
     assert model_start_idx < first_token_idx
-    
+
     final = events[-1]
     assert "total_cost_usd" in final
     assert "elapsed_ms" in final
@@ -257,13 +269,9 @@ async def test_stop_endpoint_halts_run(slow_client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_invalid_pipeline_422(client: AsyncClient) -> None:
     bad = {"schema_version": "2.0", "id": "bad", "name": "x"}
-    resp = await client.post(
-        "/pipelines/run", json={"pipeline": bad}, headers=AUTH
-    )
+    resp = await client.post("/pipelines/run", json={"pipeline": bad}, headers=AUTH)
     assert resp.status_code == 422
 
-
-from unittest.mock import patch, MagicMock
 
 @pytest.mark.asyncio
 async def test_models_endpoint_dynamic_fetching(client: AsyncClient) -> None:
@@ -271,6 +279,7 @@ async def test_models_endpoint_dynamic_fetching(client: AsyncClient) -> None:
         def __init__(self, status_code, json_data):
             self.status_code = status_code
             self._json_data = json_data
+
         def json(self):
             return self._json_data
 
@@ -283,39 +292,44 @@ async def test_models_endpoint_dynamic_fetching(client: AsyncClient) -> None:
         elif "openai" in url_str:
             return MockResponse(200, {"data": [{"id": "gpt-4o-mini"}]})
         elif "anthropic" in url_str:
-            return MockResponse(401, {}) # simulate error
+            return MockResponse(401, {})  # simulate error
         elif "google" in url_str:
             return MockResponse(200, {"models": [{"name": "models/gemini-1.5-flash"}]})
         return await original_get(self, url, *args, **kwargs)
 
     def mock_keyring_get(service, username):
-        if username == "openai": return "sk-open"
-        if username == "anthropic": return "sk-anth"
-        if username == "google": return "sk-goog"
+        if username == "openai":
+            return "sk-open"
+        if username == "anthropic":
+            return "sk-anth"
+        if username == "google":
+            return "sk-goog"
         return None
 
-    with patch("httpx.AsyncClient.get", new=mock_get), \
-         patch("keyring.get_password", side_effect=mock_keyring_get):
+    with (
+        patch("httpx.AsyncClient.get", new=mock_get),
+        patch("keyring.get_password", side_effect=mock_keyring_get),
+    ):
         resp = await client.get("/models", headers=AUTH)
         assert resp.status_code == 200
         body = resp.json()
         assert "models" in body
-        
+
         models = body["models"]
         endpoint_ids = [m["endpoint_id"] for m in models]
-        
+
         # Test mock provider override
         assert "mock:default" in endpoint_ids
-        
+
         # Test local ollama
         assert "ollama:qwen2.5:3b" in endpoint_ids
-        
+
         # Test openai (key present, 200 OK)
         assert "openai:gpt-4o-mini" in endpoint_ids
-        
+
         # Test anthropic (key present, but 401 error, skips cleanly)
         assert not any(eid.startswith("anthropic:") for eid in endpoint_ids)
-        
+
         # Test google (key present, 200 OK, stripped models/)
         assert "google:gemini-1.5-flash" in endpoint_ids
 
@@ -333,12 +347,14 @@ async def test_models_endpoint_all_offline(client: AsyncClient) -> None:
     def mock_keyring_get(service, username):
         return None  # No keys
 
-    with patch("httpx.AsyncClient.get", new=mock_get), \
-         patch("keyring.get_password", side_effect=mock_keyring_get):
+    with (
+        patch("httpx.AsyncClient.get", new=mock_get),
+        patch("keyring.get_password", side_effect=mock_keyring_get),
+    ):
         resp = await client.get("/models", headers=AUTH)
         assert resp.status_code == 200
         body = resp.json()
-        
+
         # Should only contain mock:default
         models = body["models"]
         assert len(models) == 1
@@ -363,30 +379,31 @@ async def test_get_trace_after_completion(client: AsyncClient) -> None:
     trace_resp = await client.get(f"/runs/{run_id}/trace", headers=AUTH)
     assert trace_resp.status_code == 200
     trace = trace_resp.json()
-    
+
     assert "run" in trace
     assert trace["run"]["status"] == "completed"
     assert trace["run"]["run_id"] == run_id
-    
+
     assert "nodes" in trace
     assert len(trace["nodes"]) > 0
-    
+
     model_node = next((n for n in trace["nodes"] if n["node_id"] == "model_node"), None)
     assert model_node is not None
     assert "outputs" in model_node
-    
+
     assert "loops" in trace
 
 
 def test_default_db_path() -> None:
-    from neuralflow.api.main import _global_state_manager, app
     import os
     from pathlib import Path
-    
+
+    from neuralflow.api.main import _global_state_manager, app
+
     # Ensure no override
     if hasattr(app.state, "state_manager"):
         del app.state.state_manager
-        
+
     sm = _global_state_manager()
     expected_dir = Path(os.path.expanduser("~/.neuralflow"))
     assert sm.db_path == expected_dir / "neuralflow.db"
@@ -406,27 +423,36 @@ async def test_cost_divergence_on_retries(client: AsyncClient) -> None:
 
     from neuralflow.api.main import app
     from neuralflow.endpoints.mock import MockEndpoint
-    
+
     app.state.endpoint_registry = {
-        "mock:json_repair": MockEndpoint(id="mock:json_repair", response_fn=dynamic_response)
+        "mock:json_repair": MockEndpoint(
+            id="mock:json_repair", response_fn=dynamic_response
+        )
     }
-    
+
     import copy
+
     pipeline = copy.deepcopy(PIPELINE)
     pipeline["nodes"][1]["endpoint_ref"] = "mock:json_repair"
     pipeline["nodes"][1]["config"]["response_format"] = "json"
     pipeline["endpoints"]["mock:json_repair"] = {"kind": "mock"}
 
-    run_resp = await client.post("/pipelines/run", json={"pipeline": pipeline}, headers=AUTH)
+    run_resp = await client.post(
+        "/pipelines/run", json={"pipeline": pipeline}, headers=AUTH
+    )
     assert run_resp.status_code == 202
     run_id = run_resp.json()["run_id"]
 
     events = await _ws_events(run_id)
-    
-    node_done_events = [e for e in events if e.get("event") == "node_done" and e.get("node_id") == "model_node"]
+
+    node_done_events = [
+        e
+        for e in events
+        if e.get("event") == "node_done" and e.get("node_id") == "model_node"
+    ]
     assert len(node_done_events) == 1
     node_cost = node_done_events[0]["cost_usd"]
-    
+
     # Should reflect two attempts of approx 0.001 each
     assert node_cost >= 0.002
 
@@ -437,9 +463,10 @@ async def test_cost_divergence_on_retries(client: AsyncClient) -> None:
     trace_resp = await client.get(f"/runs/{run_id}/trace", headers=AUTH)
     trace = trace_resp.json()
     model_node = next(n for n in trace["nodes"] if n["node_id"] == "model_node")
-    
+
     assert model_node["cost"] == node_cost
     assert trace["run"]["cost"] == node_cost
+
 
 @pytest.mark.asyncio
 async def test_estimate_pipeline(client: AsyncClient) -> None:

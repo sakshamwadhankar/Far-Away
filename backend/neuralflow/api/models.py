@@ -16,7 +16,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
@@ -73,7 +72,10 @@ class RunRequest(BaseModel):
     """
 
     pipeline: dict[str, Any] = Field(
-        description="Pipeline schema v2 JSON object (will be parsed + validated server-side)."
+        description=(
+            "Pipeline schema v2 JSON object "
+            "(will be parsed + validated server-side)."
+        )
     )
     budget_usd: float | None = Field(
         default=None,
@@ -129,8 +131,12 @@ class PublishTemplateRequest(BaseModel):
 
     name: str = Field(min_length=1, description="Human-friendly template name.")
     description: str = Field(default="", description="Optional description.")
-    author: str = Field(default="Anonymous", min_length=1, description="Author display name.")
-    tags: str = Field(default="", description="Comma-separated tags, e.g. 'rag,chat,multi-agent'.")
+    author: str = Field(
+        default="Anonymous", min_length=1, description="Author display name."
+    )
+    tags: str = Field(
+        default="", description="Comma-separated tags, e.g. 'rag,chat,multi-agent'."
+    )
     pipeline: dict[str, Any] = Field(
         description="Pipeline schema v2 JSON object (will be validated server-side)."
     )
@@ -164,7 +170,9 @@ class PortDefinition(BaseModel):
     """A single port definition for a custom node."""
 
     name: str = Field(min_length=1)
-    type: str = Field(description="Port type: text, number, boolean, json, image, audio.")
+    type: str = Field(
+        description="Port type: text, number, boolean, json, image, audio."
+    )
 
 
 class SaveCustomNodeRequest(BaseModel):
@@ -173,10 +181,14 @@ class SaveCustomNodeRequest(BaseModel):
     name: str = Field(min_length=1, description="Display name for the custom node.")
     description: str = Field(default="", description="What this node does.")
     author: str = Field(default="Anonymous", min_length=1)
-    icon_color: str = Field(default="#6B3AB8", description="Hex color for the node accent.")
+    icon_color: str = Field(
+        default="#6B3AB8", description="Hex color for the node accent."
+    )
     inputs: list[PortDefinition] = Field(default_factory=list)
     outputs: list[PortDefinition] = Field(default_factory=list)
-    template: str = Field(default="", description="Jinja2 template for transform logic.")
+    template: str = Field(
+        default="", description="Jinja2 template for transform logic."
+    )
     tags: str = Field(default="", description="Comma-separated tags.")
 
 

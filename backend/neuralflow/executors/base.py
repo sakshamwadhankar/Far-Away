@@ -7,8 +7,9 @@ Base interfaces for node executors.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from neuralflow.compiler.models import Node
@@ -25,20 +26,21 @@ EventCallback = Callable[["SchedulerEvent"], Awaitable[None] | None]
 class ExecutorContext:
     """Context passed to every node executor."""
 
-    node: "Node"
+    node: Node
     inputs: dict[str, Any]
-    registry: "EndpointRegistry"
+    registry: EndpointRegistry
     emit_fn: EventCallback
-    cancel_token: "CancelToken" | None = None
+    cancel_token: CancelToken | None = None
 
     def check_cancel(self) -> None:
         """Raise PipelineCancelled if the cancel token is set."""
         if self.cancel_token is not None:
             self.cancel_token.check()
 
-    async def emit(self, event: "SchedulerEvent") -> None:
+    async def emit(self, event: SchedulerEvent) -> None:
         """Emit an event via the callback."""
         import asyncio
+
         if self.emit_fn is not None:
             result = self.emit_fn(event)
             if asyncio.iscoroutine(result):

@@ -1,6 +1,6 @@
-from .base import ModelEndpoint, GenRequest, Token, Health, Caps, Cost
-from .mock import MockEndpoint
+from .base import Caps, Cost, GenRequest, Health, ModelEndpoint, Token
 from .cloud import CloudEndpoint
+from .mock import MockEndpoint
 
 __all__ = [
     "ModelEndpoint",
@@ -10,5 +10,5 @@ __all__ = [
     "Caps",
     "Cost",
     "MockEndpoint",
-    "CloudEndpoint"
+    "CloudEndpoint",
 ]

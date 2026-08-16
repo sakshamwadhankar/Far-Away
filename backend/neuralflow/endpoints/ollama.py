@@ -8,11 +8,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 
-from neuralflow.endpoints.base import Caps, Cost, GenRequest, Health, ModelEndpoint, Token
+from neuralflow.endpoints.base import (
+    Caps,
+    Cost,
+    GenRequest,
+    Health,
+    Token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +28,12 @@ class OllamaEndpoint:
     Ollama backend for local model inference via OpenAI-compatible endpoint.
     """
 
-    def __init__(self, id: str, base_url: str = "http://127.0.0.1:11434/v1", model: str = "qwen2.5:3b"):
+    def __init__(
+        self,
+        id: str,
+        base_url: str = "http://127.0.0.1:11434/v1",
+        model: str = "qwen2.5:3b",
+    ):
         self.id = id
         self._base_url = base_url.rstrip("/")
         self._model = model
@@ -34,37 +45,39 @@ class OllamaEndpoint:
             "temperature": req.temperature,
             "max_tokens": req.max_tokens,
             "stream": True,
-            "stream_options": {"include_usage": True}
+            "stream_options": {"include_usage": True},
         }
         if req.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
         idx = 0
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", 
+        async with (
+            httpx.AsyncClient(timeout=120.0) as client,
+            client.stream(
+                "POST",
                 f"{self._base_url}/chat/completions",
                 json=payload,
-                headers={"ngrok-skip-browser-warning": "true"}
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                            choices = data.get("choices", [])
-                            if choices and "delta" in choices[0]:
-                                text = choices[0]["delta"].get("content", "")
-                                if text:
-                                    yield Token(text=text, index=idx)
-                                    idx += 1
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to decode stream line: {data_str}")
+                headers={"ngrok-skip-browser-warning": "true"},
+            ) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if choices and "delta" in choices[0]:
+                            text = choices[0]["delta"].get("content", "")
+                            if text:
+                                yield Token(text=text, index=idx)
+                                idx += 1
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to decode stream line: {data_str}")
 
     async def health(self) -> Health:
         try:

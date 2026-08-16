@@ -24,7 +24,6 @@ and CancelToken are shared contracts.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
@@ -34,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from neuralflow.compiler.dag import CompiledDAG
 from neuralflow.compiler.models import StopCondition
-from neuralflow.endpoints.base import GenRequest, Message, ModelEndpoint
+from neuralflow.endpoints.base import ModelEndpoint
 from neuralflow.scheduler.stop_eval import (
     StopFieldResolutionError,
     evaluate_stop_condition,
@@ -180,9 +179,7 @@ class SchedulerResult(BaseModel):
     node_results: dict[str, NodeResult] = Field(default_factory=dict)
     """node_id → NodeResult"""
 
-    loop_histories: dict[str, list[LoopIterationRecord]] = Field(
-        default_factory=dict
-    )
+    loop_histories: dict[str, list[LoopIterationRecord]] = Field(default_factory=dict)
     """loop_id → list of per-iteration records"""
 
     completed: bool = True
@@ -257,8 +254,7 @@ class Scheduler:
 
                 # Filter out loop body nodes
                 regular_nodes = [
-                    nid for nid in tier
-                    if nid not in self._dag.node_to_loop
+                    nid for nid in tier if nid not in self._dag.node_to_loop
                 ]
 
                 # Check if any node in this tier is a loop entry
@@ -266,10 +262,7 @@ class Scheduler:
 
                 # Execute regular nodes in parallel
                 if len(regular_nodes) > 1:
-                    tasks = [
-                        self._execute_node(nid)
-                        for nid in regular_nodes
-                    ]
+                    tasks = [self._execute_node(nid) for nid in regular_nodes]
                     await asyncio.gather(*tasks)
                 elif len(regular_nodes) == 1:
                     await self._execute_node(regular_nodes[0])
@@ -280,10 +273,12 @@ class Scheduler:
                     loop_histories[loop_id] = history
 
         except PipelineCancelled as exc:
-            await self._emit(SchedulerEvent(
-                kind=EventKind.RUN_HALTED,
-                data={"reason": str(exc)},
-            ))
+            await self._emit(
+                SchedulerEvent(
+                    kind=EventKind.RUN_HALTED,
+                    data={"reason": str(exc)},
+                )
+            )
             return SchedulerResult(
                 node_results=self._build_node_results(),
                 loop_histories=loop_histories,
@@ -338,11 +333,7 @@ class Scheduler:
             preds = self._dag.reverse_adj.get(nid, [])
             # Only consider predecessors that are in topo_order
             # (loop-internal edges may reference nodes not in main topo)
-            pred_tiers = [
-                tier_of[p]
-                for p in preds
-                if p in tier_of
-            ]
+            pred_tiers = [tier_of[p] for p in preds if p in tier_of]
             tier_of[nid] = (max(pred_tiers) + 1) if pred_tiers else 0
 
         # Group by tier
@@ -393,19 +384,23 @@ class Scheduler:
                 # Node was resumed from a previous checkpoint
                 # Remove it so loop iterations will run normally
                 del self._resume_state[node_id]
-                
-                await self._emit(SchedulerEvent(
-                    kind=EventKind.NODE_DONE,
-                    node_id=node_id,
-                    data={"outputs": self._state[node_id]},
-                ))
+
+                await self._emit(
+                    SchedulerEvent(
+                        kind=EventKind.NODE_DONE,
+                        node_id=node_id,
+                        data={"outputs": self._state[node_id]},
+                    )
+                )
                 return
 
-            await self._emit(SchedulerEvent(
-                kind=EventKind.NODE_STARTED,
-                node_id=node_id,
-                data={"type": node.type},
-            ))
+            await self._emit(
+                SchedulerEvent(
+                    kind=EventKind.NODE_STARTED,
+                    node_id=node_id,
+                    data={"type": node.type},
+                )
+            )
 
             if node.type == "input" and node_id not in self._state:
                 raise RuntimeError(
@@ -440,16 +435,18 @@ class Scheduler:
 
             # Execute
             outputs = await executor.execute(ctx)
-            
+
             # Store outputs
             self._state[node_id] = outputs
 
         except Exception as exc:
-            await self._emit(SchedulerEvent(
-                kind=EventKind.NODE_ERROR,
-                node_id=node_id,
-                data={"error": str(exc)},
-            ))
+            await self._emit(
+                SchedulerEvent(
+                    kind=EventKind.NODE_ERROR,
+                    node_id=node_id,
+                    data={"error": str(exc)},
+                )
+            )
             raise
 
     def _gather_inputs_for_node(self, node_id: str) -> dict[str, Any]:
@@ -485,9 +482,7 @@ class Scheduler:
     # Loop execution
     # ------------------------------------------------------------------
 
-    async def _execute_loop(
-        self, loop_id: str
-    ) -> list[LoopIterationRecord]:
+    async def _execute_loop(self, loop_id: str) -> list[LoopIterationRecord]:
         """
         Execute a loop subgraph as bounded iterations.
 
@@ -508,9 +503,7 @@ class Scheduler:
             # Capture inputs for this iteration
             iter_inputs: dict[str, Any] = {}
             for body_node_id in loop.body:
-                gathered = self._gather_inputs_for_node(
-                    body_node_id
-                )
+                gathered = self._gather_inputs_for_node(body_node_id)
                 if gathered:
                     iter_inputs[body_node_id] = gathered
 
@@ -522,9 +515,7 @@ class Scheduler:
             iter_outputs: dict[str, Any] = {}
             for body_node_id in loop.body:
                 if body_node_id in self._state:
-                    iter_outputs[body_node_id] = dict(
-                        self._state[body_node_id]
-                    )
+                    iter_outputs[body_node_id] = dict(self._state[body_node_id])
 
             # Record iteration
             record = LoopIterationRecord(
@@ -534,15 +525,17 @@ class Scheduler:
             )
             history.append(record)
 
-            await self._emit(SchedulerEvent(
-                kind=EventKind.LOOP_ITERATION,
-                data={
-                    "loop_id": loop_id,
-                    "iteration": iteration,
-                    "max_iterations": loop.max_iterations,
-                    "outputs": iter_outputs,
-                },
-            ))
+            await self._emit(
+                SchedulerEvent(
+                    kind=EventKind.LOOP_ITERATION,
+                    data={
+                        "loop_id": loop_id,
+                        "iteration": iteration,
+                        "max_iterations": loop.max_iterations,
+                        "outputs": iter_outputs,
+                    },
+                )
+            )
 
             logger.debug(
                 "Loop '%s' iteration %d/%d completed",

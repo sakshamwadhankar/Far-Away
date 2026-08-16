@@ -38,7 +38,10 @@ def verify_token(
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header. Expected: Authorization: Bearer <token>",
+            detail=(
+                "Missing Authorization header. "
+                "Expected: Authorization: Bearer <token>"
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 

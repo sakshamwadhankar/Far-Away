@@ -24,7 +24,11 @@ from typing import Any
 from pydantic import ValidationError
 
 from neuralflow.compiler.models import Loop, Pipeline, PortType
-from neuralflow.compiler.validation import PipelineValidationErrors, _loop_body_edges, validate_pipeline
+from neuralflow.compiler.validation import (
+    PipelineValidationErrors,
+    _loop_body_edges,
+    validate_pipeline,
+)
 
 # ---------------------------------------------------------------------------
 # CompiledDAG — the compiler's output
@@ -102,9 +106,7 @@ def _compute_topo_order(pipeline: Pipeline) -> list[str]:
         adjacency[src].append(dst)
         in_degree[dst] += 1
 
-    queue: deque[str] = deque(
-        sorted(nid for nid, deg in in_degree.items() if deg == 0)
-    )
+    queue: deque[str] = deque(sorted(nid for nid, deg in in_degree.items() if deg == 0))
     order: list[str] = []
 
     while queue:
@@ -190,9 +192,9 @@ def compile(raw_json: dict[str, Any]) -> CompiledDAG:
             loc = ".".join(str(x) for x in err["loc"])
             msg = err["msg"]
             if msg.startswith("Value error, "):
-                msg = msg[len("Value error, "):]
+                msg = msg[len("Value error, ") :]
             errors.append(f"[Structural] Field '{loc}': {msg}")
-        raise PipelineValidationErrors(errors)
+        raise PipelineValidationErrors(errors) from e
 
     # Step 2: Semantic validation (acyclicity, port compatibility, loop bodies)
     # This will raise PipelineValidationErrors if any rules are violated.

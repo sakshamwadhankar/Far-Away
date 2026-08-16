@@ -12,10 +12,10 @@ No application logic here — pure type definitions and the Protocol only.
 
 from __future__ import annotations
 
-from typing import AsyncIterator, Literal, Protocol, runtime_checkable
+from collections.abc import AsyncIterator
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Supporting types (TRD §3 sketch, fully typed)
@@ -41,7 +41,8 @@ class GenRequest(BaseModel):
     response_format: Literal["text", "json"] = "text"
     """
     Hint for structured-output mode.
-    'json'  → endpoint uses native JSON mode where available, else repair-prompt fallback.
+    'json'  → endpoint uses native JSON mode where available, else
+              repair-prompt fallback.
     'text'  → plain streamed text.
     """
 
@@ -101,10 +102,16 @@ class ModelEndpoint(Protocol):
     id: str
     """Unique identifier for this endpoint instance, e.g. 'cloud:gpt-4o'."""
 
-    async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
+    def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         """
         Stream tokens for a generation request.
         Must yield at least one Token; raises on hard failure.
+
+        Declared as a plain (non-``async def``) method returning an
+        ``AsyncIterator``: every implementation is an async *generator*, so
+        calling it returns the iterator directly rather than a coroutine that
+        must be awaited. Declaring this ``async def`` would type the call as
+        ``Coroutine[..., AsyncIterator[Token]]`` and break `async for`.
         """
         ...
 

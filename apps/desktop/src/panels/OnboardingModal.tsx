@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
+import type { Pipeline } from '@shared/types';
 
 interface OnboardingModalProps {
   API_BASE: string;
-  onLoadTemplate: (schema: any) => void;
+  onLoadTemplate: (schema: Pipeline) => void;
 }
 
 export default function OnboardingModal({ API_BASE, onLoadTemplate }: OnboardingModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [_ollamaUp, setOllamaUp] = useState(false);
-  const [templateToLoad, setTemplateToLoad] = useState<any>(null);
+  const [templateToLoad, setTemplateToLoad] = useState<Pipeline | null>(null);
 
   useEffect(() => {
     const hasRun = typeof localStorage !== 'undefined' ? localStorage.getItem('neuralflow_first_run') : null;
@@ -30,7 +31,7 @@ export default function OnboardingModal({ API_BASE, onLoadTemplate }: Onboarding
         return null;
       })
       .then(r => (r ? r.json() : null))
-      .then(templates => {
+      .then((templates: Pipeline[] | null) => {
         if (Array.isArray(templates)) {
           const solver = templates.find(t => t.name.toLowerCase().includes('solver, verifier'));
           if (solver) {

@@ -57,7 +57,9 @@ export default function ChatPanel({
   apiBase,
   isRunning,
   onRunStateChange,
-  updateNodeData,
+  // Node status during chat runs is driven by onWsEvent in App; this prop stays
+  // on the contract but is not consumed here (same convention as backendPort).
+  updateNodeData: _updateNodeData,
   resetNodes,
   onWsEvent,
   messages,
@@ -335,9 +337,10 @@ export default function ChatPanel({
     backendToken,
     apiBase,
     onRunStateChange,
-    updateNodeData,
     resetNodes,
     onWsEvent,
+    setMessages,
+    setInputValues,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent, _nodeId: string) => {
