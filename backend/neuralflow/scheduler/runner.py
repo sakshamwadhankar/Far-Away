@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from neuralflow.state.sqlite import StateManager
@@ -111,6 +111,8 @@ class PipelineRunner:
         budget_usd: float | None = None,
         budget_wall_clock_seconds: float | None = None,
         state_manager: StateManager | None = None,
+        deployment_id: str | None = None,
+        initial_inputs: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self.run_id = run_id
         self._dag = dag
@@ -124,6 +126,13 @@ class PipelineRunner:
             int(budget_wall_clock_seconds * 1000) if budget_wall_clock_seconds else None
         )
         self._state_manager = state_manager
+        # Set when this run was started by a served HTTP request (Phase 3)
+        # rather than the canvas, so the trace tables can tell them apart.
+        self._deployment_id = deployment_id
+        # Per-node-id port overrides for input nodes, applied on top of the
+        # default "" seed. Phase 3 uses this to inject a served request's
+        # mapped body values without touching how canvas runs seed inputs.
+        self._initial_inputs = initial_inputs
         self._cancel = CancelToken()
         self._cumulative_cost: float = 0.0
         self._total_tokens_in: int = 0
@@ -173,6 +182,7 @@ class PipelineRunner:
                 self.run_id,
                 self._dag.pipeline.id,
                 "running",
+                deployment_id=self._deployment_id,
             )
 
         # Pre-budget check for each model node: wrap registry endpoints
@@ -238,23 +248,27 @@ class PipelineRunner:
             cancel_token=self._cancel,
         )
 
+        initial_inputs = {
+            node.id: {
+                port.name: (
+                    getattr(node.config, "default_value", "")
+                    if getattr(node, "config", None)
+                    and getattr(node.config, "default_value", None)
+                    else ""
+                )
+                for port in node.outputs
+            }
+            for node in self._dag.pipeline.nodes
+            if node.type == "input"
+        }
+        # A served request's mapped body values override the node's own
+        # default_value / "" seed, port by port. Canvas runs never set
+        # self._initial_inputs, so this is a no-op for them.
+        for node_id, port_values in (self._initial_inputs or {}).items():
+            initial_inputs.setdefault(node_id, {}).update(port_values)
+
         try:
-            result = await scheduler.run(
-                {
-                    node.id: {
-                        port.name: (
-                            getattr(node.config, "default_value", "")
-                            if getattr(node, "config", None)
-                            and getattr(node.config, "default_value", None)
-                            else ""
-                        )
-                        for port in node.outputs
-                    }
-                    for node in self._dag.pipeline.nodes
-                    if node.type == "input"
-                },
-                resume_state=resume_state,
-            )
+            result = await scheduler.run(initial_inputs, resume_state=resume_state)
         except Exception as exc:
             logger.exception("Unhandled error in pipeline run %s", self.run_id)
             await self._persist_status("error")

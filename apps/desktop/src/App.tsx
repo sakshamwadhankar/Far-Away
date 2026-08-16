@@ -14,6 +14,7 @@ import { useUndoRedo } from './canvas/useUndoRedo';
 import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
 import PublishModal from './components/PublishModal';
+import DeployModal from './components/DeployModal';
 import CustomNodeModal from './components/CustomNodeModal';
 import SettingsModal from './components/SettingsModal';
 import Tour from './components/Tour';
@@ -64,6 +65,10 @@ export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('edit');
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  // undefined = create a new deployment from the current pipeline;
+  // a string = manage the deployment with that id.
+  const [deployModalTarget, setDeployModalTarget] = useState<string | 'new' | null>(null);
+  const [deploymentsRefreshKey, setDeploymentsRefreshKey] = useState(0);
   const [showCustomNodeModal, setShowCustomNodeModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customNodes, setCustomNodes] = useState<CustomNodeDef[]>([]);
@@ -773,6 +778,9 @@ export default function App() {
         onCreateCustomNode={() => setShowCustomNodeModal(true)}
         customNodes={customNodes}
         onDeleteCustomNode={handleDeleteCustomNode}
+        onDeployClick={() => setDeployModalTarget('new')}
+        onManageDeploymentClick={(id) => setDeployModalTarget(id)}
+        deploymentsRefreshKey={deploymentsRefreshKey}
         API_BASE={API_BASE}
       />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -1004,6 +1012,17 @@ export default function App() {
           initialName={toPipelineSchema(nodes as Node<PipelineNodeData>[], edges).name || 'My Pipeline'}
           onPublish={handlePublishToLibrary}
           onCancel={() => setShowPublishModal(false)}
+        />
+      )}
+
+      {deployModalTarget && (
+        <DeployModal
+          pipeline={scrubSecrets(toPipelineSchema(nodes as Node<PipelineNodeData>[], edges))}
+          existingDeploymentId={deployModalTarget === 'new' ? undefined : deployModalTarget}
+          backendToken={backendToken}
+          API_BASE={API_BASE}
+          onClose={() => setDeployModalTarget(null)}
+          onChanged={() => setDeploymentsRefreshKey(k => k + 1)}
         />
       )}
 

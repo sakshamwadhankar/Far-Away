@@ -59,10 +59,12 @@ class StateManager:
                         tokens_in INTEGER DEFAULT 0,
                         tokens_out INTEGER DEFAULT 0,
                         started_at INTEGER NOT NULL,
-                        updated_at INTEGER NOT NULL
+                        updated_at INTEGER NOT NULL,
+                        deployment_id TEXT
                     )
                     """
                 )
+                self._migrate_runs_deployment_id(conn)
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS node_executions (
@@ -123,6 +125,21 @@ class StateManager:
         finally:
             conn.close()
 
+    @staticmethod
+    def _migrate_runs_deployment_id(conn: sqlite3.Connection) -> None:
+        """
+        Add `runs.deployment_id` for databases created before Phase 3.
+
+        The CREATE TABLE above only takes effect for a brand-new file; an
+        existing ~/.neuralflow/neuralflow.db predates the column, and SQLite
+        has no `ADD COLUMN IF NOT EXISTS`. Check PRAGMA table_info first so
+        this is idempotent across every startup, not just the first one after
+        upgrading.
+        """
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "deployment_id" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN deployment_id TEXT")
+
     def save_run(
         self,
         run_id: str,
@@ -131,8 +148,17 @@ class StateManager:
         cost: float = 0.0,
         tokens_in: int = 0,
         tokens_out: int = 0,
+        deployment_id: str | None = None,
     ) -> None:
-        """Create or update a run record."""
+        """
+        Create or update a run record.
+
+        `deployment_id` is set once, at creation, for a run started by a
+        served request (Phase 3); it is NULL for ordinary canvas runs. Left
+        out of the ON CONFLICT UPDATE SET on purpose — a run's origin does not
+        change after it starts, so a later status update must not overwrite it
+        (callers other than the initial save_run pass deployment_id=None).
+        """
         now = int(time.time() * 1000)
         conn = self._get_conn()
         try:
@@ -141,8 +167,8 @@ class StateManager:
                     """
                     INSERT INTO runs (
                         run_id, pipeline_id, status, cost, tokens_in, tokens_out,
-                        started_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        started_at, updated_at, deployment_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status=excluded.status,
                         cost=excluded.cost,
@@ -159,6 +185,7 @@ class StateManager:
                         tokens_out,
                         now,
                         now,
+                        deployment_id,
                     ),
                 )
         finally:

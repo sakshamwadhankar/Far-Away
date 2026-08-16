@@ -23,11 +23,10 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import keyring
@@ -62,19 +61,27 @@ from neuralflow.api.models import (
     SaveCustomNodeResponse,
     StopResponse,
 )
-from neuralflow.api.registry import run_registry
+from neuralflow.api.registry import (
+    bind_app,
+    build_endpoint_registry,
+    run_pipeline_task,
+    run_registry,
+)
+from neuralflow.api.registry import (
+    get_endpoint_registry_override as _global_registry,
+)
+from neuralflow.api.registry import (
+    get_state_manager as _global_state_manager,
+)
 from neuralflow.compiler.dag import compile as compile_pipeline
 from neuralflow.compiler.models import Pipeline
 from neuralflow.compiler.validation import (
     PipelineValidationError,
     PipelineValidationErrors,
 )
-from neuralflow.endpoints.base import ModelEndpoint
-from neuralflow.endpoints.cloud import CloudEndpoint
 from neuralflow.scheduler.engine import EndpointRegistry
 from neuralflow.scheduler.events import WS_TERMINAL_EVENTS
 from neuralflow.scheduler.runner import PipelineRunner
-from neuralflow.state.sqlite import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -129,30 +136,10 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# ---------------------------------------------------------------------------
-# Global endpoint registry — injected via app.state in tests;
-# built from pipeline descriptors at run-time in production.
-# ---------------------------------------------------------------------------
-
-
-def _global_registry() -> dict[str, ModelEndpoint]:
-    """Return the process-level endpoint registry or test override."""
-    if hasattr(app.state, "endpoint_registry"):
-        # Starlette's State is untyped (Any); assert the contract explicitly.
-        return cast("dict[str, ModelEndpoint]", app.state.endpoint_registry)
-    return {}
-
-
-def _global_state_manager() -> StateManager:
-    """Return the global StateManager or test override."""
-    if hasattr(app.state, "state_manager"):
-        return cast("StateManager", app.state.state_manager)
-    import os
-    from pathlib import Path
-
-    db_dir = Path(os.path.expanduser("~/.neuralflow"))
-    db_dir.mkdir(parents=True, exist_ok=True)
-    return StateManager(str(db_dir / "neuralflow.db"))
+# `_global_registry`, `_global_state_manager`, and `build_endpoint_registry`
+# live in api/registry.py — see that module's docstring for why. `bind_app`
+# below is what lets them reach this process's `app.state`.
+bind_app(app)
 
 
 # ---------------------------------------------------------------------------
@@ -719,43 +706,6 @@ async def list_models() -> ModelsResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_ollama_base(model_name: str, descriptor_base: str | None) -> str:
-    """
-    Resolve the correct base URL for an Ollama execution.
-    If a custom ngrok URL is saved, we still want local models (like qwen) to run
-    against localhost:11434 if they exist locally.
-    """
-    if descriptor_base:
-        return f"{descriptor_base.rstrip('/')}/v1"
-
-    saved_base = keyring.get_password("neuralflow", "ollama_base_url")
-    if not saved_base or not saved_base.startswith("http"):
-        return "http://127.0.0.1:11434/v1"
-
-    # We have a custom ngrok URL. Let's see if the requested model exists on localhost.
-    try:
-        # trust_env=False prevents local proxies from intercepting localhost requests
-        async with httpx.AsyncClient(timeout=3.0, trust_env=False) as client:
-            resp = await client.get("http://127.0.0.1:11434/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                for m in data.get("models", []):
-                    # Check exact or prefix match just in case
-                    if m.get("name") == model_name or m.get("name", "").startswith(
-                        model_name + ":"
-                    ):
-                        return "http://127.0.0.1:11434/v1"
-    except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            f"Failed to check local ollama tags for {model_name}: {e}"
-        )
-
-    # Fallback to custom URL
-    return f"{saved_base.rstrip('/')}/v1"
-
-
 @app.post(
     "/pipelines/run",
     response_model=RunResponse,
@@ -783,61 +733,7 @@ async def start_run(body: RunRequest) -> RunResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # ── 2. Build endpoint registry for this run ───────────────────────────────
-    global_ep = _global_registry()
-    run_endpoints: dict[str, ModelEndpoint] = {}
-
-    for ref, descriptor in dag.pipeline.endpoints.items():
-        if ref in global_ep:
-            # Test override takes priority
-            run_endpoints[ref] = global_ep[ref]
-        else:
-            if descriptor.kind in (
-                "openai",
-                "anthropic",
-                "google",
-                "openai_compatible",
-                "groq",
-                "openrouter",
-                "zhipu",
-                "nvidia",
-            ):
-                run_endpoints[ref] = CloudEndpoint(
-                    provider=descriptor.kind,
-                    model_name=descriptor.model or "gpt-4o-mini",
-                    base_url=descriptor.base_url,
-                )
-            elif descriptor.kind == "mock":
-                if os.environ.get("NEURALFLOW_ALLOW_MOCK_ENDPOINT") != "1":
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Mock endpoints are disabled in this environment.",
-                    )
-                from neuralflow.endpoints.mock import MockEndpoint
-
-                run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
-            elif descriptor.kind == "ollama":
-                from neuralflow.endpoints.ollama import OllamaEndpoint
-
-                ollama_model = descriptor.model or "qwen2.5:3b"
-                ollama_base = await _resolve_ollama_base(
-                    ollama_model, descriptor.base_url
-                )
-
-                run_endpoints[ref] = OllamaEndpoint(
-                    id=f"ollama:{descriptor.model or 'default'}",
-                    base_url=ollama_base,
-                    model=ollama_model,
-                )
-            else:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"Unsupported endpoint kind '{descriptor.kind}' "
-                        f"for ref '{ref}'. Supported: openai, anthropic, "
-                        "google, openai_compatible, ollama."
-                    ),
-                )
-
+    run_endpoints = await build_endpoint_registry(dag)
     endpoint_registry = EndpointRegistry(run_endpoints)
 
     # ── 3. Create runner + queue ──────────────────────────────────────────────
@@ -857,27 +753,11 @@ async def start_run(body: RunRequest) -> RunResponse:
 
     # ── 4. Launch background task ────────────────────────────────────────────
     asyncio.create_task(
-        _run_task(run_id, runner, queue),
+        run_pipeline_task(run_id, runner, queue),
         name=f"run-{run_id}",
     )
 
     return RunResponse(run_id=run_id)
-
-
-async def _run_task(
-    run_id: str,
-    runner: PipelineRunner,
-    queue: asyncio.Queue,  # type: ignore[type-arg]
-) -> None:
-    """Wrapper: catches any uncaught exception and puts sentinel None."""
-    try:
-        await runner.run(queue)
-    except Exception as exc:
-        logger.exception("Unhandled error in run %s", run_id)
-        from neuralflow.scheduler.events import WsRunErrorEvent
-
-        await queue.put(WsRunErrorEvent(run_id=run_id, error=str(exc)))
-        await queue.put(None)
 
 
 # ---------------------------------------------------------------------------
@@ -905,45 +785,7 @@ async def estimate_pipeline(body: RunRequest) -> EstimateResponse:
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    global_ep = _global_registry()
-    run_endpoints: dict[str, ModelEndpoint] = {}
-
-    for ref, descriptor in dag.pipeline.endpoints.items():
-        if ref in global_ep:
-            run_endpoints[ref] = global_ep[ref]
-        else:
-            if descriptor.kind in (
-                "openai",
-                "anthropic",
-                "google",
-                "openai_compatible",
-                "groq",
-                "openrouter",
-                "zhipu",
-                "nvidia",
-            ):
-                run_endpoints[ref] = CloudEndpoint(
-                    provider=descriptor.kind,
-                    model_name=descriptor.model or "gpt-4o-mini",
-                    base_url=descriptor.base_url,
-                )
-            elif descriptor.kind == "mock":
-                from neuralflow.endpoints.mock import MockEndpoint
-
-                run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
-            elif descriptor.kind == "ollama":
-                from neuralflow.endpoints.ollama import OllamaEndpoint
-
-                ollama_model = descriptor.model or "qwen2.5:3b"
-                ollama_base = await _resolve_ollama_base(
-                    ollama_model, descriptor.base_url
-                )
-
-                run_endpoints[ref] = OllamaEndpoint(
-                    id=f"ollama:{descriptor.model or 'default'}",
-                    base_url=ollama_base,
-                    model=ollama_model,
-                )
+    run_endpoints = await build_endpoint_registry(dag, enforce_mock_gate=False)
 
     from neuralflow.endpoints.base import GenRequest, Message
 
@@ -1088,3 +930,26 @@ async def ws_run(
         run_registry.remove(run_id)
         with contextlib.suppress(Exception):
             await websocket.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — serve pipelines as an OpenAI-compatible HTTP API
+#
+# Mounted last, after everything create_serve_router depends on is already
+# defined, and via the factory (not a module-level import of `app`) so
+# neuralflow.serve.routes never has to import this module — see that
+# module's docstring for the circular-import reasoning.
+# ---------------------------------------------------------------------------
+
+from neuralflow.serve.routes import create_serve_router  # noqa: E402
+
+app.include_router(
+    create_serve_router(
+        verify_token_dep=verify_token,
+        compile_pipeline_fn=compile_pipeline,
+        build_endpoint_registry_fn=build_endpoint_registry,
+        get_state_manager_fn=_global_state_manager,
+        run_registry=run_registry,
+        run_task_fn=run_pipeline_task,
+    )
+)

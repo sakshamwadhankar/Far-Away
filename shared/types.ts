@@ -91,6 +91,17 @@ export interface NodeConfig {
   custom_node_id?: string;
   custom_label?: string;
   custom_color?: string;
+  /**
+   * Input/output nodes only (schema 2.1, Phase 3): name of this node in a
+   * deployment's HTTP request or response body. "messages" and "content" are
+   * the recognized names on the chat-completions path.
+   */
+  api_field?: string;
+  /**
+   * Output nodes only: whether this node's value is included in a
+   * deployment's response. Defaults to true.
+   */
+  api_expose?: boolean;
   /** Allow additional config keys for extensibility. */
   [key: string]:
     | string

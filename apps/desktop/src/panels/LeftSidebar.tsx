@@ -66,6 +66,19 @@ export interface CustomNodeDef {
   created_at: number;
 }
 
+export interface DeploymentSummary {
+  id: string;
+  name: string;
+  expose_lan: boolean;
+  rate_limit_per_minute: number;
+  chat_input_node: string;
+  chat_output_node: string;
+  created_at: number;
+  request_count: number;
+  error_count: number;
+  last_request_at: number | null;
+}
+
 interface LeftSidebarProps {
   backendPort: number | null;
   backendToken: string | null;
@@ -75,15 +88,21 @@ interface LeftSidebarProps {
   onCreateCustomNode?: () => void;
   customNodes?: CustomNodeDef[];
   onDeleteCustomNode?: (id: string) => void;
+  onDeployClick?: () => void;
+  onManageDeploymentClick?: (deploymentId: string) => void;
+  /** Bump this after a deploy/rotate/undeploy so the list refetches. */
+  deploymentsRefreshKey?: number;
   API_BASE: string;
 }
 
-export default function LeftSidebar({ backendPort: _backendPort, backendToken, backendConnected, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, API_BASE }: LeftSidebarProps) {
+export default function LeftSidebar({ backendPort: _backendPort, backendToken, backendConnected, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, onDeployClick, onManageDeploymentClick, deploymentsRefreshKey, API_BASE }: LeftSidebarProps) {
   const [templates, setTemplates] = useState<Pipeline[]>([]);
   const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([]);
+  const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'nodes' | 'templates' | 'library'>('nodes');
+  const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<'nodes' | 'templates' | 'library' | 'deployments'>('nodes');
 
   useEffect(() => {
     if (!backendConnected || !backendToken) return;
@@ -120,6 +139,28 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
     if (activeSection === 'library') fetchLibrary();
   }, [activeSection, fetchLibrary]);
 
+  // Fetch deployments
+  const fetchDeployments = useCallback(() => {
+    if (!backendConnected || !backendToken) return;
+    setDeploymentsError(null);
+    fetch(`${API_BASE}/deployments`, { headers: { 'Authorization': `Bearer ${backendToken}` } })
+      .then(r => {
+        if (!r.ok) throw new Error('Network response was not ok');
+        return r.json();
+      })
+      .then((data: { deployments: DeploymentSummary[] }) => {
+        if (Array.isArray(data.deployments)) setDeployments(data.deployments);
+      })
+      .catch(e => {
+        console.warn('Failed to fetch deployments:', e);
+        setDeploymentsError('Could not load deployments');
+      });
+  }, [backendConnected, API_BASE, backendToken]);
+
+  useEffect(() => {
+    if (activeSection === 'deployments') fetchDeployments();
+  }, [activeSection, fetchDeployments, deploymentsRefreshKey]);
+
   const handleDeleteLibraryTemplate = async (templateId: string) => {
     if (!backendToken) return;
     try {
@@ -149,7 +190,7 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
   const parseTags = (tags: string): string[] =>
     tags.split(',').map(t => t.trim()).filter(Boolean);
 
-  const TABS = ['nodes', 'templates', 'library'] as const;
+  const TABS = ['nodes', 'templates', 'library', 'deployments'] as const;
 
   return (
     <div
@@ -415,6 +456,83 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
               lineHeight: 1.5,
             }}>
               {libraryError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSection === 'deployments' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, animation: 'nf-fade-in 0.18s ease' }}>
+          {onDeployClick && (
+            <button
+              id="deploy-current-btn"
+              className="nf-publish-btn"
+              onClick={onDeployClick}
+              style={{ marginBottom: 4 }}
+            >
+              🚀 Deploy Current Pipeline
+            </button>
+          )}
+
+          <div className="nf-section-header" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0, marginBottom: 4 }}>
+            Active deployments
+          </div>
+
+          {deployments.map((dep) => (
+            <div key={dep.id} className="nf-library-card" data-testid={`deployment-card-${dep.id}`}>
+              <div className="nf-library-card-header">
+                <span className="nf-library-card-title">{dep.name}</span>
+                <span
+                  title={dep.expose_lan ? 'Exposed to LAN' : 'Local only'}
+                  style={{
+                    fontSize: 9, fontFamily: 'var(--font-mono)', padding: '1px 6px', borderRadius: 99,
+                    background: dep.expose_lan ? 'rgba(184,50,50,0.12)' : 'rgba(58,125,68,0.12)',
+                    color: dep.expose_lan ? '#B83232' : '#1F4D27',
+                  }}
+                >
+                  {dep.expose_lan ? 'LAN' : 'local'}
+                </span>
+              </div>
+
+              <div className="nf-library-meta">
+                <span className="nf-library-author">{dep.request_count} calls</span>
+                {dep.error_count > 0 && (
+                  <span style={{ color: 'var(--danger)' }}>{dep.error_count} errors</span>
+                )}
+              </div>
+
+              <div className="nf-library-card-actions">
+                <button
+                  onClick={() => onManageDeploymentClick?.(dep.id)}
+                  className="nf-pill-btn nf-pill-btn--sm nf-pill-btn--highlight"
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Manage
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {deployments.length === 0 && !deploymentsError && (
+            <div style={{
+              color: 'var(--text-3)', fontSize: 12, fontStyle: 'italic',
+              padding: '16px 4px', textAlign: 'center', lineHeight: 1.6,
+            }}>
+              No deployments yet.<br />
+              Deploy the current pipeline to call it over HTTP.
+            </div>
+          )}
+          {deploymentsError && (
+            <div style={{
+              background: 'rgba(184,50,50,0.08)',
+              border: '1px solid rgba(184,50,50,0.2)',
+              borderRadius: 10,
+              padding: '10px 12px',
+              color: 'var(--danger)',
+              fontSize: 11,
+              lineHeight: 1.5,
+            }}>
+              {deploymentsError}
             </div>
           )}
         </div>

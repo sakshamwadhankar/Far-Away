@@ -228,6 +228,27 @@ class NodeConfig(BaseModel):
         default=None, description="Hex accent color for this custom node."
     )
 
+    # ── API serving (schema 2.1, Phase 3) ───────────────────────────────────
+    # Meaningful only on 'input' and 'output' nodes; maps the node to a field
+    # in a deployment's HTTP request/response body. See backend/neuralflow/
+    # serve/README.md for the full mapping rules.
+    api_field: str | None = Field(
+        default=None,
+        description=(
+            "Name of this input/output node in a deployment's request or "
+            "response body. For the chat-completions path, 'messages' and "
+            "'content' are the recognized names on input and output nodes "
+            "respectively."
+        ),
+    )
+    api_expose: bool = Field(
+        default=True,
+        description=(
+            "Output nodes only: whether this node's value is included in a "
+            "deployment's response. Ignored on input nodes."
+        ),
+    )
+
 
 class Node(BaseModel):
     """A single node in the pipeline graph."""

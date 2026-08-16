@@ -93,7 +93,9 @@
         "custom_node_id": { "type": "string", "description": "ID of the custom node definition this node was created from." },
         "custom_label":   { "type": "string", "description": "Display label overriding the node type name." },
         "custom_color":   { "type": "string", "description": "Hex accent color for a custom node." },
-        "access_policy":  { "$ref": "#/$defs/AccessPolicy" }
+        "access_policy":  { "$ref": "#/$defs/AccessPolicy" },
+        "api_field":      { "type": "string", "description": "Name of this input/output node in a deployment's request or response body (schema 2.1, Phase 3)." },
+        "api_expose":     { "type": "boolean", "description": "Output nodes only: whether this node's value is included in a deployment's response. Defaults to true." }
       }
     },
 
