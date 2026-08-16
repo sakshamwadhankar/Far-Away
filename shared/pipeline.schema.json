@@ -30,14 +30,50 @@
 
     "NodeType": {
       "type": "string",
-      "enum": ["input", "output", "model", "loop", "judge", "router", "transform", "compare"],
-      "description": "Allowed node types in R0."
+      "enum": ["input", "output", "model", "loop", "judge", "router", "transform", "compare", "access"],
+      "description": "Allowed node types. 'access' was added in schema 2.1."
     },
 
     "EndpointKind": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama", "mock"],
-      "description": "Supported model endpoint kinds in R0."
+      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama", "mock", "groq", "openrouter", "zhipu", "nvidia"],
+      "description": "Supported model endpoint kinds."
+    },
+
+    "AccessPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Capabilities granted to every node downstream of an access node. Deny-by-default. Added in schema 2.1. When several access nodes are ancestors of one node their policies intersect — the most restrictive wins.",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EndpointKind" },
+          "description": "Cloud/model providers downstream nodes may call. Empty grants none."
+        },
+        "allow_local_models": {
+          "type": "boolean",
+          "description": "Whether downstream nodes may call a local Ollama endpoint."
+        },
+        "allow_network": {
+          "type": "boolean",
+          "description": "Whether downstream nodes may make general network calls."
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Hostnames reachable when allow_network is true. Empty means no domain restriction."
+        },
+        "max_cost_usd": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "USD ceiling for this scope. null means no policy ceiling."
+        },
+        "max_tokens": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Per-request token ceiling for this scope."
+        }
+      }
     },
 
     "NodeConfig": {
@@ -53,7 +89,11 @@
         "score_field":    { "type": "string" },
         "strategy":       { "type": "string", "enum": ["max_numeric", "truthy"] },
         "default_value":  { "type": "string" },
-        "label":          { "type": "string" }
+        "label":          { "type": "string" },
+        "custom_node_id": { "type": "string", "description": "ID of the custom node definition this node was created from." },
+        "custom_label":   { "type": "string", "description": "Display label overriding the node type name." },
+        "custom_color":   { "type": "string", "description": "Hex accent color for a custom node." },
+        "access_policy":  { "$ref": "#/$defs/AccessPolicy" }
       }
     },
 
@@ -196,8 +236,8 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "2.0",
-      "description": "Pipeline format version. Must be exactly '2.0'."
+      "enum": ["2.0", "2.1"],
+      "description": "Pipeline format version. '2.1' added the access node; a '2.0' document is still valid and is read as a pipeline with no access node."
     },
     "id": {
       "type": "string",

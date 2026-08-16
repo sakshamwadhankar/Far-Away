@@ -4,6 +4,7 @@ backend/neuralflow/executors/__init__.py
 Registry for all node executors.
 """
 
+from neuralflow.executors.access import AccessExecutor
 from neuralflow.executors.base import BaseExecutor, ExecutorContext
 from neuralflow.executors.input_output import InputExecutor, OutputExecutor
 from neuralflow.executors.logic import (
@@ -22,6 +23,7 @@ EXECUTOR_REGISTRY: dict[str, type[BaseExecutor]] = {
     "router": RouterExecutor,
     "transform": TransformExecutor,
     "compare": CompareExecutor,
+    "access": AccessExecutor,
 }
 
 __all__ = ["EXECUTOR_REGISTRY", "BaseExecutor", "ExecutorContext"]

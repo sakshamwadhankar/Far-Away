@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from neuralflow.compiler.models import AccessPolicy
 
 if TYPE_CHECKING:
     from neuralflow.compiler.models import Node
@@ -31,6 +33,13 @@ class ExecutorContext:
     registry: EndpointRegistry
     emit_fn: EventCallback
     cancel_token: CancelToken | None = None
+    policy: AccessPolicy = field(default_factory=AccessPolicy.permissive)
+    """
+    The effective access policy for this node, from
+    CompiledDAG.effective_policies. Defaults to permissive so that a context
+    built without one (tests, non-model executors) behaves as it did before
+    schema 2.1.
+    """
 
     def check_cancel(self) -> None:
         """Raise PipelineCancelled if the cancel token is set."""

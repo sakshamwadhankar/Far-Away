@@ -5,7 +5,17 @@ from typing import Any
 
 import keyring
 
-from .base import Caps, Cost, GenRequest, Health, ModelEndpoint, Token
+from neuralflow.compiler.models import AccessPolicy
+
+from .base import (
+    AccessDeniedError,
+    Caps,
+    Cost,
+    GenRequest,
+    Health,
+    ModelEndpoint,
+    Token,
+)
 
 # Load pricing table
 PRICING_FILE = os.path.join(os.path.dirname(__file__), "pricing.json")
@@ -27,6 +37,25 @@ class CloudEndpoint(ModelEndpoint):
         self.model_name = model_name
         self.base_url = base_url
         self.id = f"{provider}:{model_name}"
+
+    def check_access(self, policy: AccessPolicy, node_id: str) -> None:
+        """
+        Refuse a provider the effective policy does not grant.
+
+        Called before generate(), so a denied request is never sent — no API
+        key is read, no socket is opened, no credits are spent.
+        """
+        if self.provider not in policy.providers:
+            granted = ", ".join(policy.providers) if policy.providers else "(none)"
+            raise AccessDeniedError(
+                node_id=node_id,
+                capability=f"provider:{self.provider}",
+                detail=(
+                    f"Node '{node_id}' (model:{self.provider}) requires provider "
+                    f"'{self.provider}', which its access policy does not grant. "
+                    f"Granted providers: [{granted}]."
+                ),
+            )
 
     def _get_api_key(self) -> str:
         # For openai_compatible, we might use the openai key or a specific

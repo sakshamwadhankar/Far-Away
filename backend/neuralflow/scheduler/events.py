@@ -108,11 +108,30 @@ class WsNodeErrorEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
+class WsAccessDeniedEvent(BaseModel):
+    """
+    A node was blocked by its effective access policy before it could run.
+
+    Distinct from node_error so the UI can show *which* capability was withheld
+    and offer to grant it on the governing access node, rather than surfacing
+    a generic failure. Added in schema 2.1.
+    """
+
+    event: Literal["access_denied"] = "access_denied"
+    run_id: str
+    node_id: str
+    capability: str
+    """e.g. "provider:anthropic" or "allow_local_models"."""
+    reason: str
+    timestamp_ms: int = Field(default_factory=_now_ms)
+
+
 WsEvent = (
     WsNodeStartedEvent
     | WsTokenEvent
     | WsNodeDoneEvent
     | WsNodeErrorEvent
+    | WsAccessDeniedEvent
     | WsLoopIterationEvent
     | WsRunHaltedEvent
     | WsRunCompletedEvent

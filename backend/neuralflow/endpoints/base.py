@@ -17,6 +17,30 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from neuralflow.compiler.models import AccessPolicy
+
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+
+
+class AccessDeniedError(Exception):
+    """
+    Raised when a node reaches for a capability its effective access policy
+    withholds.
+
+    Raised BEFORE any request is issued, so a denied call never leaves the
+    machine. Carries enough structure for the scheduler to emit an
+    `access_denied` event naming the node and the capability.
+    """
+
+    def __init__(self, node_id: str, capability: str, detail: str) -> None:
+        self.node_id = node_id
+        self.capability = capability
+        self.detail = detail
+        super().__init__(detail)
+
+
 # ---------------------------------------------------------------------------
 # Supporting types (TRD §3 sketch, fully typed)
 # ---------------------------------------------------------------------------
@@ -101,6 +125,16 @@ class ModelEndpoint(Protocol):
 
     id: str
     """Unique identifier for this endpoint instance, e.g. 'cloud:gpt-4o'."""
+
+    def check_access(self, policy: AccessPolicy, node_id: str) -> None:
+        """
+        Raise AccessDeniedError if `policy` does not permit this endpoint.
+
+        Called by the model executor immediately BEFORE generate(), so a call
+        the policy forbids never leaves the machine. Implementations must not
+        perform I/O — this is a pure comparison against the policy.
+        """
+        ...
 
     def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         """

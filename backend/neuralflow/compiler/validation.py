@@ -10,8 +10,14 @@ field-level). It operates on already-parsed Pipeline objects.
 Rules implemented here:
   1. Main graph (excluding loop subgraphs) must be ACYCLIC.
   2. Every edge must connect TYPE-COMPATIBLE ports.
+  6. Access nodes are scope markers: no data ports, and every edge touching
+     one uses the reserved scope port and carries no payload (schema 2.1).
   (Rules 3, 4, 5 — endpoint_ref resolution, stop_when structure, finite
    max_iterations — are enforced at the Pydantic parse stage in models.py.)
+
+Capability enforcement itself — which node may reach which provider under the
+effective access policy — lives in `check_effective_policies` below, and is
+driven by the ancestor walk in dag.py.
 
 BREAKING CHANGE: this is a shared contract. Announce before modifying.
 No dummy data, no app logic beyond validation.
@@ -21,7 +27,13 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 
-from neuralflow.compiler.models import Node, Pipeline, PortType
+from neuralflow.compiler.models import (
+    ACCESS_SCOPE_PORT,
+    AccessPolicy,
+    Node,
+    Pipeline,
+    PortType,
+)
 
 # ---------------------------------------------------------------------------
 # Custom exception types
@@ -172,6 +184,14 @@ def _check_port_type_compatibility(pipeline: Pipeline, errors: list[str]) -> Non
             )
             continue
 
+        # Scope edges carry no payload, so there is nothing to type-check.
+        # Their port names are validated by _check_access_nodes instead.
+        if (
+            node_index[src_node_id].type == "access"
+            or node_index[dst_node_id].type == "access"
+        ):
+            continue
+
         src_ports = output_index.get(src_node_id, {})
         if src_port_name not in src_ports:
             errors.append(
@@ -228,6 +248,113 @@ def _check_loop_bodies(pipeline: Pipeline, errors: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Rule 6: Access nodes are scope markers
+# ---------------------------------------------------------------------------
+
+
+def _check_access_nodes(pipeline: Pipeline, errors: list[str]) -> None:
+    """
+    An access node grants capabilities to the part of the graph downstream of
+    it. It is not a transform: nothing flows through it, so every edge that
+    touches one must use the reserved scope port.
+
+    (The "no data ports" and "must have a policy" rules are enforced earlier,
+    at the Pydantic parse stage in models.Node.)
+    """
+    access_ids = {n.id for n in pipeline.nodes if n.type == "access"}
+    if not access_ids:
+        return
+
+    connected: set[str] = set()
+
+    for edge in pipeline.edges:
+        for node_id, port_name, side in (
+            (edge.source_node(), edge.source_port(), "from"),
+            (edge.target_node(), edge.target_port(), "to"),
+        ):
+            if node_id not in access_ids:
+                continue
+            connected.add(node_id)
+            if port_name != ACCESS_SCOPE_PORT:
+                errors.append(
+                    f"[Invalid Access Edge] Edge '{edge.from_}' -> '{edge.to}': "
+                    f"access node '{node_id}' carries no data, so its '{side}' "
+                    f"endpoint must be '{node_id}.{ACCESS_SCOPE_PORT}', "
+                    f"not '{node_id}.{port_name}'."
+                )
+
+    for node_id in sorted(access_ids - connected):
+        errors.append(
+            f"[Orphan Access Node] Access node '{node_id}' governs nothing: "
+            "connect it to the nodes whose capabilities it should limit, or "
+            "remove it."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Capability enforcement (driven by dag.compute_effective_policies)
+# ---------------------------------------------------------------------------
+
+
+def check_effective_policies(
+    pipeline: Pipeline,
+    policies: dict[str, AccessPolicy],
+    denied_by: dict[str, dict[str, str]],
+) -> None:
+    """
+    Fail compilation when a node requests a capability its effective policy
+    does not grant.
+
+    `policies` maps node_id → effective AccessPolicy, and `denied_by` maps
+    node_id → {capability: access_node_id}, naming which access node is
+    responsible for each missing capability so the message can point at it.
+
+    Raises PipelineValidationErrors listing every violation.
+    """
+    errors: list[str] = []
+    endpoints = pipeline.endpoints
+
+    for node in pipeline.nodes:
+        if node.type != "model" or node.endpoint_ref is None:
+            continue
+
+        descriptor = endpoints.get(node.endpoint_ref)
+        if descriptor is None:
+            # Already reported by the Pydantic endpoint_ref resolution rule.
+            continue
+
+        policy = policies[node.id]
+        kind = descriptor.kind
+
+        if kind == "ollama":
+            if not policy.allow_local_models:
+                gate = denied_by.get(node.id, {}).get("allow_local_models", "?")
+                errors.append(
+                    f"[Access Denied] Node '{node.id}' (model:{kind}) requires "
+                    f"local models, denied by access node '{gate}' which does "
+                    "not grant 'allow_local_models'."
+                )
+            continue
+
+        if kind not in policy.providers:
+            gate = denied_by.get(node.id, {}).get(f"provider:{kind}", "?")
+            granted = ", ".join(policy.providers) if policy.providers else "(none)"
+            errors.append(
+                f"[Access Denied] Node '{node.id}' (model:{kind}) requires "
+                f"provider '{kind}', denied by access node '{gate}' which "
+                f"grants: [{granted}]."
+            )
+
+    if errors:
+        raise PipelineValidationErrors(errors)
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
 def validate_pipeline(pipeline: Pipeline) -> None:
     """
     Run all semantic validation rules on a parsed Pipeline.
@@ -240,11 +367,16 @@ def validate_pipeline(pipeline: Pipeline) -> None:
       1. Main graph is acyclic.
       2. All edge port types are compatible.
       3. All loop body node IDs exist in the pipeline.
+      6. Access nodes are wired as scope markers.
+
+    Capability enforcement is NOT run here — it needs the ancestor walk, so
+    compile() calls check_effective_policies after building adjacency.
     """
     errors: list[str] = []
     _check_acyclic(pipeline, errors)
     _check_port_type_compatibility(pipeline, errors)
     _check_loop_bodies(pipeline, errors)
+    _check_access_nodes(pipeline, errors)
 
     if errors:
         raise PipelineValidationErrors(errors)

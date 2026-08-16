@@ -19,7 +19,15 @@ import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from neuralflow.endpoints.base import Caps, Cost, GenRequest, Health, Token
+from neuralflow.compiler.models import AccessPolicy
+from neuralflow.endpoints.base import (
+    AccessDeniedError,
+    Caps,
+    Cost,
+    GenRequest,
+    Health,
+    Token,
+)
 
 
 class MockEndpoint:
@@ -79,3 +87,20 @@ class MockEndpoint:
             tokens_in=10,
             tokens_out=len(self.predefined_text.split(" ")),
         )
+
+    def check_access(self, policy: AccessPolicy, node_id: str) -> None:
+        """
+        The mock endpoint is a named endpoint kind like any other, so a policy
+        that does not list "mock" withholds it.
+        """
+        if "mock" not in policy.providers:
+            granted = ", ".join(policy.providers) if policy.providers else "(none)"
+            raise AccessDeniedError(
+                node_id=node_id,
+                capability="provider:mock",
+                detail=(
+                    f"Node '{node_id}' (model:mock) requires provider 'mock', "
+                    f"which its access policy does not grant. "
+                    f"Granted providers: [{granted}]."
+                ),
+            )

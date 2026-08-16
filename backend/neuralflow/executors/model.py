@@ -28,6 +28,11 @@ class ModelExecutor(BaseExecutor):
 
         endpoint = ctx.registry.resolve(node.endpoint_ref)
 
+        # Access control gate. Runs before anything that could touch the
+        # network — before the API key is read from the keychain and before a
+        # socket is opened — so a denied call never leaves the machine.
+        endpoint.check_access(ctx.policy, node.id)
+
         # Gather inputs into a single combined string
         input_text_parts: list[str] = []
         for _port_name, value in ctx.inputs.items():
@@ -56,6 +61,9 @@ class ModelExecutor(BaseExecutor):
             if node.config and node.config.max_tokens is not None
             else 2048
         )
+        # A policy ceiling caps the node's own setting; it can only lower it.
+        if ctx.policy.max_tokens is not None:
+            max_tokens = min(max_tokens, ctx.policy.max_tokens)
 
         messages: list[Message] = []
         if system_prompt:

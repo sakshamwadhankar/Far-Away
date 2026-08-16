@@ -67,7 +67,9 @@ describe('Serializer', () => {
 
     const pipeline = toPipelineSchema(rfNodes, rfEdges, 'Test Pipeline');
 
-    expect(pipeline.schema_version).toBe('2.0');
+    // Documents are written as 2.1 since the access node landed. The backend
+    // still reads a 2.0 file (see fromPipelineSchema round-trip below).
+    expect(pipeline.schema_version).toBe('2.1');
     expect(pipeline.name).toBe('Test Pipeline');
     expect(pipeline.nodes).toHaveLength(3);
     expect(pipeline.edges).toHaveLength(2);

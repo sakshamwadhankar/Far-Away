@@ -15,13 +15,28 @@ No application logic here — pure data models and field-level validation only.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Port
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Schema version
+# ---------------------------------------------------------------------------
+
+#: "2.0" — the original schema.
+#: "2.1" — adds the `access` node type and NodeConfig.access_policy.
+#:
+#: Both are accepted. A 2.0 document simply has no access node, which the
+#: compiler reads as an unrestricted effective policy for local runs (see
+#: compiler/dag.py, `mode="local"`). Documents are written as 2.1 going
+#: forward; nothing rewrites an existing file on load.
+SchemaVersion = Literal["2.0", "2.1"]
+
+CURRENT_SCHEMA_VERSION: SchemaVersion = "2.1"
 
 PortType = Literal["text", "number", "boolean", "json", "image", "audio"]
 
@@ -42,14 +57,154 @@ class Port(BaseModel):
 # ---------------------------------------------------------------------------
 
 NodeType = Literal[
-    "input", "output", "model", "loop", "judge", "router", "transform", "compare"
+    "input",
+    "output",
+    "model",
+    "loop",
+    "judge",
+    "router",
+    "transform",
+    "compare",
+    "access",
 ]
+
+# ---------------------------------------------------------------------------
+# EndpointKind / AccessPolicy
+#
+# EndpointKind is declared here rather than next to EndpointDescriptor because
+# AccessPolicy.providers references it.
+# ---------------------------------------------------------------------------
+
+# TODO(R0 Polish Phase): Keep "mock" out of the production schema entirely
+# and inject it dynamically in the test environment to avoid schema pollution.
+EndpointKind = Literal[
+    "openai",
+    "anthropic",
+    "google",
+    "openai_compatible",
+    "ollama",
+    "mock",
+    "groq",
+    "openrouter",
+    "zhipu",
+    "nvidia",
+]
+
+#: Runtime tuple of every EndpointKind, derived from the Literal so the two
+#: cannot drift.
+ENDPOINT_KINDS: tuple[EndpointKind, ...] = get_args(EndpointKind)
+
+
+class AccessPolicy(BaseModel):
+    """
+    The set of capabilities a scope of the pipeline is permitted to reach.
+
+    Attached to an `access` node via `NodeConfig.access_policy`, and applied to
+    every node downstream of it. Deny-by-default: an empty `providers` list
+    grants no cloud provider at all, and both booleans start False.
+
+    When several access nodes are ancestors of the same node their policies
+    INTERSECT — see backend/neuralflow/compiler/README.md. A node can only ever
+    lose capabilities by being placed further downstream, never gain them.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    providers: list[EndpointKind] = Field(
+        default_factory=list,
+        description="Cloud/model providers downstream nodes may call.",
+    )
+    allow_local_models: bool = Field(
+        default=False,
+        description="Whether downstream nodes may call a local Ollama endpoint.",
+    )
+    allow_network: bool = Field(
+        default=False,
+        description="Whether downstream nodes may make general network calls.",
+    )
+    allowed_domains: list[str] = Field(
+        default_factory=list,
+        description="Hostnames reachable when allow_network is True.",
+    )
+    max_cost_usd: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="USD ceiling for this scope. None means no policy ceiling.",
+    )
+    max_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Per-request token ceiling for this scope.",
+    )
+
+    @staticmethod
+    def permissive() -> AccessPolicy:
+        """
+        The policy applied when no access node governs a node.
+
+        Everything is granted, which is what keeps every pre-2.1 pipeline
+        working unchanged on the canvas.
+        """
+        return AccessPolicy(
+            providers=list(ENDPOINT_KINDS),
+            allow_local_models=True,
+            allow_network=True,
+            allowed_domains=[],
+            max_cost_usd=None,
+            max_tokens=None,
+        )
+
+    def intersect(self, other: AccessPolicy) -> AccessPolicy:
+        """
+        Combine two policies, keeping only what BOTH grant.
+
+        Used when a node has more than one access node among its ancestors.
+        Numeric ceilings take the lower of the two; `None` means "no ceiling
+        from this policy", so it loses to any concrete number.
+
+        `allowed_domains` is only meaningful while `allow_network` is granted.
+        An empty list on a policy that allows network means "no domain
+        restriction", so it intersects as the identity rather than as the empty
+        set — otherwise an unrestricted policy would silently zero out a
+        restricted one.
+        """
+        if not self.allowed_domains:
+            domains = list(other.allowed_domains)
+        elif not other.allowed_domains:
+            domains = list(self.allowed_domains)
+        else:
+            # Preserve self's ordering for a stable, readable error message.
+            allowed = set(other.allowed_domains)
+            domains = [d for d in self.allowed_domains if d in allowed]
+
+        return AccessPolicy(
+            providers=[p for p in self.providers if p in set(other.providers)],
+            allow_local_models=self.allow_local_models and other.allow_local_models,
+            allow_network=self.allow_network and other.allow_network,
+            allowed_domains=domains,
+            max_cost_usd=_min_optional(self.max_cost_usd, other.max_cost_usd),
+            max_tokens=_min_optional(self.max_tokens, other.max_tokens),
+        )
+
+
+def _min_optional(a: float | None, b: float | None) -> Any:
+    """Lower of two optional ceilings; None means 'unbounded' and always loses."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return min(a, b)
 
 
 class NodeConfig(BaseModel):
     """Per-node configuration parameters. All fields optional."""
 
     model_config = {"extra": "forbid"}
+
+    access_policy: AccessPolicy | None = Field(
+        default=None,
+        description="Capability grant. Only meaningful on nodes of type 'access'.",
+    )
 
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
@@ -115,6 +270,34 @@ class Node(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_access_node(self) -> Node:
+        """
+        An access node is a scope marker, not a transform.
+
+        It carries a policy and no data ports; connections into and out of it
+        exist only to mark which part of the graph it governs.
+        """
+        if self.type == "access":
+            if self.inputs or self.outputs:
+                raise ValueError(
+                    f"[Invalid Access Node] Access node '{self.id}' must not "
+                    "declare data ports — it is a scope marker, not a "
+                    "transform. Remove its inputs and outputs."
+                )
+            if self.config is None or self.config.access_policy is None:
+                raise ValueError(
+                    f"[Missing Access Policy] Access node '{self.id}' must "
+                    "define 'config.access_policy'."
+                )
+        elif self.config is not None and self.config.access_policy is not None:
+            raise ValueError(
+                "[Invalid Access Policy] Only nodes of type 'access' may carry "
+                f"'config.access_policy'; node '{self.id}' has type "
+                f"'{self.type}'."
+            )
+        return self
+
 
 # ---------------------------------------------------------------------------
 # StopCondition / Loop
@@ -175,6 +358,13 @@ class Loop(BaseModel):
 
 _EDGE_PATTERN = r"^[^.]+\.[^.]+$"
 
+#: Reserved port name used by edges that attach an access node to the scope it
+#: governs. An access node declares no real ports, but the Edge contract is
+#: "nodeId.portName", so scope edges use this fixed name. Nothing flows across
+#: them — the compiler skips port-type checking for these edges and validation
+#: rejects any other port name on an access node.
+ACCESS_SCOPE_PORT = "scope"
+
 
 class Edge(BaseModel):
     """
@@ -206,21 +396,6 @@ class Edge(BaseModel):
 # ---------------------------------------------------------------------------
 # EndpointDescriptor
 # ---------------------------------------------------------------------------
-
-# TODO(R0 Polish Phase): Keep "mock" out of the production schema entirely
-# and inject it dynamically in the test environment to avoid schema pollution.
-EndpointKind = Literal[
-    "openai",
-    "anthropic",
-    "google",
-    "openai_compatible",
-    "ollama",
-    "mock",
-    "groq",
-    "openrouter",
-    "zhipu",
-    "nvidia",
-]
 
 
 class EndpointDescriptor(BaseModel):
@@ -258,7 +433,14 @@ class Pipeline(BaseModel):
 
     model_config = {"extra": "forbid", "populate_by_name": True}
 
-    schema_version: Literal["2.0"] = Field(alias="schema_version")
+    schema_version: SchemaVersion = Field(
+        alias="schema_version",
+        description=(
+            "'2.1' introduced the access node. A '2.0' document is still valid "
+            "and is read as a pipeline with no access node, i.e. an unrestricted "
+            "effective policy on the canvas."
+        ),
+    )
     id: str = Field(description="UUID v4 pipeline identifier.")
     name: str = Field(min_length=1)
     description: str = Field(

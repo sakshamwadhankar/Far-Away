@@ -34,9 +34,42 @@ export type NodeType =
   | "judge"
   | "router"
   | "transform"
-  | "compare";
+  | "compare"
+  /** Scope marker carrying an AccessPolicy. Added in schema 2.1. */
+  | "access";
+
+/**
+ * The set of capabilities a scope of the pipeline is permitted to reach.
+ *
+ * Attached to an `access` node via `NodeConfig.access_policy` and applied to
+ * every node downstream of it. Deny-by-default: an empty `providers` list
+ * grants no cloud provider, and both booleans start false.
+ *
+ * When several access nodes are ancestors of the same node their policies
+ * INTERSECT — the most restrictive wins. A node can only lose capabilities by
+ * being placed further downstream, never gain them.
+ */
+export interface AccessPolicy {
+  /** Cloud/model providers downstream nodes may call. Empty grants none. */
+  providers: EndpointKind[];
+  /** Whether downstream nodes may call a local Ollama endpoint. */
+  allow_local_models: boolean;
+  /** Whether downstream nodes may make general network calls. */
+  allow_network: boolean;
+  /** Hostnames reachable when allow_network is true. Empty means unrestricted. */
+  allowed_domains: string[];
+  /** USD ceiling for this scope. null means no policy ceiling. */
+  max_cost_usd: number | null;
+  /** Per-request token ceiling for this scope. */
+  max_tokens: number | null;
+}
 
 export interface NodeConfig {
+  /**
+   * Capability grant. Only meaningful on nodes of type "access"; the compiler
+   * rejects it on any other node type.
+   */
+  access_policy?: AccessPolicy;
   temperature?: number;
   max_tokens?: number;
   /** "text" | "json" — whether the node expects structured JSON output. */
@@ -54,8 +87,19 @@ export interface NodeConfig {
   stop_when?: StopCondition;
   /** Loop node: what to do when max_iterations is reached. */
   on_max?: OnMax;
+  /** Custom node display metadata. */
+  custom_node_id?: string;
+  custom_label?: string;
+  custom_color?: string;
   /** Allow additional config keys for extensibility. */
-  [key: string]: string | number | boolean | Record<string, string> | StopCondition | undefined;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | Record<string, string>
+    | StopCondition
+    | AccessPolicy
+    | undefined;
 }
 
 export interface Node {
@@ -132,7 +176,11 @@ export type EndpointKind =
   | "google"
   | "openai_compatible"
   | "ollama"
-  | "mock";
+  | "mock"
+  | "groq"
+  | "openrouter"
+  | "zhipu"
+  | "nvidia";
 
 /**
  * Endpoint descriptor stored in the pipeline file.
@@ -152,7 +200,11 @@ export interface EndpointDescriptor {
 
 export interface Pipeline {
   /** Must be exactly "2.0". */
-  schema_version: "2.0";
+  /**
+   * "2.1" added the access node. A "2.0" document is still valid and is read
+   * as a pipeline with no access node.
+   */
+  schema_version: "2.0" | "2.1";
   /** UUID v4 pipeline identifier. */
   id: string;
   /** Human-readable pipeline name. */

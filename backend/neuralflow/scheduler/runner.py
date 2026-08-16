@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from neuralflow.state.sqlite import StateManager
 
 from neuralflow.compiler.dag import CompiledDAG
+from neuralflow.compiler.models import AccessPolicy
 from neuralflow.endpoints.base import (
     Caps,
     Cost,
@@ -49,6 +50,7 @@ from neuralflow.scheduler.engine import (
     SchedulerEvent,
 )
 from neuralflow.scheduler.events import (
+    WsAccessDeniedEvent,
     WsBudgetExceededEvent,
     WsEvent,
     WsLoopIterationEvent,
@@ -62,6 +64,29 @@ from neuralflow.scheduler.events import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _tightest_budget(requested: float | None, dag: CompiledDAG) -> float | None:
+    """
+    Combine the caller's USD budget with the access policies' cost ceilings.
+
+    Every node's effective policy may carry a `max_cost_usd`. The run must not
+    exceed the strictest of them, so the run budget becomes the minimum of the
+    requested budget and every policy ceiling. `None` means "no ceiling from
+    this source" and never tightens anything.
+
+    This deliberately reuses the existing CancelToken budget path in
+    _BudgetEnforcingRegistry instead of adding a parallel enforcement
+    mechanism.
+    """
+    ceilings = [
+        policy.max_cost_usd
+        for policy in dag.effective_policies.values()
+        if policy.max_cost_usd is not None
+    ]
+    if requested is not None:
+        ceilings.append(requested)
+    return min(ceilings) if ceilings else None
 
 
 class PipelineRunner:
@@ -90,7 +115,11 @@ class PipelineRunner:
         self.run_id = run_id
         self._dag = dag
         self._registry = registry
-        self._budget_usd = budget_usd
+        # A policy cost ceiling tightens the run's budget through the existing
+        # CancelToken path rather than a second budget system: take the lowest
+        # ceiling any node is subject to, and the lower of that and whatever
+        # the caller asked for.
+        self._budget_usd = _tightest_budget(budget_usd, dag)
         self._budget_wall_clock_ms = (
             int(budget_wall_clock_seconds * 1000) if budget_wall_clock_seconds else None
         )
@@ -302,6 +331,13 @@ class PipelineRunner:
                 node_id=node_id,
                 error=d.get("error", "Unknown error"),
             )
+        if event.kind == EventKind.ACCESS_DENIED:
+            return WsAccessDeniedEvent(
+                run_id=self.run_id,
+                node_id=node_id,
+                capability=d.get("capability", "unknown"),
+                reason=d.get("reason", "Denied by access policy."),
+            )
         if event.kind == EventKind.TOKEN:
             self._total_tokens_out += 1
             return WsTokenEvent(
@@ -406,6 +442,11 @@ class _BudgetCheckingEndpoint:
 
         async for token in self._wrapped.generate(req):
             yield token
+
+    def check_access(self, policy: AccessPolicy, node_id: str) -> None:
+        # Delegate: the wrapper only adds budget enforcement, so the wrapped
+        # endpoint remains the authority on what its provider is.
+        self._wrapped.check_access(policy, node_id)
 
     async def health(self) -> Health:
         return await self._wrapped.health()

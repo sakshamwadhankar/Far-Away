@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { NodeType, Pipeline, PortType } from '@shared/types';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
+import { emptyPolicy } from '../canvas/accessPolicy';
 import KomvosLogo from '../assets/KomvosLogo.png';
 
 // ─── Icons (inline SVG, no external dep) ─────────────────────────────────────
@@ -13,6 +14,7 @@ const ICON_MAP: Record<string, string> = {
   router:    '⇌',
   transform: '⟳',
   compare:   '≈',
+  access:    '⛨',
 };
 
 const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<PipelineNodeData> }[] = [
@@ -24,6 +26,10 @@ const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<Pipeline
   { type: 'router',    label: 'Router',    defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'branch_a', type: 'text' }, { name: 'branch_b', type: 'text' }], config: { routing_map: { true: 'branch_a', false: 'branch_b' } } } },
   { type: 'transform', label: 'Transform', defaultData: { inputs: [{ name: 'in', type: 'json' }], outputs: [{ name: 'out', type: 'json' }] } },
   { type: 'compare',   label: 'Compare',   defaultData: { inputs: [{ name: 'input1', type: 'text' }, { name: 'input2', type: 'text' }], outputs: [{ name: 'diff', type: 'text' }, { name: 'is_different', type: 'boolean' }] } },
+  // Access nodes carry no data ports — they are scope markers. A fresh one
+  // denies everything, so the capability list immediately shows what the
+  // pipeline downstream is reaching for.
+  { type: 'access',    label: 'Access',    defaultData: { inputs: [], outputs: [], config: { access_policy: emptyPolicy() } } },
 ];
 
 export interface LibraryTemplate {

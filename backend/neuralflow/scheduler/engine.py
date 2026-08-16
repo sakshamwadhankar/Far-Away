@@ -32,8 +32,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from neuralflow.compiler.dag import CompiledDAG
-from neuralflow.compiler.models import StopCondition
-from neuralflow.endpoints.base import ModelEndpoint
+from neuralflow.compiler.models import AccessPolicy, StopCondition
+from neuralflow.endpoints.base import AccessDeniedError, ModelEndpoint
 from neuralflow.scheduler.stop_eval import (
     StopFieldResolutionError,
     evaluate_stop_condition,
@@ -126,6 +126,7 @@ class EventKind(StrEnum):
     NODE_STARTED = "node_started"
     NODE_DONE = "node_done"
     NODE_ERROR = "node_error"
+    ACCESS_DENIED = "access_denied"
     TOKEN = "token"
     LOOP_ITERATION = "loop_iteration"
     RUN_HALTED = "run_halted"
@@ -431,6 +432,12 @@ class Scheduler:
                 registry=self._registry,
                 emit_fn=self._emit,
                 cancel_token=self._cancel,
+                # Effective access policy for this node, computed by the
+                # compiler's ancestor walk. Endpoints enforce it before any
+                # request leaves the machine.
+                policy=self._dag.effective_policies.get(
+                    node_id, AccessPolicy.permissive()
+                ),
             )
 
             # Execute
@@ -438,6 +445,19 @@ class Scheduler:
 
             # Store outputs
             self._state[node_id] = outputs
+
+        except AccessDeniedError as exc:
+            # Reported separately from node_error so the UI can name the
+            # withheld capability and offer to grant it, instead of showing a
+            # generic failure.
+            await self._emit(
+                SchedulerEvent(
+                    kind=EventKind.ACCESS_DENIED,
+                    node_id=node_id,
+                    data={"capability": exc.capability, "reason": exc.detail},
+                )
+            )
+            raise
 
         except Exception as exc:
             await self._emit(

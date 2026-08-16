@@ -96,7 +96,9 @@ export function toPipelineSchema(
   });
 
   return {
-    schema_version: '2.0',
+    // 2.1 adds the access node. Documents are written as 2.1 going forward;
+    // the backend still accepts 2.0 and reads it as "no access node".
+    schema_version: '2.1',
     id: uuidv4(),
     name: pipelineName,
     version: '1.0.0',
@@ -110,7 +112,9 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
   const nodes: RFNode<PipelineNodeData>[] = pipeline.nodes.map((n, index) => {
     return {
       id: n.id,
-      type: 'pipelineNode',
+      // Access nodes render a capability list instead of ports, so they map to
+      // their own React Flow node type.
+      type: n.type === 'access' ? 'accessNode' : 'pipelineNode',
       position: { x: 100 + index * 250, y: 100 }, // Simple layout
       data: {
         type: n.type,

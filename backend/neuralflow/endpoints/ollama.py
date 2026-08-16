@@ -12,7 +12,9 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from neuralflow.compiler.models import AccessPolicy
 from neuralflow.endpoints.base import (
+    AccessDeniedError,
     Caps,
     Cost,
     GenRequest,
@@ -37,6 +39,22 @@ class OllamaEndpoint:
         self.id = id
         self._base_url = base_url.rstrip("/")
         self._model = model
+
+    def check_access(self, policy: AccessPolicy, node_id: str) -> None:
+        """
+        Refuse to run a local model when the effective policy withholds it.
+
+        Called before generate(), so no request reaches the Ollama server.
+        """
+        if not policy.allow_local_models:
+            raise AccessDeniedError(
+                node_id=node_id,
+                capability="allow_local_models",
+                detail=(
+                    f"Node '{node_id}' (model:ollama) requires local models, "
+                    "which its access policy does not grant."
+                ),
+            )
 
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         payload = {
