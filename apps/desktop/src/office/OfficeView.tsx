@@ -51,6 +51,7 @@ import {
   drawSpinningCoin,
   emoteBob,
   fallbackBubble,
+  getNodeThoughtText,
   screenForStatus,
 } from './sprites';
 
@@ -191,12 +192,6 @@ export default function OfficeView({
   const hoveredNode = hoveredIndex >= 0 ? ordered[hoveredIndex] : null;
   const hoveredStat = hoveredId ? nodeStats[hoveredId] : undefined;
 
-  // Aggregate pipeline metrics for HUD
-  const totalCost = Object.values(nodeStats).reduce((sum, s) => sum + (s.costUsd || 0), 0);
-  const totalTokens = Object.values(nodeStats).reduce((sum, s) => sum + (s.tokensOut || 0), 0);
-  const runningCount = nodes.filter((n) => n.data.status === 'running').length;
-  const doneCount = nodes.filter((n) => n.data.status === 'done').length;
-
   return (
     <div
       ref={containerRef}
@@ -276,6 +271,23 @@ export default function OfficeView({
             </div>
           ))}
 
+          {/* Character Live Thought / Speech Bubbles */}
+          {ordered.map((node, i) => {
+            const thought = getNodeThoughtText(node, nodeStats[node.id]);
+            return (
+              <ThoughtBubble
+                key={`thought-${node.id}`}
+                nodeId={node.id}
+                thought={thought}
+                slot={layout.slots[i]}
+                scale={scale}
+                status={node.data.status ?? nodeStats[node.id]?.status ?? 'idle'}
+                selected={selectedNodeIds.includes(node.id)}
+                isHovered={hoveredId === node.id}
+              />
+            );
+          })}
+
           {/* Agent Name Plates */}
           {ordered.map((node, i) => (
             <NamePlate
@@ -350,17 +362,117 @@ export default function OfficeView({
         </div>
       )}
 
-      {/* Top HUD Bar */}
-      <TopHUDBar
-        agentCount={nodes.length}
-        runningCount={runningCount}
-        doneCount={doneCount}
-        totalTokens={totalTokens}
-        totalCost={totalCost}
-      />
-
       {/* Bottom Status Legend */}
       <LegendPanel elapsedSec={isRunning && startTime ? (Date.now() - startTime) / 1000 : null} />
+    </div>
+  );
+}
+
+function ThoughtBubble({
+  nodeId,
+  thought,
+  slot,
+  scale,
+  status,
+  selected,
+  isHovered,
+}: {
+  nodeId: string;
+  thought: string;
+  slot: { x: number; y: number };
+  scale: number;
+  status: string;
+  selected: boolean;
+  isHovered: boolean;
+}) {
+  const isRunning = status === 'running';
+  const isDone = status === 'done';
+  const isError = status === 'error';
+
+  const borderColor = isRunning
+    ? PAL.screenGlow
+    : isDone
+      ? PAL.ok
+      : isError
+        ? PAL.error
+        : selected
+          ? PAL.gold
+          : PAL.woodLight;
+
+  const textColor = isRunning
+    ? '#71ddee'
+    : isDone
+      ? '#84c669'
+      : isError
+        ? '#ff706d'
+        : selected
+          ? '#f1c471'
+          : '#f2eaf1';
+
+  return (
+    <div
+      data-testid={`thought-bubble-${nodeId}`}
+      style={{
+        position: 'absolute',
+        left: (slot.x + DESK_W / 2) * scale,
+        top: (slot.y - 4) * scale,
+        transform: 'translate(-50%, -100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        pointerEvents: 'none',
+        zIndex: isHovered ? 25 : isRunning ? 20 : isDone ? 15 : 10,
+        transition: 'all 0.1s steps(2)',
+      }}
+    >
+      {/* Pixel-Art Box */}
+      <div
+        style={{
+          background: isRunning ? '#0d1624' : isDone ? '#102214' : isError ? '#280f0f' : '#181522',
+          border: `1px solid ${borderColor}`,
+          outline: `1px solid ${PAL.outline}`,
+          boxShadow: isRunning
+            ? `0 0 0 1px ${PAL.outline}, 0 0 6px ${PAL.screenGlow}`
+            : `0 0 0 1px ${PAL.outline}, 0 2px 0 0 rgba(0,0,0,0.8)`,
+          padding: '1px 5px',
+          color: textColor,
+          fontSize: Math.max(8, Math.round(8 * scale)),
+          fontFamily: '"Courier New", Courier, monospace',
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          whiteSpace: 'nowrap',
+          maxWidth: Math.max(50, Math.round(66 * scale)),
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          imageRendering: 'pixelated',
+          userSelect: 'none',
+        }}
+      >
+        {thought}
+      </div>
+
+      {/* Stepped Pixel Pointer Tail */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 1 }}>
+        <div
+          style={{
+            width: 6,
+            height: 2,
+            background: borderColor,
+            borderLeft: `1px solid ${PAL.outline}`,
+            borderRight: `1px solid ${PAL.outline}`,
+          }}
+        />
+        <div
+          style={{
+            width: 3,
+            height: 2,
+            background: borderColor,
+            borderLeft: `1px solid ${PAL.outline}`,
+            borderRight: `1px solid ${PAL.outline}`,
+            borderBottom: `1px solid ${PAL.outline}`,
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -383,77 +495,28 @@ function NamePlate({
       style={{
         position: 'absolute',
         left: (slot.x + DESK_W / 2) * scale,
-        top: (slot.y + DESK_H + 1) * scale,
+        top: (slot.y + DESK_H + 2) * scale,
         transform: 'translateX(-50%)',
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        padding: '1px 6px',
-        borderRadius: 4,
+        padding: '1px 5px',
         border: `1px solid ${selected ? PAL.gold : PAL.outline}`,
-        background: 'rgba(30, 34, 45, 0.90)',
-        boxShadow: selected ? `0 0 8px ${PAL.gold}` : '0 2px 6px rgba(0,0,0,0.4)',
+        outline: selected ? `1px solid ${PAL.gold}` : 'none',
+        background: '#161420',
+        boxShadow: selected ? `0 0 6px ${PAL.gold}` : '0 2px 0 0 rgba(0,0,0,0.8)',
         color: '#f2eaf1',
-        fontSize: 9,
-        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: Math.max(8, Math.round(8.5 * scale)),
+        fontFamily: '"Courier New", Courier, monospace',
+        fontWeight: 700,
+        letterSpacing: 0.3,
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
+        imageRendering: 'pixelated',
       }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: 99, background: color, flexShrink: 0 }} />
+      <span style={{ width: 4, height: 4, background: color, flexShrink: 0, border: `1px solid ${PAL.outline}` }} />
       {label}
-    </div>
-  );
-}
-
-function TopHUDBar({
-  agentCount,
-  runningCount,
-  doneCount,
-  totalTokens,
-  totalCost,
-}: {
-  agentCount: number;
-  runningCount: number;
-  doneCount: number;
-  totalTokens: number;
-  totalCost: number;
-}) {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 12,
-        left: 12,
-        right: 12,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '6px 14px',
-        borderRadius: 8,
-        border: `1px solid ${PAL.outline}`,
-        background: 'rgba(20, 24, 33, 0.90)',
-        color: '#aab6c4',
-        fontSize: 11,
-        fontFamily: 'var(--font-mono, monospace)',
-        pointerEvents: 'none',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 14 }}>🏢</span>
-        <strong style={{ color: PAL.woodLight, letterSpacing: 1 }}>AGENT OPERATIONS COMPLEX</strong>
-      </div>
-      <div style={{ display: 'flex', gap: 16 }}>
-        <span>Agents: <strong style={{ color: '#fff' }}>{agentCount}</strong></span>
-        {runningCount > 0 && (
-          <span style={{ color: PAL.screenGlow }}>Working: <strong>{runningCount}</strong></span>
-        )}
-        {doneCount > 0 && (
-          <span style={{ color: PAL.ok }}>Done: <strong>{doneCount}</strong></span>
-        )}
-        <span>Tokens: <strong style={{ color: '#fff' }}>{totalTokens.toLocaleString()}</strong></span>
-        <span>Cost: <strong style={{ color: PAL.gold }}>${totalCost.toFixed(4)}</strong></span>
-      </div>
     </div>
   );
 }

@@ -37,7 +37,13 @@ export type PropKind =
   | 'window'
   | 'bulletin'
   | 'chest'
-  | 'rug';
+  | 'rug'
+  | 'cabinet'
+  | 'coffeeStation'
+  | 'lamp'
+  | 'whiteboard'
+  | 'trashBin'
+  | 'crate';
 
 export interface RoomProp {
   kind: PropKind;
@@ -210,25 +216,48 @@ export function computeDeskLayout(count: number): OfficeLayout {
   // Populate decorative props along walls and corners
   const props: RoomProp[] = [];
 
-  // North wall features (windows, clocks, bulletin boards, wall plaques)
+  // North wall features (windows, clocks, wall lamps, whiteboard, bulletin charts)
   const windowSpacing = Math.round(roomW / 4);
   props.push({ kind: 'window', x: windowSpacing - 12, y: 6, w: 24, h: 20 });
   props.push({ kind: 'clock', x: Math.round(roomW / 2) - 6, y: 8, w: 12, h: 12 });
   props.push({ kind: 'window', x: roomW - windowSpacing - 12, y: 6, w: 24, h: 20 });
 
-  if (roomW >= 420) {
-    props.push({ kind: 'bulletin', x: windowSpacing + 40, y: 8, w: 20, h: 14 });
-    props.push({ kind: 'bulletin', x: roomW - windowSpacing - 60, y: 8, w: 20, h: 14 });
+  // Wall lamps with flickering warm glow
+  props.push({ kind: 'lamp', x: 20, y: 8, w: 8, h: 12 });
+  props.push({ kind: 'lamp', x: roomW - 28, y: 8, w: 8, h: 12 });
+  if (cols >= 3 && count >= 4) {
+    const splitX = Math.round(roomW / 2);
+    props.push({ kind: 'lamp', x: splitX - 18, y: 8, w: 8, h: 12 });
+    props.push({ kind: 'lamp', x: splitX + 10, y: 8, w: 8, h: 12 });
   }
 
-  // Corners and room decor (animated plants, water cooler, server racks, bookshelf)
-  props.push({ kind: 'plant', x: WALL_SIDE_W + 6, y: WALL_TOP_H + 4, w: 16, h: 16, variant: 0 });
-  props.push({ kind: 'plant', x: roomW - WALL_SIDE_W - 22, y: WALL_TOP_H + 4, w: 16, h: 16, variant: 1 });
-  props.push({ kind: 'bookshelf', x: WALL_SIDE_W + 6, y: roomH - WALL_BOTTOM_H - 36, w: 28, h: 32 });
-  props.push({ kind: 'waterCooler', x: roomW - WALL_SIDE_W - 24, y: roomH - WALL_BOTTOM_H - 32, w: 16, h: 28 });
+  // Strategy whiteboard and bulletin boards
+  props.push({ kind: 'whiteboard', x: windowSpacing + 28, y: 6, w: 26, h: 18 });
+  props.push({ kind: 'bulletin', x: roomW - windowSpacing - 44, y: 6, w: 20, h: 16 });
 
-  if (count >= 4) {
-    props.push({ kind: 'server', x: roomW - WALL_SIDE_W - 24, y: WALL_TOP_H + 28, w: 18, h: 32 });
+  // Left Room / Break & Ingestion decor
+  props.push({ kind: 'coffeeStation', x: WALL_SIDE_W + 4, y: WALL_TOP_H + 4, w: 18, h: 22 });
+  props.push({ kind: 'plant', x: WALL_SIDE_W + 4, y: WALL_TOP_H + 32, w: 16, h: 16, variant: 0 });
+  props.push({ kind: 'cabinet', x: WALL_SIDE_W + 4, y: roomH - WALL_BOTTOM_H - 36, w: 16, h: 26 });
+  props.push({ kind: 'crate', x: WALL_SIDE_W + 22, y: roomH - WALL_BOTTOM_H - 24, w: 14, h: 14 });
+
+  // Right Room / AI Core & Server cluster decor
+  props.push({ kind: 'server', x: roomW - WALL_SIDE_W - 22, y: WALL_TOP_H + 4, w: 18, h: 32 });
+  props.push({ kind: 'server', x: roomW - WALL_SIDE_W - 22, y: WALL_TOP_H + 38, w: 18, h: 32 });
+  props.push({ kind: 'plant', x: roomW - WALL_SIDE_W - 22, y: roomH - WALL_BOTTOM_H - 58, w: 16, h: 16, variant: 1 });
+  props.push({ kind: 'waterCooler', x: roomW - WALL_SIDE_W - 22, y: roomH - WALL_BOTTOM_H - 32, w: 16, h: 28 });
+
+  if (cols >= 3 && count >= 4) {
+    const splitX = Math.round(roomW / 2);
+    props.push({ kind: 'bookshelf', x: splitX + 8, y: WALL_TOP_H + 4, w: 28, h: 32 });
+  } else {
+    props.push({ kind: 'bookshelf', x: WALL_SIDE_W + 4, y: roomH - WALL_BOTTOM_H - 64, w: 28, h: 32 });
+  }
+
+  // Add small trash bins next to first few desk units
+  for (let i = 0; i < Math.min(slots.length, 3); i++) {
+    const s = slots[i];
+    props.push({ kind: 'trashBin', x: s.x + DESK_W + 3, y: s.y + 24, w: 8, h: 10 });
   }
 
   return { roomW, roomH, cols, rows, slots, rooms, walls, doorways, props };

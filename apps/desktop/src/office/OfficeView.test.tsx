@@ -43,13 +43,16 @@ describe('OfficeView', () => {
     expect(screen.queryByTestId('office-canvas')).toBeNull();
   });
 
-  it('renders a canvas and legend when nodes exist', () => {
+  it('renders a canvas, legend, and character thought bubbles when nodes exist', () => {
     const nodes = makeNodes(['idle', 'running', 'done', 'error']);
     render(<OfficeView {...baseProps()} nodes={nodes} />);
     expect(screen.getByTestId('office-view')).toBeDefined();
     expect(screen.getByTestId('office-canvas')).toBeDefined();
     for (const label of ['Idle', 'Working…', 'Done', 'Error']) {
       expect(screen.getByText(label)).toBeDefined();
+    }
+    for (const n of nodes) {
+      expect(screen.getByTestId(`thought-bubble-${n.id}`)).toBeDefined();
     }
   });
 

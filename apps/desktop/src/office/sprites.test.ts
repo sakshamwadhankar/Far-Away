@@ -12,6 +12,7 @@ import {
   drawSpinningCoin,
   emoteBob,
   fallbackBubble,
+  getNodeThoughtText,
   screenForStatus,
 } from './sprites';
 import type { OfficeImages } from './assets';
@@ -109,6 +110,12 @@ describe('drawing routines (jsdom-safe)', () => {
           { kind: 'window', x: 150, y: 10, w: 24, h: 20 },
           { kind: 'clock', x: 200, y: 10, w: 12, h: 12 },
           { kind: 'bulletin', x: 230, y: 10, w: 20, h: 14 },
+          { kind: 'lamp', x: 260, y: 10, w: 8, h: 12 },
+          { kind: 'coffeeStation', x: 280, y: 40, w: 18, h: 22 },
+          { kind: 'cabinet', x: 300, y: 40, w: 16, h: 26 },
+          { kind: 'whiteboard', x: 320, y: 10, w: 26, h: 18 },
+          { kind: 'trashBin', x: 350, y: 40, w: 8, h: 10 },
+          { kind: 'crate', x: 360, y: 40, w: 14, h: 14 },
         ],
         45,
       ),
@@ -163,5 +170,50 @@ describe('drawing routines (jsdom-safe)', () => {
       if (!value.startsWith('#')) continue;
       expect(packColors.has(value.toLowerCase()), `unexpected off-palette color ${value}`).toBe(true);
     }
+  });
+});
+
+describe('getNodeThoughtText', () => {
+  it('shows input query for input nodes', () => {
+    const node = { data: { type: 'input', status: 'running', config: { label: 'Question' } } };
+    expect(getNodeThoughtText(node)).toContain('Question');
+    const idleNode = { data: { type: 'input', status: 'idle', config: { label: 'Prompt' } } };
+    expect(getNodeThoughtText(idleNode)).toContain('Prompt');
+  });
+
+  it('shows thinking and token stats for model nodes', () => {
+    const node = { data: { type: 'model', status: 'running', endpoint_ref: 'openai/gpt-4o' } };
+    const stat: { status: 'running' | 'done' | 'idle' | 'error'; tokensIn: number; tokensOut: number; costUsd: number } = {
+      status: 'running',
+      tokensIn: 10,
+      tokensOut: 42,
+      costUsd: 0.001,
+    };
+    expect(getNodeThoughtText(node, stat)).toBe('🧠 42 tok');
+
+    const doneNode = { data: { type: 'model', status: 'done', endpoint_ref: 'anthropic/claude-3-5' } };
+    expect(getNodeThoughtText(doneNode, stat)).toBe('✨ 42 tok');
+  });
+
+  it('shows output text for output nodes', () => {
+    const node = { data: { type: 'output', status: 'done', config: { label: 'Answer' } } };
+    expect(getNodeThoughtText(node)).toContain('Answer');
+
+    const runningNode = { data: { type: 'output', status: 'running' } };
+    expect(getNodeThoughtText(runningNode)).toBe('⚡ Assembling');
+  });
+
+  it('handles judge, router, loop, and transform nodes gracefully', () => {
+    const judge = { data: { type: 'judge', status: 'running', config: { score_field: 'accuracy' } } };
+    expect(getNodeThoughtText(judge)).toContain('accuracy');
+
+    const router = { data: { type: 'router', status: 'done' } };
+    expect(getNodeThoughtText(router)).toBe('✓ Routed');
+
+    const loop = { data: { type: 'loop', status: 'running', config: { max_iterations: 10 } } };
+    expect(getNodeThoughtText(loop)).toBe('🔄 Iterating');
+
+    const transform = { data: { type: 'transform', status: 'done' } };
+    expect(getNodeThoughtText(transform)).toBe('✓ Parsed');
   });
 });

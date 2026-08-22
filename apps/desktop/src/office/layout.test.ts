@@ -56,7 +56,7 @@ describe('computeDeskLayout', () => {
     expect(layout.props.some((p) => p.kind === 'server')).toBe(true);
   });
 
-  it('populates decorative environment props (plants, clocks, windows, bookshelves)', () => {
+  it('populates decorative environment props (plants, clocks, windows, bookshelves, coffeeStation, lamps, whiteboard, cabinet, crate)', () => {
     const layout = computeDeskLayout(4);
     const kinds = new Set(layout.props.map((p) => p.kind));
     expect(kinds.has('plant')).toBe(true);
@@ -64,6 +64,12 @@ describe('computeDeskLayout', () => {
     expect(kinds.has('clock')).toBe(true);
     expect(kinds.has('bookshelf')).toBe(true);
     expect(kinds.has('waterCooler')).toBe(true);
+    expect(kinds.has('lamp')).toBe(true);
+    expect(kinds.has('coffeeStation')).toBe(true);
+    expect(kinds.has('cabinet')).toBe(true);
+    expect(kinds.has('crate')).toBe(true);
+    expect(kinds.has('whiteboard')).toBe(true);
+    expect(kinds.has('trashBin')).toBe(true);
   });
 
   it('is deterministic for a given count', () => {

@@ -68,6 +68,91 @@ export const OFFICE_TYPE_COLORS: Record<string, string> = {
 };
 export const OFFICE_FALLBACK_COLOR = '#5a5e54';
 
+/**
+ * Derives the live thought / speech bubble text for a node based on its type,
+ * execution status, configuration, and real-time statistics.
+ */
+export function getNodeThoughtText(
+  node: { data: { type?: string; status?: string; role?: string; endpoint_ref?: string; config?: Record<string, unknown> } },
+  stat?: { status?: string; tokensIn?: number; tokensOut?: number; costUsd?: number },
+): string {
+  const type = node.data.type || 'unknown';
+  const status = node.data.status || stat?.status || 'idle';
+  const config = node.data.config || {};
+  const customLabel = (config.custom_label as string) || '';
+  const label = (config.label as string) || '';
+
+  switch (type) {
+    case 'input': {
+      if (status === 'running') return label ? `📥 ${label.slice(0, 10)}` : '📥 Ingesting';
+      if (status === 'done') return label ? `✓ ${label.slice(0, 10)}` : '✓ Input';
+      if (status === 'error') return '⚠ Error';
+      return label ? `Input: ${label.slice(0, 8)}` : '📥 Input';
+    }
+    case 'model': {
+      if (status === 'running') {
+        if (stat?.tokensOut && stat.tokensOut > 0) return `🧠 ${stat.tokensOut} tok`;
+        return '💭 Thinking';
+      }
+      if (status === 'done') {
+        if (stat?.tokensOut && stat.tokensOut > 0) return `✨ ${stat.tokensOut} tok`;
+        return '✨ Done';
+      }
+      if (status === 'error') return '⚠ Failed';
+      return '🤖 Ready';
+    }
+    case 'output': {
+      if (status === 'running') return '⚡ Assembling';
+      if (status === 'done') return label ? `🎯 ${label.slice(0, 8)}` : '🎯 Output';
+      if (status === 'error') return '⚠ Error';
+      return label ? `Output: ${label.slice(0, 8)}` : '🎯 Output';
+    }
+    case 'judge': {
+      const scoreField = (config.score_field as string) || '';
+      if (status === 'running') return scoreField ? `🧐 ${scoreField.slice(0, 8)}` : '🧐 Rating';
+      if (status === 'done') return '✓ Approved';
+      if (status === 'error') return '✗ Rejected';
+      return '⚖ Judge';
+    }
+    case 'router': {
+      if (status === 'running') return '🔀 Routing';
+      if (status === 'done') return '✓ Routed';
+      if (status === 'error') return '⚠ Error';
+      return '🔀 Route';
+    }
+    case 'transform': {
+      if (status === 'running') return '⚙ Parsing';
+      if (status === 'done') return '✓ Parsed';
+      if (status === 'error') return '⚠ Error';
+      return '🔄 Format';
+    }
+    case 'loop': {
+      if (status === 'running') return '🔄 Iterating';
+      if (status === 'done') return '✓ Loop done';
+      if (status === 'error') return '⚠ Max iter';
+      return '🔁 Loop';
+    }
+    case 'compare': {
+      if (status === 'running') return '🔍 Diffing';
+      if (status === 'done') return '✓ Matched';
+      if (status === 'error') return '⚠ Mismatch';
+      return '⚖ Compare';
+    }
+    case 'access': {
+      if (status === 'running') return '🔒 Checking';
+      if (status === 'done') return '✓ Granted';
+      if (status === 'error') return '⛔ Denied';
+      return '🛡 Policy';
+    }
+    default: {
+      if (status === 'running') return `Working`;
+      if (status === 'done') return `Done ✓`;
+      if (status === 'error') return `Error`;
+      return `${customLabel || type}`;
+    }
+  }
+}
+
 type Ctx = CanvasRenderingContext2D;
 
 export function px(ctx: Ctx, color: string, x: number, y: number, w: number, h: number): void {
@@ -439,6 +524,79 @@ export function drawOfficeProps(
         px(ctx, PAL.error, hx, hy, 1, 1);
         break;
       }
+      case 'lamp': {
+        // Wall lamp / sconce with animated warm amber glow
+        px(ctx, PAL.woodDark, prop.x + 2, prop.y + 2, 4, 8);
+        px(ctx, PAL.outline, prop.x + 1, prop.y + 1, 6, 2);
+        const flicker = Math.floor(tick / 6) % 2 === 0;
+        px(ctx, flicker ? PAL.gold : PAL.woodLight, prop.x + 2, prop.y + 4, 4, 5);
+        px(ctx, PAL.white, prop.x + 3, prop.y + 5, 2, 3);
+        break;
+      }
+      case 'coffeeStation': {
+        // Breakroom coffee table with espresso machine & steaming mug
+        px(ctx, PAL.outline, prop.x, prop.y + 10, prop.w, prop.h - 10); // table
+        px(ctx, PAL.woodMid, prop.x + 1, prop.y + 11, prop.w - 2, prop.h - 12);
+        px(ctx, PAL.woodDark, prop.x + 1, prop.y + prop.h - 4, prop.w - 2, 3);
+        // Coffee maker
+        px(ctx, PAL.outline, prop.x + 2, prop.y + 2, 9, 10);
+        px(ctx, PAL.serverDark, prop.x + 3, prop.y + 3, 7, 8);
+        px(ctx, PAL.screenGlow, prop.x + 4, prop.y + 5, 2, 2); // indicator
+        // Mug with animated steam
+        px(ctx, PAL.outline, prop.x + 12, prop.y + 6, 5, 5);
+        px(ctx, PAL.white, prop.x + 13, prop.y + 7, 3, 3);
+        const steamY = (Math.floor(tick / 8) % 3);
+        px(ctx, PAL.white, prop.x + 14, prop.y + 3 - steamY, 1, 2);
+        break;
+      }
+      case 'cabinet': {
+        // 3-drawer wooden filing cabinet
+        px(ctx, PAL.outline, prop.x, prop.y, prop.w, prop.h);
+        px(ctx, PAL.woodMid, prop.x + 1, prop.y + 1, prop.w - 2, prop.h - 2);
+        for (let d = 0; d < 3; d++) {
+          const dy = prop.y + 2 + d * 8;
+          px(ctx, PAL.woodDark, prop.x + 2, dy + 6, prop.w - 4, 1); // drawer seam
+          px(ctx, PAL.white, prop.x + 3, dy + 2, 4, 3); // label card
+          px(ctx, PAL.gold, prop.x + Math.floor(prop.w / 2) - 1, dy + 3, 3, 1); // handle
+        }
+        break;
+      }
+      case 'whiteboard': {
+        // Strategy whiteboard with node flowchart
+        px(ctx, PAL.outline, prop.x, prop.y, prop.w, prop.h);
+        px(ctx, PAL.white, prop.x + 1, prop.y + 1, prop.w - 2, prop.h - 3);
+        px(ctx, PAL.woodDark, prop.x, prop.y + prop.h - 2, prop.w, 2); // marker tray
+        // Drawn node diagrams on board
+        px(ctx, PAL.screenGlow, prop.x + 3, prop.y + 3, 4, 3);
+        px(ctx, PAL.outline, prop.x + 7, prop.y + 4, 3, 1);
+        px(ctx, PAL.gold, prop.x + 10, prop.y + 3, 4, 3);
+        px(ctx, PAL.outline, prop.x + 14, prop.y + 4, 3, 1);
+        px(ctx, PAL.ok, prop.x + 17, prop.y + 3, 4, 3);
+        px(ctx, PAL.outline, prop.x + 5, prop.y + 8, 12, 1);
+        px(ctx, PAL.error, prop.x + 8, prop.y + 10, 5, 2);
+        break;
+      }
+      case 'trashBin': {
+        // Small wastepaper bin next to desk
+        px(ctx, PAL.outline, prop.x, prop.y, prop.w, prop.h);
+        px(ctx, PAL.serverDark, prop.x + 1, prop.y + 1, prop.w - 2, prop.h - 2);
+        px(ctx, PAL.white, prop.x + 2, prop.y + 2, 3, 3); // crumpled paper
+        px(ctx, PAL.gold, prop.x + 4, prop.y + 4, 2, 2);
+        break;
+      }
+      case 'crate': {
+        // Wooden supply crate
+        px(ctx, PAL.outline, prop.x, prop.y, prop.w, prop.h);
+        px(ctx, PAL.woodDark, prop.x + 1, prop.y + 1, prop.w - 2, prop.h - 2);
+        px(ctx, PAL.woodMid, prop.x + 2, prop.y + 2, prop.w - 4, prop.h - 4);
+        // Diagonal brace
+        px(ctx, PAL.woodDark, prop.x + 2, prop.y + 2, 2, 2);
+        px(ctx, PAL.woodDark, prop.x + prop.w - 4, prop.y + 2, 2, 2);
+        px(ctx, PAL.woodDark, prop.x + Math.floor(prop.w / 2) - 1, prop.y + Math.floor(prop.h / 2) - 1, 2, 2);
+        px(ctx, PAL.woodDark, prop.x + 2, prop.y + prop.h - 4, 2, 2);
+        px(ctx, PAL.woodDark, prop.x + prop.w - 4, prop.y + prop.h - 4, 2, 2);
+        break;
+      }
       case 'bulletin': {
         // Cork notice board
         px(ctx, PAL.outline, prop.x, prop.y, prop.w, prop.h);
@@ -489,7 +647,7 @@ export function drawSpinningCoin(
   }
 }
 
-// ─── Flow Particles ───────────────────────────────────────────────────────────
+// ─── Flow Particles & Pixel-Art Stepped Conduits ────────────────────────────
 
 export interface OfficeDataFlowEdge {
   id: string;
@@ -497,6 +655,34 @@ export interface OfficeDataFlowEdge {
   target: string;
 }
 
+/** Draw a straight pixel-art conduit segment (3px wide with inner core). */
+function drawPixelConduitSegment(
+  ctx: Ctx,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  isActive: boolean,
+): void {
+  if (x1 === x2) {
+    // Vertical conduit segment
+    const minY = Math.min(y1, y2);
+    const h = Math.abs(y2 - y1) + 1;
+    px(ctx, PAL.outline, x1 - 1, minY, 3, h);
+    px(ctx, isActive ? PAL.screenGlow : PAL.screenOff, x1, minY, 1, h);
+  } else if (y1 === y2) {
+    // Horizontal conduit segment
+    const minX = Math.min(x1, x2);
+    const w = Math.abs(x2 - x1) + 1;
+    px(ctx, PAL.outline, minX, y1 - 1, w, 3);
+    px(ctx, isActive ? PAL.screenGlow : PAL.screenOff, minX, y1, w, 1);
+  }
+}
+
+/**
+ * Draws stepped orthogonal pixel-art conduits on the office floor connecting
+ * pipeline desks with traveling data energy packets.
+ */
 export function drawOfficeFlows(
   ctx: Ctx,
   edges: OfficeDataFlowEdge[],
@@ -504,37 +690,81 @@ export function drawOfficeFlows(
   slotMap: Map<string, { x: number; y: number }>,
   tick: number,
 ): void {
-  if (animatedEdgeIds.size === 0) return;
+  if (edges.length === 0) return;
 
   for (const edge of edges) {
-    if (!animatedEdgeIds.has(edge.id)) continue;
     const a = slotMap.get(edge.source);
     const b = slotMap.get(edge.target);
     if (!a || !b) continue;
 
-    const ax = a.x + DESK_W / 2;
-    const ay = a.y + DESK_H - 6;
-    const bx = b.x + DESK_W / 2;
-    const by = b.y + DESK_H - 6;
+    const isActive = animatedEdgeIds.has(edge.id);
 
-    // Glowing conduit cable
-    ctx.save();
-    ctx.strokeStyle = PAL.screenGlow;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.lineDashOffset = -(tick % 8);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-    ctx.restore();
+    // Source port at bottom center of desk A
+    const ax = Math.round(a.x + DESK_W / 2);
+    const ay = Math.round(a.y + DESK_H - 2);
 
-    // Moving pulse energy particle
-    const t = (tick % 30) / 30;
-    const pxPos = Math.round(ax + (bx - ax) * t);
-    const pyPos = Math.round(ay + (by - ay) * t);
+    // Target port at top center of desk B (or bottom if target is above)
+    const bx = Math.round(b.x + DESK_W / 2);
+    const by = Math.round(b.y > a.y ? b.y + 4 : b.y + DESK_H - 2);
 
-    px(ctx, PAL.gold, pxPos - 2, pyPos - 2, 5, 5);
-    px(ctx, PAL.white, pxPos - 1, pyPos - 1, 3, 3);
+    // Stepped waypoint in the corridor between the rows
+    const midY = Math.round(b.y > a.y ? a.y + DESK_H + Math.max(6, (b.y - (a.y + DESK_H)) / 2) : a.y + DESK_H + 10);
+
+    // 1. Draw orthogonal conduit segments (Manhattan routing)
+    drawPixelConduitSegment(ctx, ax, ay, ax, midY, isActive);
+    drawPixelConduitSegment(ctx, ax, midY, bx, midY, isActive);
+    drawPixelConduitSegment(ctx, bx, midY, bx, by, isActive);
+
+    // 2. Corner junction boxes & mounting clips
+    px(ctx, PAL.outline, ax - 2, midY - 2, 5, 5);
+    px(ctx, isActive ? PAL.gold : PAL.screenOff, ax - 1, midY - 1, 3, 3);
+
+    px(ctx, PAL.outline, bx - 2, midY - 2, 5, 5);
+    px(ctx, isActive ? PAL.gold : PAL.screenOff, bx - 1, midY - 1, 3, 3);
+
+    // Cable bracket clips
+    px(ctx, PAL.gold, ax - 2, Math.round((ay + midY) / 2), 5, 1);
+    px(ctx, PAL.gold, Math.round((ax + bx) / 2), midY - 2, 1, 5);
+
+    // 3. If active, animate a travelling pixel data packet with spark trail
+    if (isActive) {
+      const seg1Len = Math.abs(midY - ay);
+      const seg2Len = Math.abs(bx - ax);
+      const seg3Len = Math.abs(by - midY);
+      const totalLen = Math.max(1, seg1Len + seg2Len + seg3Len);
+
+      // Packet progress from 0 to totalLen
+      const progress = (tick % 24) / 24;
+      let currDist = progress * totalLen;
+      let pxPos = ax;
+      let pyPos = ay;
+
+      if (currDist <= seg1Len) {
+        // Travelling down segment 1
+        const t = currDist / Math.max(1, seg1Len);
+        pyPos = Math.round(ay + (midY - ay) * t);
+        pxPos = ax;
+      } else if (currDist <= seg1Len + seg2Len) {
+        // Travelling across segment 2
+        currDist -= seg1Len;
+        const t = currDist / Math.max(1, seg2Len);
+        pxPos = Math.round(ax + (bx - ax) * t);
+        pyPos = midY;
+      } else {
+        // Travelling down segment 3
+        currDist -= (seg1Len + seg2Len);
+        const t = currDist / Math.max(1, seg3Len);
+        pxPos = bx;
+        pyPos = Math.round(midY + (by - midY) * t);
+      }
+
+      // Glowing 4x4 pixel data packet with 2x2 white core
+      px(ctx, PAL.gold, pxPos - 2, pyPos - 2, 5, 5);
+      px(ctx, PAL.white, pxPos - 1, pyPos - 1, 3, 3);
+
+      // Trailing shimmer sparkles
+      const trailOffset = (tick % 4) + 2;
+      px(ctx, PAL.screenGlow, pxPos - 1, pyPos - trailOffset, 2, 2);
+    }
   }
 }
