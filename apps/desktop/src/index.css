@@ -873,3 +873,516 @@ textarea.nf-input {
   font-size: 8px;
   opacity: 0.5;
 }
+
+/* ─── Governance UI (P1) ───────────────────────────────────────────────────── */
+.nf-gov-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 50;
+}
+
+.nf-gov-indicator-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.nf-gov-indicator-btn:hover {
+  background: var(--surface-2);
+}
+.nf-gov-indicator-btn[data-active-profile="locked"] {
+  border-color: var(--danger);
+}
+.nf-gov-indicator-label {
+  font-weight: 600;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+.nf-gov-indicator-name {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.nf-gov-indicator-postures {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+  color: var(--text-2);
+}
+.nf-gov-posture-mark {
+  font-size: 10px;
+}
+
+/* Overlay & Panel */
+.nf-gov-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nf-gov-panel {
+  position: absolute;
+  top: 60px;
+  right: 12px;
+  width: 400px;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.nf-gov-panel--large {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 900px;
+  height: 600px;
+  right: auto;
+}
+
+.nf-gov-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.nf-gov-panel-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.nf-gov-panel-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.nf-gov-panel-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+/* Error */
+.nf-gov-error {
+  background: rgba(184, 50, 50, 0.1);
+  color: var(--danger);
+  padding: 8px 12px;
+  border-radius: var(--radius-input);
+  font-size: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(184, 50, 50, 0.2);
+}
+
+/* Profile Picker */
+.nf-gov-profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nf-gov-profile-card {
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 12px;
+  background: var(--bg);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.nf-gov-profile-card:hover, .nf-gov-profile-card:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.nf-gov-profile-card.active {
+  border-color: var(--highlight);
+  background: rgba(200, 217, 74, 0.05);
+}
+
+.nf-gov-profile-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.nf-gov-profile-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.nf-gov-profile-domain-info {
+  display: flex;
+  justify-content: space-between;
+  background: var(--surface);
+  padding: 4px 8px;
+  border-radius: var(--radius-tag);
+}
+
+.nf-gov-domain-name {
+  color: var(--text-3);
+}
+
+.nf-gov-profile-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+/* History Table */
+.nf-gov-filters {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.nf-gov-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nf-gov-history-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-gov-table-container {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.nf-gov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.nf-gov-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+
+.nf-gov-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.nf-gov-table tr:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+.nf-gov-table tr:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.nf-gov-row-human {
+  background: rgba(200, 217, 74, 0.05);
+}
+
+.nf-gov-col-time {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.nf-gov-col-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.nf-gov-col-reason {
+  color: var(--text-2);
+  font-size: 12px;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Outcome styling - Form + Color */
+.nf-gov-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: 11px;
+}
+.nf-gov-outcome--allow {
+  background: rgba(58, 125, 68, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(58, 125, 68, 0.3);
+}
+.nf-gov-outcome--deny {
+  background: rgba(184, 50, 50, 0.15);
+  color: var(--danger);
+  border: 1px dashed rgba(184, 50, 50, 0.5);
+}
+.nf-gov-outcome--timeout {
+  background: rgba(138, 112, 16, 0.15);
+  color: #8A7010;
+  border: 1px dotted #8A7010;
+}
+
+.nf-gov-origin {
+  font-size: 12px;
+}
+.nf-gov-origin-human {
+  font-weight: 600;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+}
+.nf-gov-origin-human::before {
+  content: '👤';
+  margin-right: 4px;
+  font-size: 10px;
+}
+
+/* Approval Prompt */
+.nf-gov-prompt {
+  width: 500px;
+  max-width: 90vw;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+.nf-gov-prompt-header {
+  padding: 20px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.nf-gov-prompt-header--expired {
+  background: rgba(184, 50, 50, 0.1);
+  border-bottom-color: rgba(184, 50, 50, 0.2);
+  color: var(--danger);
+}
+
+.nf-gov-timer {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.nf-gov-progress-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.nf-gov-progress-fill {
+  height: 100%;
+  background: var(--danger);
+  transition: width 0.1s linear;
+}
+
+.nf-gov-prompt-body {
+  padding: 20px;
+}
+
+.nf-gov-prompt-request {
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-input);
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nf-gov-prompt-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  align-items: baseline;
+}
+.nf-gov-prompt-row .nf-label {
+  margin-bottom: 0;
+}
+
+.nf-gov-expired-message {
+  text-align: center;
+  padding: 20px;
+  background: var(--surface-2);
+  border-radius: var(--radius-input);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.nf-gov-prompt-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.nf-gov-action-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nf-gov-btn-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: var(--radius-input);
+  border: 2px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition);
+}
+.nf-gov-btn-action:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(43,46,38,0.2);
+}
+
+.nf-gov-btn-allow-once {
+  background: rgba(58, 125, 68, 0.1);
+  border-color: rgba(58, 125, 68, 0.3);
+}
+.nf-gov-btn-allow-once:hover {
+  background: rgba(58, 125, 68, 0.15);
+  border-color: rgba(58, 125, 68, 0.5);
+}
+
+.nf-gov-btn-allow-run {
+  background: rgba(58, 125, 68, 0.2);
+  border-color: rgba(58, 125, 68, 0.4);
+}
+.nf-gov-btn-allow-run:hover {
+  background: rgba(58, 125, 68, 0.25);
+  border-color: rgba(58, 125, 68, 0.6);
+}
+
+.nf-gov-btn-deny {
+  background: rgba(184, 50, 50, 0.1);
+  border-style: dashed;
+  border-color: rgba(184, 50, 50, 0.4);
+  height: 100%;
+}
+.nf-gov-btn-deny:hover {
+  background: rgba(184, 50, 50, 0.15);
+  border-color: rgba(184, 50, 50, 0.6);
+}
+
+.nf-gov-btn-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.nf-gov-btn-desc {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+/* Posture Edits Grid */
+.nf-gov-postures-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-input);
+}
+.nf-gov-posture-row {
+  display: grid;
+  grid-template-columns: 80px 100px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.nf-gov-posture-label {
+  font-weight: 500;
+  font-size: 12px;
+}
+.nf-gov-posture-desc {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.2;
+}
+
+/* Empty State History */
+.nf-gov-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  margin: auto;
+  max-width: 400px;
+  color: var(--text-2);
+}
+.nf-gov-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.nf-gov-empty h4 {
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.nf-gov-empty p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.nf-gov-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}

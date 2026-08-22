@@ -25,6 +25,11 @@ import { usePipelineStore } from './state/pipelineStore';
 import { useRunStore } from './state/runStore';
 import { useRunSocket } from './hooks/useRunSocket';
 import { usePipelineActions } from './hooks/usePipelineActions';
+import { useGovernance } from './governance/useGovernance';
+import ActiveProfileIndicator from './governance/ActiveProfileIndicator';
+import ProfilePicker from './governance/ProfilePicker';
+import DecisionHistory from './governance/DecisionHistory';
+import ApprovalPrompt from './governance/ApprovalPrompt';
 
 export type AppMode = 'edit' | 'use';
 
@@ -41,6 +46,8 @@ export default function App() {
   const [deploymentsRefreshKey, setDeploymentsRefreshKey] = useState(0);
   const [showCustomNodeModal, setShowCustomNodeModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showProfilePicker, setShowProfilePicker] = useState(false);
+  const [showDecisionHistory, setShowDecisionHistory] = useState(false);
   const [customNodes, setCustomNodes] = useState<CustomNodeDef[]>([]);
   const { showToast } = useToast();
   const [pipelineEstimate, setPipelineEstimate] = useState<EstimateResponse | null>(null);
@@ -51,6 +58,7 @@ export default function App() {
   const { nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange, selectedNodeIds, setSelectedNodeIds, nodesRef, edgesRef, onConnect, updateNodeData, updateNodeDataSilent, deleteNodes, handleBeforeDelete, handleUndo, handleRedo, handleDuplicate, takeSnapshot, canUndo, canRedo } = usePipelineStore(showToast);
   const { runId, setRunId, startTime, setStartTime, nodeStats, setNodeStats, runTotals, setRunTotals, showTrace, setShowTrace, isRunning, setIsRunning, animatedEdgeIds, setAnimatedEdgeIds } = useRunStore();
   const { handleWsEvent, wsRef } = useRunSocket({ updateNodeDataSilent, setNodeStats, setRunTotals, setAnimatedEdgeIds, setIsRunning, edgesRef });
+  const { profiles, active, refreshProfiles, liveDecisions, prompts, dismissPrompt, expiredPromptIds } = useGovernance({ apiBase: API_BASE, token: backendToken || '', connected: !!backendConnected, wsRef });
 
   const selectedNode = nodes.find(n => selectedNodeIds.includes(n.id)) || null;
 
@@ -156,7 +164,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-      <LeftSidebar backendPort={backendPort} backendToken={backendToken} backendConnected={backendConnected} onLoadTemplate={loadPipelineFromJson} onPublishClick={() => setShowPublishModal(true)} onCreateCustomNode={() => setShowCustomNodeModal(true)} customNodes={customNodes} onDeleteCustomNode={handleDeleteCustomNode} onDeployClick={() => setDeployModalTarget('new')} onManageDeploymentClick={(id) => setDeployModalTarget(id)} deploymentsRefreshKey={deploymentsRefreshKey} API_BASE={API_BASE} />
+      <LeftSidebar backendPort={backendPort} backendToken={backendToken} backendConnected={!!backendConnected} onLoadTemplate={loadPipelineFromJson} onPublishClick={() => setShowPublishModal(true)} onCreateCustomNode={() => setShowCustomNodeModal(true)} customNodes={customNodes} onDeleteCustomNode={handleDeleteCustomNode} onDeployClick={() => setDeployModalTarget('new')} onManageDeploymentClick={(id) => setDeployModalTarget(id)} deploymentsRefreshKey={deploymentsRefreshKey} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 10, display: 'flex', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -171,6 +179,7 @@ export default function App() {
                 <button onClick={handleUndo} disabled={!canUndo()} title="Undo (Ctrl+Z)" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>↩</button>
                 <button onClick={handleRedo} disabled={!canRedo()} title="Redo (Ctrl+Shift+Z)" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>↪</button>
                 <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
+                <button onClick={() => setShowDecisionHistory(true)} className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>🛡 History</button>
                 <button onClick={() => setShowSettingsModal(true)} title="Manage API Keys" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: 'var(--text)' }}>⚙ API</button>
               </>
             )}
@@ -207,6 +216,10 @@ export default function App() {
       {deployModalTarget && <DeployModal pipeline={scrubSecrets(toPipelineSchema(nodes as Node<PipelineNodeData>[], edges))} existingDeploymentId={deployModalTarget === 'new' ? undefined : deployModalTarget} backendToken={backendToken} API_BASE={API_BASE} onClose={() => setDeployModalTarget(null)} onChanged={() => setDeploymentsRefreshKey(k => k + 1)} />}
       {showCustomNodeModal && <CustomNodeModal onSave={handleSaveCustomNode} onCancel={() => setShowCustomNodeModal(false)} />}
       {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} backendPort={backendPort} backendToken={backendToken} API_BASE={API_BASE} />}
+      <ActiveProfileIndicator activeName={active?.name || null} activeProfile={active?.profile || null} connected={!!backendConnected} onOpenPicker={() => setShowProfilePicker(true)} />
+      {showProfilePicker && <ProfilePicker apiBase={API_BASE} token={backendToken || ''} profiles={profiles} active={active} refreshProfiles={refreshProfiles} onClose={() => setShowProfilePicker(false)} />}
+      {showDecisionHistory && <DecisionHistory apiBase={API_BASE} token={backendToken || ''} onClose={() => setShowDecisionHistory(false)} liveDecisions={liveDecisions} />}
+      {prompts.length > 0 && <ApprovalPrompt apiBase={API_BASE} token={backendToken || ''} prompt={prompts[0]} isExpired={expiredPromptIds.has(prompts[0].approval_id)} onDismiss={dismissPrompt} />}
     </div>
   );
 }
