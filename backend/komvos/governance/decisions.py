@@ -47,21 +47,24 @@ class DecisionOutcome(StrEnum):
 
     ALLOWED = "allow"
     DENIED = "deny"
+    TIMEOUT = "timeout"
+    """The Ask posture's approval window expired: failed closed, but
+    distinguishable from a human saying no."""
 
 
 class DecisionOrigin(StrEnum):
     """
     WHICH source produced the outcome.
 
-    Today every constraint comes from the pipeline's own access policy. A
-    later phase introduces a user profile that can override a pipeline's
-    policy in either direction — including grants the pipeline never asked
-    for. When that happens those decisions must be visible in the log as
-    coming from somewhere else, not silently mixed in as if the pipeline had
-    granted them. The field exists now so call sites never have to change.
+    A decision's outcome can come from the pipeline's own access policy,
+    from the user's active profile (which may LOOSEN as well as tighten),
+    or from both agreeing. A grant the pipeline never made must be visible
+    in the log as coming from the profile, not silently mixed in.
     """
 
     PIPELINE_POLICY = "pipeline_policy"
+    PROFILE = "profile"
+    PIPELINE_AND_PROFILE = "pipeline_and_profile"
 
 
 class GovernanceDecision(BaseModel):

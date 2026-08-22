@@ -47,6 +47,14 @@ from komvos.compiler.validation import (
     PipelineValidationError,
     PipelineValidationErrors,
 )
+from komvos.governance.approvals import (
+    APPROVAL_TIMEOUT_SECONDS as _canonical_approval_timeout_seconds,
+)
+from komvos.governance.profiles import (
+    GovernanceProfile,
+    get_active_profile_name,
+    load_profile,
+)
 from komvos.scheduler.engine import EndpointRegistry
 from komvos.scheduler.events import (
     WS_TERMINAL_EVENTS,
@@ -86,6 +94,12 @@ from komvos.state.sqlite import StateManager
 #: run is watched by a human who can hit Stop, a served HTTP request is not.
 #: Not user-configurable in this phase — see README.md "Known limitations".
 SERVED_WALL_CLOCK_BUDGET_SECONDS = 300.0
+
+#: How long an Ask-posture approval waits for a human before failing closed.
+#: Canonical value lives in komvos.governance.approvals (the enforcement
+#: side reads it there); it is re-bound under this name HERE so both ceilings
+#: that can end a run sit beside each other and are found together.
+APPROVAL_TIMEOUT_SECONDS = _canonical_approval_timeout_seconds
 
 # One rate limiter for the process's lifetime — see serve/ratelimit.py for why
 # this is intentionally in-memory and not persisted.
@@ -388,9 +402,28 @@ def create_serve_router(
     router = APIRouter()
     verify_deployment_key = _make_verify_deployment_key()
 
-    def _compile_or_422(pipeline: dict[str, Any], *, mode: str) -> CompiledDAG:
+    def _deployment_profile(deployment: Deployment) -> GovernanceProfile | None:
+        """
+        The profile SNAPSHOT this deployment runs under, every time.
+
+        Changing the desktop's active profile must never silently change an
+        already-deployed API's behaviour. Unknown/corrupt names resolve to
+        None inside load_profile... which would loosen nothing — but a
+        missing name must fail closed instead, so map it to LOCKED.
+        """
+        profile = load_profile(deployment.profile_name, get_state_manager_fn())
+        if profile is None:
+            return load_profile("locked", get_state_manager_fn())
+        return profile
+
+    def _compile_or_422(
+        pipeline: dict[str, Any],
+        *,
+        mode: str,
+        profile: GovernanceProfile | None = None,
+    ) -> CompiledDAG:
         try:
-            return compile_pipeline_fn(pipeline, mode=mode)
+            return compile_pipeline_fn(pipeline, mode=mode, profile=profile)
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail=exc.errors()) from exc
         except PipelineValidationErrors as exc:
@@ -415,6 +448,10 @@ def create_serve_router(
             deployment_id=deployment.id,
             initial_inputs=mapped_inputs,
             budget_wall_clock_seconds=SERVED_WALL_CLOCK_BUDGET_SECONDS,
+            # Served: Ask degrades to Enforce (no human to prompt), and the
+            # deployment's own profile snapshot governs — not the active one.
+            profile=_deployment_profile(deployment),
+            served=True,
         )
         run_registry.create(run_id, runner, queue)
         asyncio.create_task(run_task_fn(run_id, runner, queue), name=f"run-{run_id}")
@@ -433,7 +470,15 @@ def create_serve_router(
         request: Request,
         store: DeploymentStore = Depends(get_deployment_store),
     ) -> DeploymentCreateResponse:
-        dag = _compile_or_422(body.pipeline, mode="served")
+        # Compile against the profile in force RIGHT NOW; that same name is
+        # snapshotted onto the deployment so later profile switches cannot
+        # change this deployment's behaviour out from under it.
+        snapshot_name = get_active_profile_name(get_state_manager_fn())
+        dag = _compile_or_422(
+            body.pipeline,
+            mode="served",
+            profile=load_profile(snapshot_name, get_state_manager_fn()),
+        )
 
         try:
             input_id, output_id = resolve_chat_io(dag.pipeline)
@@ -452,6 +497,7 @@ def create_serve_router(
             chat_input_node=input_id,
             chat_output_node=output_id,
             created_at=int(time.time() * 1000),
+            profile_name=snapshot_name,
         )
         store.create(deployment)
 
@@ -535,7 +581,9 @@ def create_serve_router(
             )
         _enforce_lan_policy(deployment, request)
 
-        dag = _compile_or_422(deployment.pipeline, mode="served")
+        dag = _compile_or_422(
+            deployment.pipeline, mode="served", profile=_deployment_profile(deployment)
+        )
         input_node = next(
             n for n in dag.pipeline.nodes if n.id == deployment.chat_input_node
         )
@@ -686,7 +734,9 @@ def create_serve_router(
             raise HTTPException(status_code=404, detail="Deployment not found.")
         _enforce_lan_policy(deployment, request)
 
-        dag = _compile_or_422(deployment.pipeline, mode="served")
+        dag = _compile_or_422(
+            deployment.pipeline, mode="served", profile=_deployment_profile(deployment)
+        )
         nodes_by_id = {n.id: n for n in dag.pipeline.nodes}
 
         mapped_inputs: dict[str, dict[str, Any]] = {}

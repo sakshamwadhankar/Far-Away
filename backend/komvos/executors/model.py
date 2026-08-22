@@ -10,12 +10,54 @@ from typing import Any
 
 from komvos.endpoints.base import AccessDeniedError, GenRequest, Message
 from komvos.executors.base import BaseExecutor, ExecutorContext
+from komvos.governance.approvals import APPROVAL_TIMEOUT_SECONDS
 from komvos.governance.context import record_decision
-from komvos.governance.decisions import DecisionOutcome, GovernanceDomain
-from komvos.governance.egress import enforce_egress_for_endpoint
+from komvos.governance.decisions import (
+    DecisionOrigin,
+    DecisionOutcome,
+    GovernanceDomain,
+)
+from komvos.governance.egress import (
+    check_egress,
+    endpoint_egress_host,
+    host_allowed,
+    is_loopback,
+)
+from komvos.governance.posture import answer_effects, consult_posture
+from komvos.governance.resolve import spend_origin
 from komvos.scheduler.engine import EventKind, SchedulerEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _approval_notifier(
+    ctx: ExecutorContext, domain: str, capability: str, reason: str
+) -> Any:
+    """
+    Emits the typed approval_pending scheduler event at the moment a node
+    actually suspends — the runner translates it into WsApprovalPendingEvent.
+    """
+
+    async def notify(question: Any) -> None:
+        effects = answer_effects(GovernanceDomain(domain), capability)
+        await ctx.emit(
+            SchedulerEvent(
+                kind=EventKind.APPROVAL_PENDING,
+                node_id=ctx.node.id,
+                data={
+                    "approval_id": question.approval_id,
+                    "domain": domain,
+                    "capability": capability,
+                    "reason": question.reason or reason,
+                    "allow_once_effect": effects["allow_once"],
+                    "allow_for_run_effect": effects["allow_for_run"],
+                    "deny_effect": effects["deny"],
+                    "timeout_seconds": APPROVAL_TIMEOUT_SECONDS,
+                },
+            )
+        )
+
+    return notify
 
 
 def _provider_kind(endpoint: Any) -> str:
@@ -75,26 +117,104 @@ class ModelExecutor(BaseExecutor):
 
         endpoint = ctx.registry.resolve(node.endpoint_ref)
 
+        # The pipeline-only view of this node's policy. Posture handling
+        # fires only when THIS denies and the resolved policy permits: that
+        # difference is exactly the active profile's grant.
+        pipeline_policy = ctx.pipeline_policy or ctx.policy
+
         # Access control gate. Runs before anything that could touch the
         # network — before the API key is read from the keychain and before a
         # socket is opened — so a denied call never leaves the machine.
+        #
+        # TWO views are checked, in order:
+        #   1. The PIPELINE-only policy. A denial here is what the active
+        #      profile's posture gets a say on (Enforce/Ask/Audit).
+        #   2. The RESOLVED policy. A denial here (when step 1 passed) means
+        #      the profile tightened something — an ordinary denial, exactly
+        #      as before profiles existed.
+        kind = _provider_kind(endpoint)
+        capability = f"provider:{kind}"
+        posture_allowed = False
+        try:
+            endpoint.check_access(pipeline_policy, node.id)
+        except AccessDeniedError as pipeline_exc:
+            verdict = await consult_posture(
+                domain=GovernanceDomain.PROVIDERS,
+                capability=capability,
+                node_id=node.id,
+                pipeline_reason=pipeline_exc.detail,
+                effective_policy=ctx.policy,
+                governed_by=ctx.policy_sources,
+                cancel_token=ctx.cancel_token,
+                notify=_approval_notifier(
+                    ctx, GovernanceDomain.PROVIDERS.value, capability,
+                    pipeline_exc.detail,
+                ),
+            )
+            if not verdict.allowed:
+                raise pipeline_exc from None
+            posture_allowed = True
+
         try:
             endpoint.check_access(ctx.policy, node.id)
         except AccessDeniedError:
             await _record_provider_decision(ctx, endpoint, allowed=False)
             raise
-        await _record_provider_decision(ctx, endpoint, allowed=True)
+        if not posture_allowed:
+            # The posture path already recorded its own attributed decision;
+            # recording a second plain one would blur the origin.
+            await _record_provider_decision(ctx, endpoint, allowed=True)
 
         # Egress gate: where would this call actually land? A custom
         # base_url (or a remote Ollama tunnel) is a real egress path; loopback
         # destinations are exempt. Runs before generate(), so a denied host
         # never sees a socket.
-        await enforce_egress_for_endpoint(
-            endpoint=endpoint,
-            policy=ctx.policy,
-            node_id=node.id,
-            governed_by=ctx.policy_sources,
-        )
+        host = endpoint_egress_host(endpoint)
+        if host is not None and not is_loopback(host):
+            pipeline_permits_host = (
+                pipeline_policy.allow_network
+                and host_allowed(host, pipeline_policy.allowed_domains)
+            )
+            capability = f"egress:{host}"
+            if not pipeline_permits_host:
+                if not pipeline_policy.allow_network:
+                    pipeline_reason = (
+                        f"Node '{node.id}' requires network access to "
+                        f"'{host}', which its access policy does not grant "
+                        "(allow_network is false)."
+                    )
+                else:
+                    allowed = ", ".join(pipeline_policy.allowed_domains)
+                    pipeline_reason = (
+                        f"Node '{node.id}' requires network access to "
+                        f"'{host}', which is outside its access policy's "
+                        f"allowed domains [{allowed}]."
+                    )
+                verdict = await consult_posture(
+                    domain=GovernanceDomain.EGRESS,
+                    capability=capability,
+                    node_id=node.id,
+                    pipeline_reason=pipeline_reason,
+                    effective_policy=ctx.policy,
+                    governed_by=ctx.policy_sources,
+                    cancel_token=ctx.cancel_token,
+                    notify=_approval_notifier(
+                        ctx, GovernanceDomain.EGRESS.value, capability,
+                        pipeline_reason,
+                    ),
+                )
+                if not verdict.allowed:
+                    raise AccessDeniedError(
+                        node_id=node.id, capability=capability, detail=verdict.reason
+                    ) from None
+                # Posture permitted this host once/for-the-run.
+            else:
+                await check_egress(
+                    policy=ctx.policy,
+                    node_id=node.id,
+                    host=host,
+                    governed_by=ctx.policy_sources,
+                )
 
         # Gather inputs into a single combined string
         input_text_parts: list[str] = []
@@ -158,56 +278,69 @@ class ModelExecutor(BaseExecutor):
             estimated_cost = endpoint.estimate_cost(req)
 
             # Per-scope cost ceiling: this node's committed spend is checked
-            # against the ceiling of its OWN effective policy, so two scopes
-            # can carry different limits. (The run-wide budget remains a
+            # against the ceiling of its OWN effective policy (resolved —
+            # which under an Ask posture is the ask-trigger threshold, and
+            # under Audit is no cap at all). The run-wide budget remains a
             # separate outer limit enforced by the runner's registry wrapper;
-            # both apply and the tighter wins.) Operates on estimates.
+            # both apply and the tighter wins. Operates on estimates.
             ceiling = ctx.policy.max_cost_usd
             projected = total_usd + estimated_cost.usd
             if ceiling is not None and projected > ceiling:
+                pipeline_ceiling = pipeline_policy.max_cost_usd
+                if pipeline_ceiling is not None and projected > pipeline_ceiling:
+                    pipeline_reason = (
+                        f"Projected spend ${projected:.6f} (${total_usd:.6f} "
+                        f"spent + ${estimated_cost.usd:.6f} estimated) "
+                        f"exceeds the pipeline scope's max_cost_usd "
+                        f"${pipeline_ceiling:.6f}."
+                    )
+                else:
+                    pipeline_reason = (
+                        f"Projected spend ${projected:.6f} (${total_usd:.6f} "
+                        f"spent + ${estimated_cost.usd:.6f} estimated) is "
+                        f"within the pipeline's own limits but exceeds the "
+                        f"active profile's spend limit ${ceiling:.6f}."
+                    )
+                verdict = await consult_posture(
+                    domain=GovernanceDomain.SPEND,
+                    capability="max_cost_usd",
+                    node_id=node.id,
+                    pipeline_reason=pipeline_reason,
+                    effective_policy=ctx.policy,
+                    governed_by=ctx.policy_sources,
+                    cancel_token=ctx.cancel_token,
+                    notify=_approval_notifier(
+                        ctx, GovernanceDomain.SPEND.value, "max_cost_usd",
+                        pipeline_reason,
+                    ),
+                )
+                if not verdict.allowed:
+                    raise AccessDeniedError(
+                        node_id=node.id,
+                        capability="max_cost_usd",
+                        detail=verdict.reason,
+                    ) from None
+            else:
+                origin = spend_origin(pipeline_policy.max_cost_usd, ceiling)
+                fallback_origin = DecisionOrigin.PIPELINE_POLICY
                 await record_decision(
                     domain=GovernanceDomain.SPEND,
                     capability="max_cost_usd",
-                    outcome=DecisionOutcome.DENIED,
+                    outcome=DecisionOutcome.ALLOWED,
                     reason=(
-                        f"Node '{node.id}' denied: ${projected:.6f} "
-                        f"(${total_usd:.6f} spent + "
-                        f"${estimated_cost.usd:.6f} estimated) would exceed "
-                        f"this scope's max_cost_usd ${ceiling:.6f}."
+                        f"Node '{node.id}' spend within ceiling: "
+                        f"${projected:.6f} of ${ceiling:.6f}."
+                    )
+                    if ceiling is not None
+                    else (
+                        f"Node '{node.id}' has no cost ceiling in force; "
+                        f"${projected:.6f} estimated."
                     ),
                     node_id=node.id,
                     effective_policy=ctx.policy,
                     governed_by=ctx.policy_sources,
+                    origin=origin if ceiling is not None else fallback_origin,
                 )
-                raise AccessDeniedError(
-                    node_id=node.id,
-                    capability="max_cost_usd",
-                    detail=(
-                        f"Node '{node.id}' would exceed this scope's cost "
-                        f"ceiling: ${total_usd:.6f} already spent plus "
-                        f"${estimated_cost.usd:.6f} estimated for this "
-                        f"request is more than max_cost_usd ${ceiling:.6f}. "
-                        "Raise 'max_cost_usd' on the governing access node "
-                        "for this branch."
-                    ),
-                )
-            await record_decision(
-                domain=GovernanceDomain.SPEND,
-                capability="max_cost_usd",
-                outcome=DecisionOutcome.ALLOWED,
-                reason=(
-                    f"Node '{node.id}' spend within ceiling: ${projected:.6f} "
-                    f"of max_cost_usd ${ceiling:.6f}."
-                )
-                if ceiling is not None
-                else (
-                    f"Node '{node.id}' has no cost ceiling on its effective "
-                    f"policy; ${projected:.6f} estimated."
-                ),
-                node_id=node.id,
-                effective_policy=ctx.policy,
-                governed_by=ctx.policy_sources,
-            )
 
             output_text = ""
             tokens_out = 0

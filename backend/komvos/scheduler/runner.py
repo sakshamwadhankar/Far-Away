@@ -30,6 +30,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from komvos.governance.profiles import GovernanceProfile
     from komvos.state.sqlite import StateManager
 
 from komvos.compiler.dag import CompiledDAG
@@ -42,7 +43,7 @@ from komvos.endpoints.base import (
     ModelEndpoint,
     Token,
 )
-from komvos.governance.context import run_context
+from komvos.governance.context import RunGovernance, run_context
 from komvos.governance.sinks import InMemoryDecisionSink
 from komvos.scheduler.engine import (
     CancelToken,
@@ -53,6 +54,7 @@ from komvos.scheduler.engine import (
 )
 from komvos.scheduler.events import (
     WsAccessDeniedEvent,
+    WsApprovalPendingEvent,
     WsBudgetExceededEvent,
     WsEvent,
     WsLoopIterationEvent,
@@ -115,6 +117,8 @@ class PipelineRunner:
         state_manager: StateManager | None = None,
         deployment_id: str | None = None,
         initial_inputs: dict[str, dict[str, Any]] | None = None,
+        profile: GovernanceProfile | None = None,
+        served: bool = False,
     ) -> None:
         self.run_id = run_id
         self._dag = dag
@@ -131,6 +135,13 @@ class PipelineRunner:
         # Set when this run was started by a served HTTP request (Phase 3)
         # rather than the canvas, so the trace tables can tell them apart.
         self._deployment_id = deployment_id
+        # The governance profile in force for this run. Served runs use the
+        # deployment's snapshot; canvas runs pass whatever was resolved at
+        # start time. None behaves exactly as before profiles existed.
+        self._profile = profile
+        # True for runs started by a served HTTP request: Ask degrades to
+        # Enforce because there is no human to prompt mid-HTTP-request.
+        self._served = served
         # Per-node-id port overrides for input nodes, applied on top of the
         # default "" seed. Phase 3 uses this to inject a served request's
         # mapped body values without touching how canvas runs seed inputs.
@@ -176,12 +187,26 @@ class PipelineRunner:
         Puts WsEvent objects into queue. Always terminates by putting None
         (sentinel) so the WS handler knows the task finished.
 
-        Binds this run's governance decision sink for the duration of the
-        run; see komvos/governance/context.py.
+        Binds this run's governance state — decision sink, active profile,
+        served flag, and its per-run approval registry — for the duration of
+        the run. The registry is dropped when the binding is released, on
+        every exit path including error and cancellation, so an ended run
+        cannot leak a pending approval.
         """
         self.decision_sink = InMemoryDecisionSink()
-        with run_context(self.decision_sink, self.run_id):
-            await self._run(queue)
+        with run_context(
+            self.decision_sink,
+            self.run_id,
+            profile=self._profile,
+            served=self._served,
+        ) as governance:
+            assert isinstance(governance, RunGovernance)
+            try:
+                await self._run(queue)
+            finally:
+                # Belt and braces: run_context's unbind already removes the
+                # approval registry; this also settles anything left pending.
+                governance.approvals.close()
 
     async def _run(self, queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
         """Body of run(), executing under the bound governance context."""
@@ -366,6 +391,19 @@ class PipelineRunner:
                 node_id=node_id,
                 capability=d.get("capability", "unknown"),
                 reason=d.get("reason", "Denied by access policy."),
+            )
+        if event.kind == EventKind.APPROVAL_PENDING:
+            return WsApprovalPendingEvent(
+                run_id=self.run_id,
+                node_id=node_id,
+                approval_id=d.get("approval_id", ""),
+                domain=d.get("domain", ""),
+                capability=d.get("capability", "unknown"),
+                reason=d.get("reason", ""),
+                allow_once_effect=d.get("allow_once_effect", ""),
+                allow_for_run_effect=d.get("allow_for_run_effect", ""),
+                deny_effect=d.get("deny_effect", ""),
+                timeout_seconds=float(d.get("timeout_seconds", 0.0)),
             )
         if event.kind == EventKind.TOKEN:
             self._total_tokens_out += 1

@@ -57,12 +57,35 @@ class DeploymentStore:
                         created_at INTEGER NOT NULL,
                         request_count INTEGER NOT NULL DEFAULT 0,
                         error_count INTEGER NOT NULL DEFAULT 0,
-                        last_request_at INTEGER
+                        last_request_at INTEGER,
+                        profile_name TEXT NOT NULL DEFAULT 'locked'
                     )
                     """
                 )
+                self._migrate_deployments_profile_name(conn)
         finally:
             conn.close()
+
+    @staticmethod
+    def _migrate_deployments_profile_name(conn: sqlite3.Connection) -> None:
+        """
+        Add `deployments.profile_name` for databases created before Gov-2.
+
+        Same additive pattern as StateManager._migrate_runs_deployment_id:
+        PRAGMA table_info first so this is idempotent on every startup.
+        Rows predating the column get the constant default 'locked' —
+        LOCKED is the only choice that reproduces pre-profile behaviour
+        (the pipeline's own policy decides; nothing loosens).
+        """
+        table = "deployments"
+        columns = {
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        if "profile_name" not in columns:
+            conn.execute(
+                "ALTER TABLE deployments ADD COLUMN profile_name "
+                "TEXT NOT NULL DEFAULT 'locked'"
+            )
 
     # -- writes ---------------------------------------------------------
 
@@ -75,8 +98,9 @@ class DeploymentStore:
                     INSERT INTO deployments (
                         id, name, pipeline_json, key_hash, expose_lan,
                         rate_limit_per_minute, chat_input_node, chat_output_node,
-                        created_at, request_count, error_count, last_request_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, request_count, error_count, last_request_at,
+                        profile_name
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         deployment.id,
@@ -91,6 +115,7 @@ class DeploymentStore:
                         deployment.request_count,
                         deployment.error_count,
                         deployment.last_request_at,
+                        deployment.profile_name,
                     ),
                 )
         finally:

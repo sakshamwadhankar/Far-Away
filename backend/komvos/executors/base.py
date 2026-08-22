@@ -46,6 +46,13 @@ class ExecutorContext:
     CompiledDAG.policy_sources. Empty when the node is ungoverned. Carried so
     governance decisions can name which access node constrained them.
     """
+    pipeline_policy: AccessPolicy | None = None
+    """
+    The pipeline-only view of this node's policy — before profile resolution.
+    None means "same as `policy`" (no profile was in force at compile time).
+    The Ask/Audit posture layer fires only when THIS policy denies and the
+    resolved one permits: that difference is exactly the profile's grant.
+    """
 
     def check_cancel(self) -> None:
         """Raise PipelineCancelled if the cancel token is set."""

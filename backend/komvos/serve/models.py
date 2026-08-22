@@ -29,6 +29,10 @@ class Deployment(BaseModel):
     `key_hash`. `chat_input_node` / `chat_output_node` are resolved once, at
     deploy time, by `resolve_chat_io` below; a deployment that failed to
     resolve them unambiguously is never created (see 3.3 mapping rules).
+
+    `profile_name` snapshots the governance profile in force when the
+    deployment was created; every request to the deployment uses THAT
+    profile, never whatever is active on the desktop right now.
     """
 
     id: str
@@ -43,6 +47,13 @@ class Deployment(BaseModel):
     request_count: int = 0
     error_count: int = 0
     last_request_at: int | None = None
+    profile_name: str = "locked"
+    """
+    Profile in force for this deployment. Rows from before Gov-2 predate the
+    column and load as 'locked' (LOCKED), which reproduces exactly the
+    behaviour those deployments had before profiles existed: the pipeline's
+    own policy decides, nothing loosens.
+    """
 
 
 class DeploymentCreateRequest(BaseModel):
@@ -96,6 +107,7 @@ class DeploymentSummary(BaseModel):
     request_count: int
     error_count: int
     last_request_at: int | None
+    profile_name: str = "locked"
 
 
 class DeploymentListResponse(BaseModel):

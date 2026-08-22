@@ -18,8 +18,8 @@ Announce before modifying its fields.
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass
-from typing import Any, Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ValidationError
 
@@ -38,6 +38,9 @@ from komvos.compiler.validation import (
     check_effective_policies,
     validate_pipeline,
 )
+
+if TYPE_CHECKING:
+    from komvos.governance.profiles import GovernanceProfile
 
 #: Compile modes.
 #:
@@ -105,6 +108,14 @@ class CompiledDAG:
     node_id → IDs of the access nodes whose policies were intersected to
     produce its effective policy, in topological order. Empty when the node is
     ungoverned.
+    """
+
+    pipeline_policies: dict[str, AccessPolicy] = field(default_factory=dict)
+    """
+    node_id → the PIPELINE-only effective policy (access nodes only, before
+    any profile resolution). Identical to `effective_policies` when compile()
+    ran without a profile. Kept alongside the resolved view so a later phase
+    can show the user exactly what the profile changed.
     """
 
 
@@ -341,7 +352,11 @@ def _attribute_denials(
 # ---------------------------------------------------------------------------
 
 
-def compile(raw_json: dict[str, Any], mode: CompileMode = "local") -> CompiledDAG:
+def compile(
+    raw_json: dict[str, Any],
+    mode: CompileMode = "local",
+    profile: GovernanceProfile | None = None,
+) -> CompiledDAG:
     """
     Compile a raw pipeline JSON dict into a validated, executable DAG.
 
@@ -359,6 +374,15 @@ def compile(raw_json: dict[str, Any], mode: CompileMode = "local") -> CompiledDA
             permissive, so every pre-2.1 pipeline keeps working. "served" for
             a pipeline about to be exposed over HTTP, where an explicit access
             policy is mandatory.
+        profile: optional governance profile. When supplied, each node's
+            policy is RESOLVED with the profile before the capability check,
+            so compile-time and run-time see the same grants (a loosening
+            profile lets a pipeline compile that its own policy would
+            reject). When omitted, behaviour is byte-identical to the
+            pre-profile compiler. The served-mode structural rule — every
+            model node must be governed by an access node — applies either
+            way; a profile adjusts what a policy grants, it does not excuse
+            a pipeline from declaring one.
 
     Raises:
         PipelineValidationErrors  — structural, semantic, or access issues
@@ -400,11 +424,24 @@ def compile(raw_json: dict[str, Any], mode: CompileMode = "local") -> CompiledDA
         )
 
     policies, sources = compute_effective_policies(pipeline, topo_order, reverse_adj)
+    pipeline_policies = policies
 
     if mode == "served":
         ungoverned = _check_served_governance(pipeline, sources)
         if ungoverned:
             raise PipelineValidationErrors(ungoverned)
+
+    # Profile resolution BEFORE the capability check, so a loosening profile
+    # lets the pipeline compile and both layers see identical grants.
+    # Imported lazily: governance.decisions imports compiler.models, so a
+    # module-level import here would cycle through compiler.__init__.
+    if profile is not None:
+        from komvos.governance.resolve import resolve_policy
+
+        policies = {
+            node_id: resolve_policy(policy, profile).policy
+            for node_id, policy in pipeline_policies.items()
+        }
 
     if has_access_node:
         nodes_by_id = {n.id: n for n in pipeline.nodes}
@@ -423,4 +460,5 @@ def compile(raw_json: dict[str, Any], mode: CompileMode = "local") -> CompiledDA
         port_registry=port_registry,
         effective_policies=policies,
         policy_sources=sources,
+        pipeline_policies=dict(pipeline_policies),
     )

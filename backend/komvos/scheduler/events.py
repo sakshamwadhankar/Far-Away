@@ -126,12 +126,39 @@ class WsAccessDeniedEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
+class WsApprovalPendingEvent(BaseModel):
+    """
+    A node under the Ask posture is suspended waiting for a human.
+
+    Carries everything a UI needs to render the question and what each
+    possible answer will do. The run keeps executing every OTHER node while
+    this one waits; answering happens over the governance HTTP API. Not a
+    terminal event — the run resumes (or fails) when the approval resolves,
+    times out, or the run is cancelled.
+    """
+
+    event: Literal["approval_pending"] = "approval_pending"
+    run_id: str
+    node_id: str
+    approval_id: str
+    domain: str
+    """One of the GovernanceDomain values: providers|egress|spend|retention."""
+    capability: str
+    reason: str
+    allow_once_effect: str
+    allow_for_run_effect: str
+    deny_effect: str
+    timeout_seconds: float
+    timestamp_ms: int = Field(default_factory=_now_ms)
+
+
 WsEvent = (
     WsNodeStartedEvent
     | WsTokenEvent
     | WsNodeDoneEvent
     | WsNodeErrorEvent
     | WsAccessDeniedEvent
+    | WsApprovalPendingEvent
     | WsLoopIterationEvent
     | WsRunHaltedEvent
     | WsRunCompletedEvent

@@ -954,3 +954,20 @@ app.include_router(
         run_task_fn=run_pipeline_task,
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# Gov-2 — governance profiles + approvals
+#
+# Mounted last, same factory pattern as the serve router above: this module
+# never gets imported by komvos.governance.api, so no circular import.
+# ---------------------------------------------------------------------------
+
+from komvos.governance.api import create_governance_router  # noqa: E402
+
+app.include_router(
+    create_governance_router(
+        verify_token_dep=verify_token,
+        get_state_manager_fn=_global_state_manager,
+    )
+)

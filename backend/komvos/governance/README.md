@@ -108,3 +108,95 @@ enforcement is built to be correct once those numbers are.
 - No persistence.
 - No UI, profiles, or approval flow — later phases build on the async sink
   seam this package leaves open.
+
+---
+
+# Gov-2 additions: posture and profiles
+
+## Posture — the user's dial
+
+The pipeline's access policy decides what a pipeline *asks for*. A PROFILE
+decides what happens when that ask is withheld:
+
+| Posture   | Meaning |
+| :--- | :--- |
+| `Enforce` | deny and halt — exactly as before profiles existed |
+| `Ask`     | suspend the run at that node, ask a human, act on the answer |
+| `Audit`   | permit anyway, recording that the posture allowed it |
+
+Built-in profiles (never editable; copy one to customize):
+
+| Profile  | providers | egress | spend | retention | limits |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| EXPLORE  | Audit | Audit | Audit (record, no cap) | full recording | — |
+| REVIEW   | Ask | Ask | Ask above threshold ($1.00) | full recording | `spend_ask_threshold_usd=1.0` |
+| LOCKED   | Enforce | Enforce | Enforce | metadata only | pipeline ceilings stand |
+
+**Default: LOCKED.** For databases, deployment rows, and any missing or
+corrupt active-profile setting. LOCKED reproduces pre-profile behaviour
+exactly (the pipeline's own policy decides, nothing loosens), so a silent
+fallback can never grant more than the user explicitly had. EXPLORE would
+silently permit; REVIEW would suspend runs waiting for answers no UI ever
+gave.
+
+Retention is modelled on profiles (shape only). Nothing produces retention
+decisions yet — enforcement is a later phase.
+
+## Resolution — compile-time and run-time must agree
+
+`resolve.resolve_policy(pipeline_policy, profile)` produces the policy
+actually in force plus the ORIGIN of every value:
+
+- **Loosen** (Ask/Audit): capabilities the pipeline withheld are granted by
+  resolution, because the posture layer will handle them interactively.
+  This runs BEFORE the compiler's capability check when `compile()` is given
+  a profile, so a profile-permitted pipeline compiles. With no profile
+  argument, compile() is byte-identical to the pre-profile compiler.
+- **Tighten** (Enforce + cap, Ask threshold): the operative spend ceiling is
+  the lower of the pipeline's and the profile's.
+
+Origins: `pipeline_policy` (the pipeline decided alone), `profile` (granted
+or constrained only by the profile), `pipeline_and_profile` (both agree —
+e.g. Enforce upholding a pipeline denial). A capability granted ONLY by the
+profile is attributed to `profile` in every decision about it.
+
+At run time the executor checks BOTH views: first the pipeline-only policy
+(a denial there triggers the posture), then the resolved policy (a denial
+there is an ordinary tightening). Under Enforce the two views are identical,
+which is why the layers cannot disagree. The G1 structural rule stands under
+every profile: every model node must be governed by an access node — a
+profile adjusts grants, it does not excuse a pipeline from declaring one.
+
+## Ask — how suspension works
+
+A pending approval is an `asyncio.Future`. The suspended node genuinely
+awaits it: the event loop, the WebSocket pump, and every other node in the
+same parallel tier keep running. The runner emits a typed
+`approval_pending` WebSocket event carrying node, domain, capability,
+reason, and the effect of each possible answer.
+
+Answers arrive over `POST /governance/approvals/{id}/answer`:
+
+- `allow_once` — proceeds once.
+- `allow_for_run` — records an exact `(domain, capability)` grant for the
+  remainder of THIS run only; nothing else widens.
+- `deny` — the node fails with `AccessDeniedError`.
+
+Fail-closed guarantees:
+
+- **Timeout:** an unanswered approval fails closed after
+  `APPROVAL_TIMEOUT_SECONDS` (300s, chosen to match
+  `SERVED_WALL_CLOCK_BUDGET_SECONDS`; re-bound beside it in
+  `serve/routes.py`). The decision outcome is `timeout`, distinguishable
+  from a human denial.
+- **Cancellation works while suspended:** the wait races the run's
+  CancelToken via `wait_until_cancelled()`, so kill switch and wall-clock
+  expiry abort a waiting node immediately instead of leaving it parked.
+- **No persistence:** pending approvals live in process memory only and do
+  NOT survive a restart. A restart leaves nothing pending and nothing
+  answerable.
+- **No leaks:** the registry is strictly per-run and removed when the run
+  ends — success, error, cancellation, all paths.
+- **Served runs never ask:** there is no human at the end of an HTTP
+  request. On served runs Ask degrades to Enforce, and the decision record
+  says `[Ask degraded to Enforce]` with the reason — not merely "denied".

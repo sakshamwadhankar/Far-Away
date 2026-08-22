@@ -1,28 +1,31 @@
 """
 backend/komvos/governance/context.py
 
-Run-scoped reachability for decision sinks.
+Run-scoped reachability for everything governance needs below the runner.
 
-The problem: a permission check happens deep inside an endpoint call, but the
-thing that knows the run identity is the PipelineRunner at the top. Threading
-a sink parameter through every executor and endpoint signature would touch
-every call site — and every FUTURE call site, forever.
+The problem: permission checks happen deep inside endpoint calls, but the
+things that know the run identity — decision sink, active profile, whether
+this run is served, the approval registry — live at the top. Threading all of
+that through every executor and endpoint signature would touch every call
+site — and every FUTURE call site, forever.
 
-So the runner binds (sink, run_id) for the duration of a run, exactly the way
-the existing event callback is injected once at the top and reaches executors
-without each caller passing it down. Code below the runner asks the context
-for the current sink; with nothing bound, recording is a no-op, which keeps
-bare-Scheduler tests and non-run paths working unchanged.
+So the PipelineRunner binds ONE RunGovernance object for the duration of a
+run, exactly the way the existing event callback is injected once at the top
+and reaches executors without each caller passing it down. Code below the
+runner asks this module for the current state; with nothing bound (bare-
+Scheduler tests, non-run paths), recording is a no-op and Ask fails closed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
-from typing import NamedTuple
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from komvos.compiler.models import AccessPolicy
+from komvos.governance.approvals import ApprovalRegistry, registry_for, remove_registry
 from komvos.governance.decisions import (
     DecisionOrigin,
     DecisionOutcome,
@@ -31,53 +34,86 @@ from komvos.governance.decisions import (
 )
 from komvos.governance.sinks import DecisionSink
 
-_sink_cv: ContextVar[DecisionSink | None] = ContextVar(
-    "komvos_governance_sink", default=None
+if TYPE_CHECKING:
+    from komvos.governance.profiles import GovernanceProfile
+
+
+@dataclass
+class RunGovernance:
+    """Everything governance needs for one run, bound at its start."""
+
+    run_id: str
+    sink: DecisionSink | None = None
+    profile: GovernanceProfile | None = None
+    served: bool = False
+    approvals: ApprovalRegistry = field(init=False)
+    """
+    Per-run approval registry. Pending approvals are process-local by
+    design: they do not survive a restart, and the whole registry is
+    dropped when the run ends.
+    """
+
+    def __post_init__(self) -> None:
+        # Registered in the module-level per-run table so the HTTP answering
+        # endpoint can find this run's pending approvals; unbind_run_context
+        # removes it when the run ends.
+        self.approvals = registry_for(self.run_id)
+
+
+_gov_cv: ContextVar[RunGovernance | None] = ContextVar(
+    "komvos_governance_run", default=None
 )
-_run_cv: ContextVar[str] = ContextVar("komvos_governance_run", default="")
 
 
-class _BoundRun(NamedTuple):
-    """Tokens needed to undo one bind_run_context()."""
-
-    sink_token: object
-    run_token: object
+def bind_run_context(governance: RunGovernance) -> Token[RunGovernance | None]:
+    """Bind the run's governance state; returns an opaque reset handle."""
+    return _gov_cv.set(governance)
 
 
-def bind_run_context(sink: DecisionSink, run_id: str) -> _BoundRun:
+def unbind_run_context(token: Token[RunGovernance | None]) -> None:
     """
-    Bind the decision sink and run id for the current context until unbound.
-
-    Returns an opaque handle; pass it to unbind_run_context() in a finally
-    block. Prefer the bind_run_context() context manager below.
+    Undo one bind_run_context() and drop the run's approval registry, so an
+    ended run cannot leak pending approvals.
     """
-    return _BoundRun(_sink_cv.set(sink), _run_cv.set(run_id))
-
-
-def unbind_run_context(bound: _BoundRun) -> None:
-    """Undo one bind_run_context(); safe to call exactly once per binding."""
-    _sink_cv.reset(bound.sink_token)  # type: ignore[arg-type]
-    _run_cv.reset(bound.run_token)  # type: ignore[arg-type]
+    gov = _gov_cv.get()
+    if gov is not None:
+        remove_registry(gov.run_id)
+    _gov_cv.reset(token)
 
 
 @contextmanager
-def run_context(sink: DecisionSink, run_id: str) -> Iterator[None]:
-    """Context-manager form of bind/unbind, for `with:` blocks."""
-    bound = bind_run_context(sink, run_id)
+def run_context(
+    sink: DecisionSink | None,
+    run_id: str,
+    *,
+    profile: GovernanceProfile | None = None,
+    served: bool = False,
+) -> Iterator[RunGovernance]:
+    """
+    Bind a RunGovernance for a `with:` block. G1 signature
+    `run_context(sink, run_id)` keeps working unchanged.
+    """
+    governance = RunGovernance(run_id=run_id, sink=sink, profile=profile, served=served)
+    token = bind_run_context(governance)
     try:
-        yield
+        yield governance
     finally:
-        unbind_run_context(bound)
+        unbind_run_context(token)
+
+
+def current_governance() -> RunGovernance | None:
+    """The bound run's governance state, or None outside a governed run."""
+    return _gov_cv.get()
 
 
 def current_sink() -> DecisionSink | None:
-    """The sink bound for this run, or None outside a governed run."""
-    return _sink_cv.get()
+    gov = _gov_cv.get()
+    return gov.sink if gov is not None else None
 
 
 def current_run_id() -> str:
-    """The run id bound for this context; empty string when none."""
-    return _run_cv.get()
+    gov = _gov_cv.get()
+    return gov.run_id if gov is not None else ""
 
 
 async def record_decision(

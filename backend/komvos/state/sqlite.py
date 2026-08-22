@@ -122,6 +122,23 @@ class StateManager:
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS governance_profiles (
+                        name TEXT PRIMARY KEY,
+                        spec_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
         finally:
             conn.close()
 
@@ -585,9 +602,110 @@ class StateManager:
         try:
             with conn:
                 cursor = conn.execute(
-                    "DELETE FROM custom_nodes WHERE id = ?",
-                    (node_id,),
+                    "DELETE FROM custom_nodes WHERE id = ?", (node_id,)
                 )
                 return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    # -------------------------------------------------------------------
+    # Governance profiles + small app settings (Gov-2)
+    #
+    # Custom profiles are stored as full JSON specs; the ACTIVE selection is
+    # a single row in app_settings. Built-in profiles are NOT stored — they
+    # live in code (governance.profiles) and are not editable, so persisting
+    # them would only create a second copy to drift.
+    # -------------------------------------------------------------------
+
+    def save_governance_profile(self, name: str, spec_json: str) -> None:
+        """Insert or replace a custom profile spec."""
+        now = int(time.time() * 1000)
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO governance_profiles (name, spec_json, created_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(name) DO UPDATE SET
+                        spec_json=excluded.spec_json
+                    """,
+                    (name, spec_json, now),
+                )
+        finally:
+            conn.close()
+
+    def list_governance_profiles(self) -> list[dict[str, Any]]:
+        """All custom profiles as {name, spec} dicts; corrupt rows skipped."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT name, spec_json FROM governance_profiles"
+            ).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    spec = json.loads(row["spec_json"])
+                    results.append({"name": row["name"], "spec": spec})
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Skipping corrupt governance profile %r", row["name"]
+                    )
+            return results
+        finally:
+            conn.close()
+
+    def get_governance_profile(self, name: str) -> dict[str, Any] | None:
+        """One custom profile's spec, or None."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT spec_json FROM governance_profiles WHERE name = ?", (name,)
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                return {"name": name, "spec": json.loads(row["spec_json"])}
+            except json.JSONDecodeError:
+                logger.warning("Corrupt governance profile %r treated as absent", name)
+                return None
+        finally:
+            conn.close()
+
+    def delete_governance_profile(self, name: str) -> bool:
+        """Delete a custom profile. Returns True if a row was deleted."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "DELETE FROM governance_profiles WHERE name = ?", (name,)
+                )
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_setting(self, key: str) -> str | None:
+        """One app setting value, or None when unset."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (key,)
+            ).fetchone()
+            return row["value"] if row else None
+        finally:
+            conn.close()
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Insert or update one app setting."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO app_settings (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                    """,
+                    (key, value),
+                )
         finally:
             conn.close()

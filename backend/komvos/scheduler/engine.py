@@ -90,16 +90,25 @@ class CancelToken:
     The API layer / budget enforcer calls cancel() to halt a running
     pipeline. The scheduler checks is_cancelled before each node
     execution and each loop iteration.
+
+    `wait_until_cancelled()` adds an async-notification view of the same
+    state so code suspended awaiting something else (an Ask-posture
+    approval) can await cancellation itself instead of polling the flag.
+    The event is created lazily inside a running loop; cancel() remains
+    safe to call from sync context at any time.
     """
 
     def __init__(self) -> None:
         self._cancelled = False
         self._reason: str = "Pipeline cancelled."
+        self._cancelled_event: asyncio.Event | None = None
 
     def cancel(self, reason: str = "Pipeline cancelled.") -> None:
         """Signal cancellation. Thread-safe (simple bool flip)."""
         self._reason = reason
         self._cancelled = True
+        if self._cancelled_event is not None:
+            self._cancelled_event.set()
 
     @property
     def is_cancelled(self) -> bool:
@@ -114,6 +123,17 @@ class CancelToken:
         if self._cancelled:
             raise PipelineCancelled(self._reason)
 
+    async def wait_until_cancelled(self) -> None:
+        """
+        Await until cancel() has been called (returns immediately if it
+        already has). Never raises — callers decide how to abort.
+        """
+        if self._cancelled_event is None:
+            self._cancelled_event = asyncio.Event()
+            if self._cancelled:
+                self._cancelled_event.set()
+        await self._cancelled_event.wait()
+
 
 # ---------------------------------------------------------------------------
 # Event types — for WebSocket streaming
@@ -127,6 +147,7 @@ class EventKind(StrEnum):
     NODE_DONE = "node_done"
     NODE_ERROR = "node_error"
     ACCESS_DENIED = "access_denied"
+    APPROVAL_PENDING = "approval_pending"
     TOKEN = "token"
     LOOP_ITERATION = "loop_iteration"
     RUN_HALTED = "run_halted"
@@ -441,6 +462,13 @@ class Scheduler:
                 # Which access nodes produced that policy, for governance
                 # decision attribution.
                 policy_sources=self._dag.policy_sources.get(node_id, ()),
+                # The pipeline-only view of the same node's policy (before
+                # profile resolution). Posture handling compares the two to
+                # know whether a denial is the pipeline's own or already
+                # answered by the profile.
+                pipeline_policy=self._dag.pipeline_policies.get(
+                    node_id, AccessPolicy.permissive()
+                ),
             )
 
             # Execute
