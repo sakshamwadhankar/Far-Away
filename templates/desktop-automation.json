@@ -76,6 +76,10 @@
       "to": "computer_agent.task"
     },
     {
+      "from": "policy_boundary.scope",
+      "to": "computer_agent.task"
+    },
+    {
       "from": "computer_agent.result",
       "to": "out.result"
     }

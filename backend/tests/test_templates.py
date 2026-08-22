@@ -8,13 +8,15 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from komvos.api.main import app
+from komvos.compiler import compile as compile_pipeline
 from komvos.compiler.models import Pipeline
 from komvos.state.sqlite import StateManager
 
 
 def test_all_templates_valid() -> None:
     """
-    Ensure every JSON file in templates/ is a valid v2 pipeline.
+    Ensure every JSON file in templates/ is a valid v2 pipeline and compiles
+    into an executable DAG in local mode.
     This also verifies they contain no secrets (Pipeline.model_validate will
     ensure it matches schema).
     """
@@ -34,8 +36,12 @@ def test_all_templates_valid() -> None:
             # Additional asserts
             assert pipeline.schema_version == "2.0"
             assert len(pipeline.nodes) > 0
+
+            # Compile into DAG in local mode
+            dag = compile_pipeline(data, mode="local")
+            assert len(dag.topo_order) > 0
         except Exception as e:
-            raise AssertionError(f"Template {tf.name} failed validation: {e}") from e
+            raise AssertionError(f"Template {tf.name} failed validation/compilation: {e}") from e
 
 
 # ---------------------------------------------------------------------------

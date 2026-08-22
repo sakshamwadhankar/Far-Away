@@ -26,7 +26,7 @@
       "type": "access",
       "config": {
         "access_policy": {
-          "providers": ["ollama"],
+          "providers": ["openai"],
           "allow_local_models": true,
           "allow_network": false,
           "allowed_domains": [],
@@ -72,6 +72,10 @@
   "edges": [
     {
       "from": "in.prompt",
+      "to": "cloud_llm.input"
+    },
+    {
+      "from": "policy_gate.scope",
       "to": "cloud_llm.input"
     },
     {
