@@ -1,10 +1,10 @@
 /**
  * shared/types.ts
  *
- * TypeScript type definitions for NeuralFlow pipeline schema v2.
+ * TypeScript type definitions for Komvos pipeline schema v2.
  * These types MUST stay in sync with:
  *   - shared/pipeline.schema.json
- *   - backend/neuralflow/compiler/models.py (Pydantic)
+ *   - backend/komvos/compiler/models.py (Pydantic)
  *
  * BREAKING CHANGE: any modification here must be announced before P2/P3 continue.
  * No app logic in this file — pure type definitions only.

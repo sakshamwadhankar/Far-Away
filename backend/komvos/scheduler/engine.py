@@ -1,7 +1,7 @@
 """
 backend/komvos/scheduler/engine.py
 
-Async execution engine for compiled NeuralFlow pipelines.
+Async execution engine for compiled Komvos pipelines.
 
 Responsibilities:
   - Topological execution order (from CompiledDAG)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "komvos-backend"
 version = "0.1.0"
-description = "NeuralFlow backend — FastAPI execution engine for multi-model LLM pipelines"
+description = "Komvos backend — FastAPI execution engine for multi-model LLM pipelines"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.115.12",
@@ -13,10 +13,13 @@ dependencies = [
     "pydantic==2.13.4",
     "keyring==25.6.0",
     "httpx==0.28.1",
-    "openai>=1.30.0",
-    "anthropic>=0.28.0",
-    "google-genai>=0.1.0",
-    "jinja2>=3.1.0",
+    # Provider SDKs and templating are pinned to exact versions too: three CI
+    # runners resolving independently must produce identical builds from one
+    # tag. Bumps are deliberate changes, reviewed like any other.
+    "openai==2.41.1",
+    "anthropic==0.109.1",
+    "google-genai==1.2.0",
+    "jinja2==3.1.6",
 ]
 
 [project.optional-dependencies]

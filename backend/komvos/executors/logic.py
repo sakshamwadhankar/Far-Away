@@ -4,7 +4,10 @@ backend/komvos/executors/logic.py
 Executors for logic and data transformations (Judge, Router, Transform).
 """
 
+import difflib
 import json
+import threading
+from asyncio import to_thread as asyncio_to_thread
 from typing import Any
 
 from jinja2.sandbox import SandboxedEnvironment
@@ -13,6 +16,14 @@ from komvos.executors.base import BaseExecutor, ExecutorContext
 from komvos.scheduler.engine import EventKind, SchedulerEvent
 
 _SANDBOX = SandboxedEnvironment()
+
+#: A Transform template's render is aborted if it exceeds this many seconds.
+#: The render runs in a worker thread so a runaway loop cannot stall the
+#: event loop while the bound waits.
+MAX_RENDER_SECONDS = 5.0
+
+#: A Transform template's rendered output is rejected above this size.
+MAX_RENDER_OUTPUT_CHARS = 1_000_000
 
 
 class JudgeExecutor(BaseExecutor):
@@ -140,7 +151,47 @@ class TransformExecutor(BaseExecutor):
         )
 
         template = _SANDBOX.from_string(template_str)
-        rendered = template.render(**ctx.inputs)
+
+        # Bounded render: a user-supplied template can loop a huge range or
+        # concatenate without limit. The (synchronous) render runs on a daemon
+        # worker thread with a hard time budget, then the output is size-
+        # capped. If the budget lapses the worker is abandoned — it is a
+        # daemon, so it can never block interpreter shutdown; Jinja renders
+        # are not interruptible, so the abandoned thread's CPU cost until it
+        # finishes is accepted (documented limitation).
+        render_result: list[str] = []
+        render_error: list[BaseException] = []
+
+        def _run_render() -> None:
+            try:
+                render_result.append(template.render(**ctx.inputs))
+            except BaseException as exc:  # noqa: BLE001 - relayed below
+                render_error.append(exc)
+
+        def _bounded_render() -> str:
+            worker = threading.Thread(
+                target=_run_render, name="jinja-bounded-render", daemon=True
+            )
+            worker.start()
+            worker.join(timeout=MAX_RENDER_SECONDS)
+            if worker.is_alive():
+                raise ValueError(
+                    f"Transform template exceeded its render time limit of "
+                    f"{MAX_RENDER_SECONDS:.0f}s. Check for unbounded loops "
+                    f"(e.g. large range() iterations) in the template."
+                )
+            if render_error:
+                raise render_error[0]
+            return render_result[0] if render_result else ""
+
+        rendered = await asyncio_to_thread(_bounded_render)
+
+        if len(rendered) > MAX_RENDER_OUTPUT_CHARS:
+            raise ValueError(
+                f"Transform template output exceeded the size limit: rendered "
+                f"{len(rendered)} characters, limit is "
+                f"{MAX_RENDER_OUTPUT_CHARS}."
+            )
 
         outputs: dict[str, Any] = {}
         for port in ctx.node.outputs:
@@ -171,8 +222,6 @@ class CompareExecutor(BaseExecutor):
 
     async def execute(self, ctx: ExecutorContext) -> dict[str, Any]:
         ctx.check_cancel()
-
-        import difflib
 
         val1 = ctx.inputs.get("input1")
         val2 = ctx.inputs.get("input2")

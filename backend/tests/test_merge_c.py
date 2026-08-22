@@ -103,9 +103,9 @@ AUTH = {"Authorization": "Bearer test-token"}
 
 @pytest.fixture
 def mock_env():
-    os.environ["NEURALFLOW_ALLOW_MOCK_ENDPOINT"] = "1"
+    os.environ["KOMVOS_ALLOW_MOCK_ENDPOINT"] = "1"
     yield
-    os.environ.pop("NEURALFLOW_ALLOW_MOCK_ENDPOINT", None)
+    os.environ.pop("KOMVOS_ALLOW_MOCK_ENDPOINT", None)
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-# neuralflow/api
+# komvos/api
 
 **Owner: P2 — Endpoints & API**
 

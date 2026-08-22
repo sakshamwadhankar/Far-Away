@@ -70,7 +70,6 @@ We provide two different files for Windows depending on your preference:
 We provide a few different options for Linux users:
 * **`Komvos-0.1.0.AppImage` (Recommended)**: A portable app that works on almost all Linux distributions without installation. Download it, right-click it → Properties → Permissions → Check "Allow executing file as program", and double click to run.
 * **`komvos_0.1.0_amd64.deb`**: The standard installer package for Debian/Ubuntu-based systems (like Mint, Pop!_OS). Install it by double-clicking or running `sudo dpkg -i komvos_0.1.0_amd64.deb`.
-* **`komvos-0.1.0.tar.gz`**: A standalone compressed archive for manual extraction and custom setups.
 
 ---
 
@@ -220,10 +219,11 @@ Pipelines deployed as an API are secured using an **Access Node**. Dropping an a
 
 ## ✅ Quality & Testing
 
-- **150 backend tests** (compiler, scheduler, executors, endpoints, API, schema) + 37 frontend unit tests — all run in CI on every push, and the build job is blocked on them.
+- **368 backend tests** (compiler, scheduler, executors, endpoints, API, schema, security; 4 more skip conditionally when a live Ollama instance or stored API keys are absent).
+- **71 frontend unit tests** (components, hooks, serialization) and a Playwright E2E suite covering pipeline execution in the UI — all run in CI on every push, and both the build and release jobs are blocked on them.
 - **Lint and types enforced in CI**: `ruff` and `mypy --strict` on the backend, ESLint (with `no-explicit-any` as an error) and `tsc --noEmit` on the desktop app.
-- **End-to-end verified** against a real local model (`qwen2.5:3b`): full pipeline execution, streaming, loop termination, JSON-repair, cancellation, and partial-trace persistence.
-- **Packaged-binary verified** — the bundled backend was tested standalone (running a real pipeline through the PyInstaller executable, not just in dev).
+- **End-to-end verified** against a real local model (`qwen2.5:3b`) when an Ollama instance is available to the test run: full pipeline execution, streaming, loop termination, JSON-repair, cancellation, and partial-trace persistence.
+- **Packaged-binary verified in CI** — every build launches the bundled PyInstaller backend on all three OSes, waits for its health endpoint, and executes a real pipeline through it before the Electron app is packaged.
 - Strict contracts: typed pipeline schema mirrored across JSON Schema, Python (Pydantic), and TypeScript.
 
 ```bash
@@ -254,7 +254,7 @@ cd apps/desktop && npm test && npm run typecheck
 │   ├── src/canvas/      # Node editor, serialization
 │   └── src/panels/      # Config, monitor, chat, gallery
 ├── backend/             # FastAPI backend
-│   └── Komvos/
+│   └── komvos/
 │       ├── compiler/    # graph → validated DAG
 │       ├── scheduler/   # execution engine, events, cancellation
 │       ├── executors/   # node implementations

@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('electron', {
       callback(data);
     });
   },
+  // Path of the file the main process writes backend spawn/health logs to,
+  // so the renderer can point the user at it when the backend never starts.
+  getBackendLogPath: (): Promise<string> => ipcRenderer.invoke('backend-log-path'),
 });

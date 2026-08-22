@@ -25,6 +25,8 @@ import json
 import logging
 import sys
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -90,17 +92,19 @@ logger = logging.getLogger(__name__)
 # CORS allowlist
 #
 # The renderer is an Electron window, not a website. In a packaged build it is
-# loaded with win.loadFile(), so its requests to 127.0.0.1 are cross-origin and
-# Chromium labels them with the opaque origin "null" (older Electron builds send
-# the literal "file://"). Both are accepted; neither is reachable from a page on
-# the public web.
+# served over the custom "komvos" app protocol (registered in
+# apps/desktop/src/main.ts), so its requests carry the real origin
+# "komvos://bundle". That origin is forgeable by no one: a web page — including
+# one embedded in a sandboxed iframe, which sends the opaque origin "null" —
+# cannot make its browser produce it. The old "null"/"file://" entries were
+# removed for exactly that reason.
 #
 # The Vite dev server origins are added ONLY under KOMVOS_DEV=1. Without that
 # opt-in no http(s) origin is allowed, so a site the user happens to be visiting
 # cannot drive their pipelines or spend their API credits.
 # ---------------------------------------------------------------------------
 
-_ELECTRON_RENDERER_ORIGINS = ["null", "file://"]
+_ELECTRON_RENDERER_ORIGINS = ["komvos://bundle"]
 
 _DEV_SERVER_ORIGINS = [
     "http://localhost:5173",
@@ -118,8 +122,26 @@ def _allowed_origins() -> list[str]:
 
 _DEV_MODE = is_dev_mode()
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """
+    Application startup/shutdown.
+
+    Builds the process-wide StateManager exactly once, eagerly: table
+    creation, the durability pragmas, the column-migration probe and the
+    legacy-directory migration are startup work, not per-request work. The
+    instance is cached in api/registry; get_state_manager still honours a test
+    override injected into app.state first.
+    """
+    from komvos.api.registry import ensure_default_state_manager
+
+    ensure_default_state_manager()
+    yield
+
+
 app = FastAPI(
-    title="NeuralFlow Backend",
+    title="Komvos Backend",
     version="0.1.0",
     description="Local execution backend for NeuralFlow — bound to 127.0.0.1.",
     # The interactive docs enumerate the entire API surface, so they are a
@@ -127,6 +149,7 @@ app = FastAPI(
     docs_url="/docs" if _DEV_MODE else None,
     redoc_url=None,
     openapi_url="/openapi.json" if _DEV_MODE else None,
+    lifespan=_lifespan,
 )
 
 app.add_middleware(

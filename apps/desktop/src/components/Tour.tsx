@@ -1,4 +1,10 @@
 import { useState, useEffect } from 'react';
+import { migratedRead, writeMigratedKey } from '../utils/localStorage';
+
+// Renamed during the NeuralFlow -> Komvos rebrand; the old key is migrated on
+// first read so existing users are not shown the tour again.
+const LEGACY_TOUR_KEY = 'neuralflow_tour_completed';
+const TOUR_KEY = 'komvos_tour_completed';
 
 const STEPS = [
   {
@@ -27,8 +33,9 @@ export default function Tour() {
 
   useEffect(() => {
     const hasLocalStorage = typeof window !== 'undefined' && window.localStorage;
-    const completed = hasLocalStorage ? window.localStorage.getItem('neuralflow_tour_completed') : true;
-    if (!completed) {
+    // No storage at all -> treat as completed (original behaviour: hide).
+    const completed = hasLocalStorage ? migratedRead(LEGACY_TOUR_KEY, TOUR_KEY) : 'true';
+    if (completed !== 'true') {
       // Delay showing the tour slightly to allow the app to render
       const timer = setTimeout(() => setVisible(true), 500);
       return () => clearTimeout(timer);
@@ -38,7 +45,7 @@ export default function Tour() {
   const handleDismiss = () => {
     setVisible(false);
     if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem('neuralflow_tour_completed', 'true');
+      writeMigratedKey(TOUR_KEY, 'true');
     }
   };
 

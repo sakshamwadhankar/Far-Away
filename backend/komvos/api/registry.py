@@ -23,13 +23,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from fastapi import HTTPException
 
 from komvos.secrets import get_secret
+
+#: Maximum events buffered for a run before the producer starts dropping new
+#: ones instead of enqueueing them. Generous enough that an attached, draining
+#: consumer is never affected; small enough that a run nobody consumes cannot
+#: accumulate memory without bound.
+RUN_QUEUE_MAX_EVENTS = 10_000
+
+#: How long a finished run stays registered after its driving task completes,
+#: so a WebSocket attaching slightly late still finds it — the /ws/run/{id}
+#: handler waits up to ~4 s for a run to be registered.
+REGISTRY_GRACE_SECONDS = 5.0
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -40,6 +52,27 @@ if TYPE_CHECKING:
     from komvos.state.sqlite import StateManager
 
 logger = logging.getLogger(__name__)
+
+#: Opt-in that allows executing pipelines containing mock endpoints. The old
+#: NEURALFLOW_-prefixed name is accepted for one release with a warning.
+MOCK_GATE_ENV_VAR = "KOMVOS_ALLOW_MOCK_ENDPOINT"
+_LEGACY_MOCK_GATE_ENV_VAR = "NEURALFLOW_ALLOW_MOCK_ENDPOINT"
+
+
+def _mock_gate_enabled() -> bool:
+    """True when mock endpoints are explicitly allowed in this environment."""
+    if os.environ.get(MOCK_GATE_ENV_VAR) == "1":
+        return True
+    # One-release compatibility with the pre-rename variable name.
+    if os.environ.get(_LEGACY_MOCK_GATE_ENV_VAR) == "1":
+        logger.warning(
+            "Environment variable %s is deprecated and will be removed in a "
+            "future release; set %s instead.",
+            _LEGACY_MOCK_GATE_ENV_VAR,
+            MOCK_GATE_ENV_VAR,
+        )
+        return True
+    return False
 
 
 class RunRegistry:
@@ -107,17 +140,25 @@ def get_endpoint_registry_override() -> dict[str, ModelEndpoint]:
     return {}
 
 
-def get_state_manager() -> StateManager:
-    """The process-level StateManager, or a test override."""
-    from komvos.state.sqlite import StateManager
+_default_state_manager: StateManager | None = None
 
-    app = _get_app()
-    if hasattr(app.state, "state_manager"):
-        return cast("StateManager", app.state.state_manager)
+
+def build_default_state_manager() -> StateManager:
+    """
+    Construct the default process-wide StateManager.
+
+    This runs table creation, the durability pragmas, the column-migration
+    probe, and the legacy "~/.neuralflow" -> "~/.komvos" data migration. All of
+    that must happen exactly once per process, so only two callers are allowed:
+    the application lifespan (eagerly, at startup) and get_state_manager's
+    lazy fallback (for ASGI transports that never run lifespan events, i.e.
+    tests).
+    """
+    from komvos.state.sqlite import StateManager
 
     old_db_dir = Path(os.path.expanduser("~/.neuralflow"))
     db_dir = Path(os.path.expanduser("~/.komvos"))
-    
+
     if old_db_dir.exists() and not db_dir.exists():
         try:
             old_db_dir.rename(db_dir)
@@ -125,12 +166,32 @@ def get_state_manager() -> StateManager:
             db_dir.mkdir(parents=True, exist_ok=True)
     else:
         db_dir.mkdir(parents=True, exist_ok=True)
-        
+
     old_db_file = db_dir / "neuralflow.db"
     if old_db_file.exists():
         old_db_file.rename(db_dir / "komvos.db")
-        
+
     return StateManager(str(db_dir / "komvos.db"))
+
+
+def ensure_default_state_manager() -> StateManager:
+    """Return the cached default StateManager, building it exactly once."""
+    global _default_state_manager
+    if _default_state_manager is None:
+        _default_state_manager = build_default_state_manager()
+    return _default_state_manager
+
+
+def get_state_manager() -> StateManager:
+    """The process-level StateManager, or a test override."""
+    app = _get_app()
+    if hasattr(app.state, "state_manager"):
+        # Test override (tests inject here directly) wins over everything.
+        return cast("StateManager", app.state.state_manager)
+
+    # Built once by the lifespan at startup, or lazily here on first use under
+    # transports that do not run lifespan events. Never rebuilt per request.
+    return ensure_default_state_manager()
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +243,7 @@ async def build_endpoint_registry(
     there is exactly one place that knows how to turn a descriptor into an
     endpoint. `enforce_mock_gate` is off for /pipelines/estimate, which never
     calls generate() on the result — only routes that might actually execute a
-    request need the NEURALFLOW_ALLOW_MOCK_ENDPOINT check.
+    request need the mock-endpoint gate check.
     """
     from komvos.endpoints.cloud import CloudEndpoint
 
@@ -209,10 +270,7 @@ async def build_endpoint_registry(
                 base_url=descriptor.base_url,
             )
         elif descriptor.kind == "mock":
-            if (
-                enforce_mock_gate
-                and os.environ.get("NEURALFLOW_ALLOW_MOCK_ENDPOINT") != "1"
-            ):
+            if enforce_mock_gate and not _mock_gate_enabled():
                 raise HTTPException(
                     status_code=403,
                     detail="Mock endpoints are disabled in this environment.",
@@ -249,6 +307,37 @@ async def build_endpoint_registry(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+
+class _DropOnFullQueue:
+    """
+    Producer-side view of a run's event queue that drops events when full.
+
+    The scheduler awaits ``queue.put`` once per streamed token. For an
+    abandoned run — one whose client never attached a WebSocket consumer — a
+    plain unbounded queue grows one event per token for the entire run, and a
+    plain bounded queue would block ``put`` forever once full, stalling the
+    driving task so its own cleanup could never run. Dropping when full bounds
+    memory and keeps the task moving; a run with a live consumer never
+    approaches the cap in practice.
+
+    This wraps (never replaces) the queue registered in RunRegistry, so
+    consumers keep reading from the same object they were handed.
+    """
+
+    def __init__(self, queue: asyncio.Queue[Any]) -> None:
+        self._queue = queue
+
+    async def put(self, item: Any) -> None:
+        if self._queue.qsize() >= RUN_QUEUE_MAX_EVENTS:
+            logger.warning(
+                "Run event queue at capacity (%d); dropping event.",
+                RUN_QUEUE_MAX_EVENTS,
+            )
+            return
+        await self._queue.put(item)
+
+
 async def run_pipeline_task(
     run_id: str,
     runner: PipelineRunner,
@@ -262,12 +351,33 @@ async def run_pipeline_task(
     queue (the /ws/run/{id} handler, or Phase 3's SSE stream) knows to stop.
     Shared by canvas runs and served requests — one place that guarantees a
     queue consumer is never left waiting forever after an unhandled error.
+
+    This task also owns the run's registry lifecycle: because it is the only
+    code guaranteed to execute for every run — including runs whose client
+    never attaches a WebSocket — cleanup happens here on every path. A finished
+    run lingers for REGISTRY_GRACE_SECONDS first so a slightly late WebSocket
+    attach still finds it.
     """
     from komvos.scheduler.events import WsRunErrorEvent
 
+    producer_queue = _DropOnFullQueue(queue)
     try:
-        await runner.run(queue)
+        await runner.run(producer_queue)  # type: ignore[arg-type]
     except Exception as exc:
         logger.exception("Unhandled error in run %s", run_id)
-        await queue.put(WsRunErrorEvent(run_id=run_id, error=str(exc)))
-        await queue.put(None)
+        await producer_queue.put(WsRunErrorEvent(run_id=run_id, error=str(exc)))
+        await producer_queue.put(None)
+    finally:
+        # A consumer that drained to the sentinel (WebSocket handler or served
+        # SSE stream) removes the entry itself; in that case there is nothing
+        # left to do and no reason to linger. Otherwise hold the entry for a
+        # short grace period so a slightly late WebSocket attach still finds
+        # the run, then remove it — this is the path that used to leak.
+        if run_registry.get_runner(run_id) is not None:
+            deadline = time.monotonic() + REGISTRY_GRACE_SECONDS
+            while (
+                run_registry.get_runner(run_id) is not None
+                and time.monotonic() < deadline
+            ):
+                await asyncio.sleep(0.05)
+            run_registry.remove(run_id)

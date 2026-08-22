@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell, ipcMain, protocol, net as electronNet } from 'electron';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 // The built directory structure
 process.env.DIST = path.join(__dirname, '../dist');
@@ -10,6 +11,16 @@ process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.
 
 let win: BrowserWindow | null;
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
+
+// Must run before app ready: marks "komvos" as a standard, secure scheme so
+// pages served through it get a real origin (komvos://bundle) instead of the
+// opaque "null" origin a file:// load produces. The backend CORS allowlist
+// admits this origin; it cannot be forged by web content.
+const APP_PROTOCOL = 'komvos';
+const APP_ORIGIN = `${APP_PROTOCOL}://bundle`;
+protocol.registerSchemesAsPrivileged([
+  { scheme: APP_PROTOCOL, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import net from 'node:net';
@@ -37,15 +48,56 @@ function spawnBackend(win: BrowserWindow) {
   const token = crypto.randomUUID();
   const logFile = path.join(app.getPath('userData'), 'komvos_backend_spawn.log');
 
+  // The renderer surfaces this path when the backend never becomes ready.
+  ipcMain.handle('backend-log-path', () => logFile);
+
+  // Size-based rotation: the active file caps at 5 MB; up to 3 older
+  // generations are kept as komvos_backend_spawn.log.1..3 so nothing the
+  // error path points users at is lost, while the install cannot grow the
+  // log without bound.
+  const LOG_MAX_BYTES = 5 * 1024 * 1024;
+  const LOG_RETAINED_FILES = 3;
+
+  let logChain: Promise<void> = Promise.resolve();
+
+  const rotateIfNeeded = (): Promise<void> =>
+    new Promise((resolve) => {
+      fs.stat(logFile, (err, stats) => {
+        if (err || !stats || stats.size < LOG_MAX_BYTES) return resolve();
+        const shift = (i: number): void => {
+          if (i <= 0) return resolve();
+          const from = i === 1 ? logFile : `${logFile}.${i - 1}`;
+          const to = `${logFile}.${i}`;
+          fs.access(from, fs.constants.F_OK, (accessErr) => {
+            if (accessErr) return shift(i - 1);
+            fs.rename(from, to, () => shift(i - 1));
+          });
+        };
+        shift(LOG_RETAINED_FILES);
+      });
+    });
+
+  const enqueueLogLine = (line: string): void => {
+    // Writes are serialized through a promise chain and use async fs calls,
+    // so streaming a chatty run never blocks the main process on disk I/O.
+    logChain = logChain
+      .then(rotateIfNeeded)
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            fs.appendFile(logFile, line, () => resolve());
+          })
+      )
+      .catch(() => {});
+  };
+
   const log = (msg: string) => {
-    const line = `[${new Date().toISOString()}] ${msg}\n`;
-    fs.appendFileSync(logFile, line);
     console.log(msg);
+    enqueueLogLine(`[${new Date().toISOString()}] ${msg}\n`);
   };
   const logErr = (msg: string) => {
-    const line = `[${new Date().toISOString()}] ERROR: ${msg}\n`;
-    fs.appendFileSync(logFile, line);
     console.error(msg);
+    enqueueLogLine(`[${new Date().toISOString()}] ERROR: ${msg}\n`);
   };
 
   log(`--- New App Session ---`);
@@ -83,7 +135,7 @@ function spawnBackend(win: BrowserWindow) {
         // cannot widen CORS or expose /docs in a shipped build.
         const packagedEnv: NodeJS.ProcessEnv = {
           ...process.env,
-          NEURALFLOW_SESSION_TOKEN: token,
+          KOMVOS_SESSION_TOKEN: token,
         };
         delete packagedEnv.KOMVOS_DEV;
 
@@ -109,7 +161,7 @@ function spawnBackend(win: BrowserWindow) {
             cwd: backendDir,
             env: {
               ...process.env,
-              NEURALFLOW_SESSION_TOKEN: token,
+              KOMVOS_SESSION_TOKEN: token,
               // Unpackaged only. The renderer is served by the Vite dev server,
               // so the backend has to allow that origin through CORS — and
               // /docs is useful while developing. Never set for a packaged app.
@@ -139,7 +191,12 @@ function spawnBackend(win: BrowserWindow) {
             if (VITE_DEV_SERVER_URL) {
               win.loadURL(VITE_DEV_SERVER_URL);
             } else {
-              win.loadFile(path.join(process.env.DIST as string, 'index.html'));
+              // Packaged builds load from the app protocol so the renderer has
+              // a real, non-forgeable origin (komvos://bundle) that the backend
+              // CORS allowlist can admit — a file:// window would send the
+              // opaque origin "null", which every sandboxed iframe on the web
+              // also sends.
+              void win.loadURL(`${APP_ORIGIN}/index.html`);
             }
 
             win.webContents.once('did-finish-load', () => {
@@ -202,8 +259,11 @@ function isAllowedNavigation(rawUrl: string): boolean {
     return false;
   }
 
-  // Packaged builds load the bundled renderer from disk.
-  if (parsed.protocol === 'file:') return true;
+  // Packaged builds load the bundled renderer from the app protocol. Only the
+  // bundle host is allowed — other komvos:// hosts are not ours.
+  if (parsed.protocol === `${APP_PROTOCOL}:`) {
+    return parsed.origin === APP_ORIGIN;
+  }
 
   // Dev builds load it from the Vite dev server.
   if (VITE_DEV_SERVER_URL) {
@@ -277,5 +337,50 @@ app.on('activate', () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Serve the built renderer over the app protocol. komvos://bundle/<path>
+  // maps to files under DIST; requests that escape the dist root (path
+  // traversal) are refused.
+  //
+  // Production CSP: served as a header so it applies to every document from
+  // this origin and cannot be stripped from the HTML. The index.html <meta>
+  // copy is looser only where the Vite dev server requires it; in packaged
+  // builds both policies apply and this stricter one wins. Inline STYLE is
+  // required (the entire UI uses style attributes); Google Fonts origins are
+  // allowed because index.css imports them — both are documented loosening.
+  const PROD_CSP = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob:",
+    "connect-src http://127.0.0.1:* ws://127.0.0.1:*",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+
+  protocol.handle(APP_PROTOCOL, async (request) => {
+    try {
+      const { pathname } = new URL(request.url);
+      const rel = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
+      const dist = process.env.DIST as string;
+      const resolved = path.resolve(dist, rel);
+      if (resolved !== dist && !resolved.startsWith(dist + path.sep)) {
+        return new Response('forbidden', { status: 403 });
+      }
+      const response = await electronNet.fetch(pathToFileURL(resolved).toString());
+      const headers = new Headers(response.headers);
+      headers.set('Content-Security-Policy', PROD_CSP);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    } catch {
+      return new Response('not found', { status: 404 });
+    }
+  });
+  createWindow();
+});
 

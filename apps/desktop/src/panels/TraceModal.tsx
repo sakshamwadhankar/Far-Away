@@ -45,8 +45,13 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
         return;
       }
       try {
+        if (!backendToken) {
+          setError('Backend not connected');
+          setLoading(false);
+          return;
+        }
         const port = backendPort || 8000;
-        const token = backendToken || 'test-token';
+        const token = backendToken;
         const res = await fetch(`http://127.0.0.1:${port}/runs/${runId}/trace`, {
           headers: {
             'Authorization': `Bearer ${token}`,

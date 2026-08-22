@@ -94,10 +94,15 @@ export function usePipelineActions({
       setShowPublishModal(false);
       return;
     }
+    if (!backendToken) {
+      showToast('Backend not connected.', 'error');
+      setShowPublishModal(false);
+      return;
+    }
     const scrubbed = scrubSecrets(toPipelineSchema(nodes, edges));
     try {
       const res = await fetch(`${API_BASE}/library/publish`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${backendToken || 'test-token'}` },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${backendToken}` },
         body: JSON.stringify({ name, description, author, tags, pipeline: scrubbed }),
       });
       if (res.ok) showToast('Pipeline published to library!', 'success');
@@ -119,9 +124,14 @@ export function usePipelineActions({
     template: string;
     tags: string;
   }) => {
+    if (!backendToken) {
+      showToast('Backend not connected.', 'error');
+      setShowCustomNodeModal(false);
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/custom-nodes`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${backendToken || 'test-token'}` },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${backendToken}` },
         body: JSON.stringify(data),
       });
       if (res.ok) {
@@ -138,9 +148,13 @@ export function usePipelineActions({
   }, [API_BASE, backendToken, showToast, fetchCustomNodes, setShowCustomNodeModal]);
 
   const handleDeleteCustomNode = useCallback(async (nodeId: string) => {
+    if (!backendToken) {
+      showToast('Backend not connected.', 'error');
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/custom-nodes/${nodeId}`, {
-        method: 'DELETE', headers: { 'Authorization': `Bearer ${backendToken || 'test-token'}` },
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${backendToken}` },
       });
       if (res.ok) {
         setCustomNodes(prev => prev.filter(n => n.id !== nodeId));

@@ -1,4 +1,4 @@
-# neuralflow/endpoints
+# komvos/endpoints
 
 **Owner: P2 — Endpoints & API**
 
@@ -25,7 +25,7 @@ They are read at runtime from the OS keychain using the `keyring` library:
 
 ```python
 import keyring
-api_key = keyring.get_password("neuralflow", "openai")  # example
+api_key = keyring.get_password("komvos", "openai")  # example
 ```
 
 If a key is not present in the keychain, the endpoint must raise a clear,

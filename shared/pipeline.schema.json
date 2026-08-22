@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://neuralflow.app/schemas/pipeline/v2",
-  "title": "NeuralFlow Pipeline",
-  "description": "Schema v2 for a NeuralFlow pipeline file. Loops are subgraphs, ports are typed, no secrets or device pins stored.",
+  "$id": "https://komvos.app/schemas/pipeline/v2",
+  "title": "Komvos Pipeline",
+  "description": "Schema v2 for a Komvos pipeline file. Loops are subgraphs, ports are typed, no secrets or device pins stored.",
   "type": "object",
   "required": ["schema_version", "id", "name", "version", "nodes", "edges", "endpoints"],
   "additionalProperties": false,

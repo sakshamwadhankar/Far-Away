@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Node, Edge } from 'reactflow';
 import Canvas from './canvas/Canvas';
 import LeftSidebar from './panels/LeftSidebar';
@@ -8,7 +8,8 @@ import MonitorPanel from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
 import ChatPanel, { ChatMessage } from './panels/ChatPanel';
-import { toPipelineSchema, scrubSecrets } from './canvas/serializer';
+import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './canvas/serializer';
+import type { Pipeline } from '@shared/types';
 import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
 import PublishModal from './components/PublishModal';
@@ -25,6 +26,11 @@ import { usePipelineStore } from './state/pipelineStore';
 import { useRunStore } from './state/runStore';
 import { useRunSocket } from './hooks/useRunSocket';
 import { usePipelineActions } from './hooks/usePipelineActions';
+import {
+  clearDraft,
+  loadDraft,
+  useAutosaveDraft,
+} from './hooks/useDraftPersistence';
 
 export type AppMode = 'edit' | 'use';
 
@@ -47,7 +53,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInputValues, setChatInputValues] = useState<Record<string, string>>({});
 
-  const { backendPort, backendToken, backendConnected, availableModels, API_BASE } = useBackend();
+  const { backendPort, backendToken, backendConnected, availableModels, backendError, API_BASE } = useBackend();
   const { nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange, selectedNodeIds, setSelectedNodeIds, nodesRef, edgesRef, onConnect, updateNodeData, updateNodeDataSilent, deleteNodes, handleBeforeDelete, handleUndo, handleRedo, handleDuplicate, takeSnapshot, canUndo, canRedo } = usePipelineStore(showToast);
   const { runId, setRunId, startTime, setStartTime, nodeStats, setNodeStats, runTotals, setRunTotals, showTrace, setShowTrace, isRunning, setIsRunning, animatedEdgeIds, setAnimatedEdgeIds } = useRunStore();
   const { handleWsEvent, wsRef } = useRunSocket({ updateNodeDataSilent, setNodeStats, setRunTotals, setAnimatedEdgeIds, setIsRunning, edgesRef });
@@ -55,9 +61,9 @@ export default function App() {
   const selectedNode = nodes.find(n => selectedNodeIds.includes(n.id)) || null;
 
   const fetchCustomNodes = useCallback(async () => {
-    const token = backendToken || 'test-token';
+    if (!backendToken) return;
     try {
-      const res = await fetch(`${API_BASE}/custom-nodes`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/custom-nodes`, { headers: { 'Authorization': `Bearer ${backendToken}` } });
       if (res.ok) { const data = await res.json(); if (Array.isArray(data)) setCustomNodes(data); }
     } catch (e) { console.warn('Failed to fetch custom nodes:', e); }
   }, [API_BASE, backendToken]);
@@ -76,6 +82,66 @@ export default function App() {
     }
   }, [setNodes, setEdges]);
 
+  // ── Draft autosave & crash recovery ──────────────────────────────────────
+  // Set when the current canvas content came from a bundled template, so the
+  // autosaved draft (and its restore banner) can say where the work came from
+  // instead of silently passing a template off as the user's own.
+  const lastLoadedTemplateName = useRef<string | undefined>(undefined);
+  const [restoredDraftNotice, setRestoredDraftNotice] = useState<string | null>(null);
+  const draftRestoreAttempted = useRef(false);
+
+  const handleLoadTemplate = useCallback((schema: Pipeline) => {
+    lastLoadedTemplateName.current = schema.name || undefined;
+    loadPipelineFromJson(schema);
+    showToast('Autosave note: this template is now your autosaved draft.', 'info');
+  }, [loadPipelineFromJson, showToast]);
+
+  // Restore once on mount: only into an empty canvas, so a template or import
+  // that loads before this effect can never be clobbered by a stale draft.
+  useEffect(() => {
+    if (draftRestoreAttempted.current) return;
+    draftRestoreAttempted.current = true;
+    const draft = loadDraft();
+    if (!draft || nodesRef.current.length > 0) return;
+    const restored = fromPipelineSchema(draft.pipeline);
+    if (restored.nodes.length === 0) return;
+    setNodes(restored.nodes);
+    setEdges(restored.edges);
+    const origin = draft.templateName
+      ? ` It was loaded from the “${draft.templateName}” template.`
+      : '';
+    setRestoredDraftNotice(`Unsaved work from your last session was restored.${origin}`);
+    // Run once on mount only — deps are intentionally mount-stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useAutosaveDraft(
+    useCallback(() => {
+      if (isRunning || nodesRef.current.length === 0) return null;
+      return {
+        savedAt: Date.now(),
+        templateName: lastLoadedTemplateName.current,
+        pipeline: scrubSecrets(toPipelineSchema(nodesRef.current, edgesRef.current)),
+      };
+    }, [isRunning, nodesRef, edgesRef]),
+    // Re-arm the debounce whenever the graph or run state changes. The deps
+    // intentionally differ from useAutosaveDraft's own closure deps.
+    [nodes, edges, isRunning],
+  );
+
+  const discardRestoredDraft = useCallback(() => {
+    clearDraft();
+    setNodes([]);
+    setEdges([]);
+    setChatMessages([]);
+    setRestoredDraftNotice(null);
+    showToast('Draft discarded — starting clean.', 'success');
+  }, [setNodes, setEdges, setChatMessages, showToast]);
+
+  const dismissRestoredDraftNotice = useCallback(() => {
+    setRestoredDraftNotice(null);
+  }, []);
+
   useEffect(() => {
     if (!backendConnected) return;
     const timeout = setTimeout(async () => {
@@ -91,7 +157,29 @@ export default function App() {
         if (!res.ok) return;
         const data: EstimateResponse = await res.json();
         setPipelineEstimate(data);
-        setNodes((nds) => nds.map((n) => { const est = data.nodes[n.id]; return est ? { ...n, data: { ...n.data, estimate: est } } : n; }));
+        setNodes((nds) => {
+          let changed = false;
+          const mapped = nds.map((n) => {
+            const est = data.nodes[n.id];
+            if (!est) return n;
+            // Skip nodes whose estimate is unchanged: returning the same
+            // node/array keeps `nodes` referentially equal, so this effect
+            // does not re-trigger itself on every response (it used to
+            // refetch forever, one render per second, for as long as the
+            // page stayed open).
+            if (
+              n.data.estimate &&
+              n.data.estimate.usd === est.usd &&
+              n.data.estimate.latency_ms === est.latency_ms &&
+              n.data.estimate.is_local === est.is_local
+            ) {
+              return n;
+            }
+            changed = true;
+            return { ...n, data: { ...n.data, estimate: est } };
+          });
+          return changed ? mapped : nds;
+        });
       } catch (err) { console.warn('Failed to estimate pipeline', err); }
     }, 1000);
     return () => clearTimeout(timeout);
@@ -103,13 +191,13 @@ export default function App() {
   }, [setNodes, setAnimatedEdgeIds]);
 
   const runPipeline = async () => {
-    if (nodes.length === 0) return;
+    if (nodes.length === 0 || !backendToken) return;
     const missingEndpoint = nodes.filter(n => n.data.type === 'model').filter(n => !n.data.endpoint_ref);
     if (missingEndpoint.length > 0) return showToast(`Please select a model for: ${missingEndpoint.map(n => n.data.role || n.id).join(', ')}`, 'error');
 
     setIsRunning(true); setRunId(null); setShowTrace(false); setStartTime(Date.now());
     setNodeStats({}); setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 }); resetAllNodes();
-    const token = backendToken || 'test-token';
+    const token = backendToken;
 
     try {
       const res = await fetch(`${API_BASE}/pipelines/run`, {
@@ -143,7 +231,7 @@ export default function App() {
   };
 
   const stopRun = async () => {
-    if (runId) await fetch(`${API_BASE}/runs/${runId}/stop`, { method: 'POST', headers: { 'Authorization': `Bearer ${backendToken || 'test-token'}` } }).catch(() => {});
+    if (runId && backendToken) await fetch(`${API_BASE}/runs/${runId}/stop`, { method: 'POST', headers: { 'Authorization': `Bearer ${backendToken}` } }).catch(() => {});
   };
 
   const handleChatRunStateChange = useCallback((running: boolean) => {
@@ -156,7 +244,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-      <LeftSidebar backendPort={backendPort} backendToken={backendToken} backendConnected={backendConnected} onLoadTemplate={loadPipelineFromJson} onPublishClick={() => setShowPublishModal(true)} onCreateCustomNode={() => setShowCustomNodeModal(true)} customNodes={customNodes} onDeleteCustomNode={handleDeleteCustomNode} onDeployClick={() => setDeployModalTarget('new')} onManageDeploymentClick={(id) => setDeployModalTarget(id)} deploymentsRefreshKey={deploymentsRefreshKey} API_BASE={API_BASE} />
+      <LeftSidebar backendPort={backendPort} backendToken={backendToken} backendConnected={backendConnected} onLoadTemplate={handleLoadTemplate} onPublishClick={() => setShowPublishModal(true)} onCreateCustomNode={() => setShowCustomNodeModal(true)} customNodes={customNodes} onDeleteCustomNode={handleDeleteCustomNode} onDeployClick={() => setDeployModalTarget('new')} onManageDeploymentClick={(id) => setDeployModalTarget(id)} deploymentsRefreshKey={deploymentsRefreshKey} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 10, display: 'flex', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
           <div style={{ pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -200,15 +288,37 @@ export default function App() {
       </div>
       <RightPanel selectedNode={selectedNode} updateNodeData={updateNodeData} availableModels={availableModels} onDeleteNode={(id) => deleteNodes([id])} onManageApis={() => setShowSettingsModal(true)} />
       {showTrace && runId && <TraceModal runId={runId} backendPort={backendPort} backendToken={backendToken} onClose={() => setShowTrace(false)} />}
-      <OnboardingModal API_BASE={API_BASE} onLoadTemplate={loadPipelineFromJson} />
+      <OnboardingModal API_BASE={API_BASE} backendToken={backendToken} onLoadTemplate={handleLoadTemplate} />
       <Tour />
+      {restoredDraftNotice && (
+        <div
+          data-testid="draft-restored-banner"
+          role="status"
+          style={{ position: 'fixed', bottom: 24, left: 24, zIndex: 10001, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', boxShadow: 'var(--shadow-md)', maxWidth: 420, fontSize: 13 }}
+        >
+          <div style={{ marginBottom: 8 }}>{restoredDraftNotice}</div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button data-testid="discard-draft" onClick={discardRestoredDraft} className="nf-pill-btn nf-pill-btn--sm" style={{ color: '#D32F2F' }}>Start clean</button>
+            <button data-testid="keep-draft" onClick={dismissRestoredDraftNotice} className="nf-pill-btn nf-pill-btn--sm">Keep</button>
+          </div>
+        </div>
+      )}
       {showExportModal && <ExportModal initialName={toPipelineSchema(nodes as Node<PipelineNodeData>[], edges).name || 'My Pipeline'} onExport={handleExport} onCancel={() => setShowExportModal(false)} />}
       {showPublishModal && <PublishModal initialName={toPipelineSchema(nodes as Node<PipelineNodeData>[], edges).name || 'My Pipeline'} onPublish={handlePublishToLibrary} onCancel={() => setShowPublishModal(false)} />}
       {deployModalTarget && <DeployModal pipeline={scrubSecrets(toPipelineSchema(nodes as Node<PipelineNodeData>[], edges))} existingDeploymentId={deployModalTarget === 'new' ? undefined : deployModalTarget} backendToken={backendToken} API_BASE={API_BASE} onClose={() => setDeployModalTarget(null)} onChanged={() => setDeploymentsRefreshKey(k => k + 1)} />}
       {showCustomNodeModal && <CustomNodeModal onSave={handleSaveCustomNode} onCancel={() => setShowCustomNodeModal(false)} />}
       {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} backendPort={backendPort} backendToken={backendToken} API_BASE={API_BASE} />}
+      {backendError && (
+        <div role="alert" data-testid="backend-error" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, backgroundColor: 'rgba(0,0,0,0.85)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ maxWidth: 560, padding: 32, border: '1px solid #B83232', borderRadius: 8, backgroundColor: '#1e1e1e', whiteSpace: 'pre-line' }}>
+            <h2 style={{ marginTop: 0, color: '#B83232' }}>Backend failed to start</h2>
+            <p>{backendError}</p>
+            <p style={{ color: '#aaa' }}>Fix the problem and restart Komvos. Your pipeline documents were not sent anywhere.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-declare global { interface Window { electron?: { onBackendReady: (callback: (data: { port: number; token: string }) => void) => void; }; } }
+declare global { interface Window { electron?: { onBackendReady: (callback: (data: { port: number; token: string }) => void) => void; getBackendLogPath: () => Promise<string>; }; } }

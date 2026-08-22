@@ -158,7 +158,7 @@ export default function ChatPanel({
     setMessages(prev => [...prev, assistantMsg]);
 
     const schema = toPipelineSchema(modifiedNodes, edges);
-    const token = backendToken || 'test-token';
+    const token = backendToken;
 
     try {
       const res = await fetch(`${apiBase}/pipelines/run`, {

@@ -6,7 +6,7 @@ from komvos.api.main import app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="NeuralFlow API server")
+    parser = argparse.ArgumentParser(description="Komvos API server")
     parser.add_argument(
         "--host", type=str, default="127.0.0.1", help="Host IP to bind to"
     )

@@ -21,6 +21,6 @@ fi
 
 # Run PyInstaller
 echo "Building komvos_backend executable..."
-$PYINSTALLER_CMD --name komvos_backend --onefile --add-data "../templates:templates" --hidden-import uvicorn --hidden-import fastapi --hidden-import pydantic --hidden-import pydantic_core --hidden-import httpx --hidden-import keyring --hidden-import jinja2 --distpath ../packaging/dist --workpath ../packaging/build --specpath ../packaging komvos_api_entry.py
+$PYINSTALLER_CMD --name komvos_backend --onefile --noconsole --add-data "../templates:templates" --hidden-import uvicorn --hidden-import fastapi --hidden-import pydantic --hidden-import pydantic_core --hidden-import httpx --hidden-import keyring --hidden-import jinja2 --distpath ../packaging/dist --workpath ../packaging/build --specpath ../packaging komvos_api_entry.py
 
 echo "Build complete: packaging/dist/komvos_backend"

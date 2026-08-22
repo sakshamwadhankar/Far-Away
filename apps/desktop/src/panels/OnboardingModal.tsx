@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { Pipeline } from '@shared/types';
+import { migratedRead, writeMigratedKey } from '../utils/localStorage';
+
+// Renamed during the NeuralFlow -> Komvos rebrand; the old key is migrated on
+// first read so existing users are not shown onboarding again.
+const LEGACY_FIRST_RUN_KEY = 'neuralflow_first_run';
+const FIRST_RUN_KEY = 'komvos_first_run';
 
 interface OnboardingModalProps {
   API_BASE: string;
+  backendToken?: string | null;
   onLoadTemplate: (schema: Pipeline) => void;
 }
 
-export default function OnboardingModal({ API_BASE, onLoadTemplate }: OnboardingModalProps) {
+export default function OnboardingModal({ API_BASE, backendToken, onLoadTemplate }: OnboardingModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [_ollamaUp, setOllamaUp] = useState(false);
   const [templateToLoad, setTemplateToLoad] = useState<Pipeline | null>(null);
 
   useEffect(() => {
-    const hasRun = typeof localStorage !== 'undefined' ? localStorage.getItem('neuralflow_first_run') : null;
+    const hasRun = typeof localStorage !== 'undefined' ? migratedRead(LEGACY_FIRST_RUN_KEY, FIRST_RUN_KEY) : null;
     if (hasRun) return;
 
     if (!API_BASE) return;
@@ -21,11 +28,12 @@ export default function OnboardingModal({ API_BASE, onLoadTemplate }: Onboarding
     fetch(`${API_BASE}/health/ollama`)
       .then(r => r.json())
       .then(data => {
-        if (data && data.status === 'ok') {
+         if (data && data.status === 'ok') {
           setOllamaUp(true);
           // Also fetch templates to find the solver-verifier-judge one
+          if (!backendToken) return null;
           return fetch(`${API_BASE}/pipelines/templates`, {
-             headers: { 'Authorization': 'Bearer test-token' } // Or pass backendToken
+             headers: { 'Authorization': `Bearer ${backendToken}` }
           });
         }
         return null;
@@ -43,11 +51,11 @@ export default function OnboardingModal({ API_BASE, onLoadTemplate }: Onboarding
       .catch(e => {
         console.warn('Onboarding skip: Backend or Ollama not reachable', e);
       });
-  }, [API_BASE]);
+  }, [API_BASE, backendToken]);
 
   const handleClose = () => {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('neuralflow_first_run', '1');
+      writeMigratedKey(FIRST_RUN_KEY, '1');
     }
     setIsOpen(false);
   };
@@ -73,9 +81,9 @@ export default function OnboardingModal({ API_BASE, onLoadTemplate }: Onboarding
         maxWidth: '500px', width: '100%', border: '1px solid #444',
         textAlign: 'center', color: 'white'
       }}>
-        <h2 style={{ marginBottom: '16px', color: '#10b981' }}>Ollama Detected! 🎉</h2>
-        <p style={{ marginBottom: '24px', lineHeight: '1.5' }}>
-          Welcome to NeuralFlow! We detected a local Ollama instance running on your machine.
+          <h2 style={{ marginBottom: '16px', color: '#10b981' }}>Ollama Detected! 🎉</h2>
+          <p style={{ marginBottom: '24px', lineHeight: '1.5' }}>
+            Welcome to Komvos! We detected a local Ollama instance running on your machine.
           You can run a multi-model verification loop locally, right now, in under 5 minutes.
         </p>
         <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>

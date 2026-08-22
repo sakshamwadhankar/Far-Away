@@ -1,5 +1,8 @@
+import asyncio
 import json
+import logging
 import os
+import random
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -16,6 +19,8 @@ from .base import (
     Token,
 )
 
+logger = logging.getLogger(__name__)
+
 # Load pricing table
 PRICING_FILE = os.path.join(os.path.dirname(__file__), "pricing.json")
 try:
@@ -23,6 +28,96 @@ try:
         PRICING = json.load(f)
 except FileNotFoundError:
     PRICING = {}
+
+# ---------------------------------------------------------------------------
+# Provider resilience: explicit timeouts, client reuse, bounded retries.
+# ---------------------------------------------------------------------------
+
+#: Seconds to wait for the TCP/TLS connection to the provider.
+CONNECT_TIMEOUT_S = 10.0
+#: Seconds allowed between streamed bytes once a response is flowing. This is
+#: what a stalled generation is capped by, not the whole response duration.
+READ_TIMEOUT_S = 120.0
+WRITE_TIMEOUT_S = 30.0
+POOL_TIMEOUT_S = 10.0
+
+#: 1 initial attempt + 2 retries for rate-limit (429) and server-error (5xx)
+#: responses. Backoff doubles per attempt from RETRY_BASE_DELAY_S, capped at
+#: RETRY_MAX_DELAY_S, with ±20% jitter so concurrent nodes do not sync up.
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY_S = 0.5
+RETRY_MAX_DELAY_S = 8.0
+
+#: One SDK client per (provider kind, resolved base URL, API key) for the
+#: process lifetime — connection reuse across pipeline nodes and loop
+#: iterations. The API key is part of the key so rotating a key in Settings
+#: takes effect on the next call instead of being masked by the cache.
+_CLIENTS: dict[tuple[str, str, str], Any] = {}
+
+
+def _http_timeout() -> Any:
+    """Explicit connect/read/write/pool timeouts shared by HTTP-based SDKs."""
+    import httpx
+
+    return httpx.Timeout(
+        CONNECT_TIMEOUT_S,
+        read=READ_TIMEOUT_S,
+        write=WRITE_TIMEOUT_S,
+        pool=POOL_TIMEOUT_S,
+    )
+
+
+def _get_cached_client(
+    kind: str, base_url: str, api_key: str, factory: Any
+) -> Any:
+    """Return the cached client for this (kind, base URL, key), building once."""
+    key = (kind, base_url, api_key)
+    client = _CLIENTS.get(key)
+    if client is None:
+        client = factory()
+        _CLIENTS[key] = client
+        logger.debug("Constructed %s client for %s", kind, base_url or "default")
+    return client
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """
+    True for rate-limit and server-error responses worth retrying.
+
+    The provider SDKs shape their errors differently (openai/anthropic set
+    ``status_code`` on APIStatusError subclasses, google-genai sets ``code``
+    on APIError), but the well-known names are stable across versions, so both
+    attributes and class names are checked.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if isinstance(status, int):
+        return status == 429 or 500 <= status < 600
+    return type(exc).__name__ in {"RateLimitError", "InternalServerError"}
+
+
+async def _retry_with_backoff(attempt_fn: Any, what: str) -> Any:
+    """Await ``attempt_fn()``, retrying retryable failures with backoff."""
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            return await attempt_fn()
+        except Exception as exc:  # noqa: BLE001 - classified below
+            if not _is_retryable(exc) or attempt == RETRY_ATTEMPTS:
+                raise
+            delay = min(
+                RETRY_MAX_DELAY_S, RETRY_BASE_DELAY_S * (2 ** (attempt - 1))
+            )
+            delay *= random.uniform(0.8, 1.2)
+            logger.warning(
+                "%s failed (%s: %s); retrying in %.2fs (attempt %d/%d)",
+                what,
+                type(exc).__name__,
+                exc,
+                delay,
+                attempt,
+                RETRY_ATTEMPTS,
+            )
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable: retry loop always returns or raises")
 
 
 class CloudEndpoint(ModelEndpoint):
@@ -92,7 +187,20 @@ class CloudEndpoint(ModelEndpoint):
                 elif self.provider == "nvidia":
                     base_url = "https://integrate.api.nvidia.com/v1"
 
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+            cache_key = base_url or "https://api.openai.com/v1"
+            # max_retries=0: the SDK's own retry loop is disabled so the
+            # bounded backoff policy below is the single source of truth.
+            client = _get_cached_client(
+                f"openai:{self.provider}",
+                cache_key,
+                api_key,
+                lambda: AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=base_url,
+                    timeout=_http_timeout(),
+                    max_retries=0,
+                ),
+            )
 
             msgs_dicts = [m.model_dump() for m in req.messages]
             kwargs: dict[str, Any] = {
@@ -110,7 +218,12 @@ class CloudEndpoint(ModelEndpoint):
             if req.response_format == "json":
                 kwargs["response_format"] = {"type": "json_object"}
 
-            stream = await client.chat.completions.create(**kwargs)
+            # Retry only stream creation — once tokens flow the request has
+            # been accepted and a mid-stream failure is surfaced as-is.
+            stream = await _retry_with_backoff(
+                lambda: client.chat.completions.create(**kwargs),
+                f"{self.provider} chat completion",
+            )
             index = 0
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content is not None:
@@ -120,7 +233,17 @@ class CloudEndpoint(ModelEndpoint):
         elif self.provider == "anthropic":
             from anthropic import AsyncAnthropic
 
-            client = AsyncAnthropic(api_key=api_key)
+            # max_retries=0 — same single retry policy as above.
+            client = _get_cached_client(
+                "anthropic",
+                "https://api.anthropic.com",
+                api_key,
+                lambda: AsyncAnthropic(
+                    api_key=api_key,
+                    timeout=_http_timeout(),
+                    max_retries=0,
+                ),
+            )
 
             # Anthropic handles system message separately
             system_msg = next(
@@ -138,23 +261,43 @@ class CloudEndpoint(ModelEndpoint):
             if system_msg:
                 kwargs["system"] = system_msg
 
-            async with client.messages.stream(**kwargs) as stream:
+            manager = client.messages.stream(**kwargs)
+            # The connection is opened on stream entry; that is the retryable
+            # boundary. Entering manually (instead of `async with`) lets the
+            # retry policy apply without replaying already-streamed tokens.
+            stream = await _retry_with_backoff(manager.__aenter__, "anthropic stream")
+            try:
                 index = 0
                 async for text in stream.text_stream:
                     yield Token(text=text, index=index)
                     index += 1
+            finally:
+                await manager.__aexit__(None, None, None)
 
         elif self.provider == "google":
             from google import genai
 
-            client = genai.Client(
-                api_key=api_key, http_options={"api_version": "v1alpha"}
+            client = _get_cached_client(
+                "google",
+                "genai",
+                api_key,
+                lambda: genai.Client(
+                    api_key=api_key,
+                    http_options={
+                        "api_version": "v1alpha",
+                        # genai's http_options timeout is in milliseconds.
+                        "timeout": int(READ_TIMEOUT_S * 1000),
+                    },
+                ),
             )
             contents = [m.content for m in req.messages]
             prompt = "\n".join(contents)
 
-            response_stream = await client.aio.models.generate_content_stream(
-                model=self.model_name, contents=prompt
+            response_stream = await _retry_with_backoff(
+                lambda: client.aio.models.generate_content_stream(
+                    model=self.model_name, contents=prompt
+                ),
+                "google generate_content_stream",
             )
             index = 0
             async for chunk in response_stream:

@@ -297,7 +297,7 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
 
     // Modal should close and flag should be set
     expect(screen.queryByText('Ollama Detected! 🎉')).toBeNull();
-    expect(localStorage.getItem('neuralflow_first_run')).toBe('1');
+    expect(localStorage.getItem('komvos_first_run')).toBe('1');
   });
 
   it('renders templates in LeftSidebar', async () => {

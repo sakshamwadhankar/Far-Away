@@ -47,7 +47,7 @@ def test_cors_allowlist_excludes_web_origins_by_default(
     monkeypatch.delenv(DEV_MODE_ENV_VAR, raising=False)
     origins = api_main._allowed_origins()
 
-    assert origins == ["null", "file://"]
+    assert origins == ["komvos://bundle"]
     assert not any(o.startswith("http") for o in origins)
 
 
@@ -59,8 +59,8 @@ def test_cors_allowlist_adds_dev_server_only_in_dev_mode(
 
     assert "http://localhost:5173" in origins
     assert "http://127.0.0.1:5173" in origins
-    # The Electron renderer origins are still present.
-    assert "null" in origins
+    # The Electron renderer origin is still present.
+    assert "komvos://bundle" in origins
 
 
 def test_cors_allowlist_is_not_a_wildcard() -> None:
@@ -98,9 +98,24 @@ async def test_cors_preflight_rejects_arbitrary_web_origin(
 
 @pytest.mark.asyncio
 async def test_cors_allows_electron_renderer_origin(client: AsyncClient) -> None:
-    """The packaged renderer loads over file://, which Chromium labels 'null'."""
+    """
+    The packaged renderer loads over the custom komvos:// app protocol, so its
+    requests carry the real origin "komvos://bundle" — an origin no web page,
+    including a sandboxed iframe (origin "null"), can produce.
+    """
+    resp = await client.get("/health", headers={"Origin": "komvos://bundle"})
+    assert resp.headers.get("access-control-allow-origin") == "komvos://bundle"
+
+
+@pytest.mark.asyncio
+async def test_cors_rejects_opaque_null_origin(client: AsyncClient) -> None:
+    """
+    Regression guard for the Phase 3 hardening: "null" is the origin every
+    sandboxed iframe on the public internet sends, so it must never be
+    admitted even though a file://-loaded window used to send it.
+    """
     resp = await client.get("/health", headers={"Origin": "null"})
-    assert resp.headers.get("access-control-allow-origin") == "null"
+    assert "access-control-allow-origin" not in resp.headers
 
 
 # ---------------------------------------------------------------------------

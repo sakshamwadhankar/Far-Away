@@ -24,14 +24,16 @@ def _dev_mode(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """
     Opt every test into dev-mode auth explicitly.
 
-    Auth fails closed: with no NEURALFLOW_SESSION_TOKEN configured, requests are
+    Auth fails closed: with no KOMVOS_SESSION_TOKEN configured, requests are
     rejected unless KOMVOS_DEV=1 is set deliberately. The suite drives the API
     without Electron, so it sets that flag itself rather than leaning on an
     implicit fallback. Tests that exercise the fail-closed path delete the var
     with their own monkeypatch.
     """
     monkeypatch.setenv(DEV_MODE_ENV_VAR, "1")
-    # Never inherit a real session token from the developer's shell.
+    # Never inherit a real session token from the developer's shell — under
+    # either the current or the pre-rename variable name.
+    monkeypatch.delenv("KOMVOS_SESSION_TOKEN", raising=False)
     monkeypatch.delenv("NEURALFLOW_SESSION_TOKEN", raising=False)
     yield
 
@@ -41,7 +43,7 @@ def _restore_env() -> Iterator[None]:
     """
     Snapshot and restore os.environ around every test.
 
-    Several tests set NEURALFLOW_SESSION_TOKEN or the mock-endpoint gate
+    Several tests set KOMVOS_SESSION_TOKEN or the mock-endpoint gate
     directly rather than through monkeypatch; this keeps that from leaking into
     the next test.
     """

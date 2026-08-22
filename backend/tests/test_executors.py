@@ -11,6 +11,7 @@ import pytest
 from komvos.compiler.models import Node, NodeConfig, Port
 from komvos.endpoints.base import GenRequest
 from komvos.endpoints.mock import MockEndpoint
+from komvos.executors import logic as logic_module
 from komvos.executors.base import ExecutorContext
 from komvos.executors.input_output import InputExecutor, OutputExecutor
 from komvos.executors.logic import JudgeExecutor, RouterExecutor, TransformExecutor
@@ -250,6 +251,51 @@ async def test_transform_executor_sandbox(
 
     with pytest.raises(SecurityError):
         await executor.execute(ctx)
+
+
+async def test_transform_executor_rejects_oversized_output(
+    registry: EndpointRegistry, mock_emitter: MockEmitter, monkeypatch
+):
+    """A template whose rendered output exceeds the size cap fails loudly."""
+    monkeypatch.setattr(logic_module, "MAX_RENDER_OUTPUT_CHARS", 10)
+    node = Node(
+        id="transform_big",
+        type="transform",
+        config=NodeConfig(system_prompt="{% for i in range(100) %}x{% endfor %}"),
+        outputs=[Port(name="out", type="text")],
+    )
+    ctx = make_ctx(node, {}, registry, mock_emitter)
+
+    with pytest.raises(ValueError, match="exceeded the size limit"):
+        await TransformExecutor().execute(ctx)
+
+
+async def test_transform_executor_enforces_render_time_limit(
+    registry: EndpointRegistry, mock_emitter: MockEmitter, monkeypatch
+):
+    """A template that renders longer than the budget is aborted."""
+
+    # Renders for ~0.5 s (far beyond the patched 0.05 s budget) and then
+    # completes — so the abandoned daemon worker terminates promptly instead
+    # of burning CPU for the rest of the test session.
+    class SlowValue:
+        def __str__(self) -> str:
+            import time
+
+            time.sleep(0.5)
+            return "done"
+
+    monkeypatch.setattr(logic_module, "MAX_RENDER_SECONDS", 0.05)
+    node = Node(
+        id="transform_slow",
+        type="transform",
+        config=NodeConfig(system_prompt="{{ x }}"),
+        outputs=[Port(name="out", type="text")],
+    )
+    ctx = make_ctx(node, {"x": SlowValue()}, registry, mock_emitter)
+
+    with pytest.raises(ValueError, match="render time limit"):
+        await TransformExecutor().execute(ctx)
 
 
 async def test_model_executor_text_mode(mock_emitter: MockEmitter):
