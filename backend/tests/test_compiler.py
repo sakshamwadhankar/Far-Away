@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.dag import CompiledDAG, compile
-from neuralflow.compiler.validation import PipelineValidationErrors
+from komvos.compiler.dag import CompiledDAG, compile
+from komvos.compiler.validation import PipelineValidationErrors
 
 # ---------------------------------------------------------------------------
 # Fixtures — inline pipeline documents

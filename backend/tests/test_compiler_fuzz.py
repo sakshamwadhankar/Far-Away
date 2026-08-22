@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.dag import compile
-from neuralflow.compiler.validation import PipelineValidationErrors
+from komvos.compiler.dag import compile
+from komvos.compiler.validation import PipelineValidationErrors
 from tests.test_compiler import VALID_WITH_LOOP
 
 

@@ -22,14 +22,14 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from neuralflow.api import main as api_main
-from neuralflow.api.auth import (
+from komvos.api import main as api_main
+from komvos.api.auth import (
     DEV_MODE_ENV_VAR,
     SESSION_TOKEN_ENV_VAR,
     check_token,
     is_dev_mode,
 )
-from neuralflow.state.sqlite import StateManager
+from komvos.state.sqlite import StateManager
 from tests.test_api import PIPELINE
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -124,7 +124,7 @@ def test_docs_are_gated_on_dev_mode() -> None:
 @pytest.mark.asyncio
 async def test_docs_not_served_outside_dev_mode(client: AsyncClient) -> None:
     if api_main._DEV_MODE:
-        pytest.skip("KOMVOS_DEV=1 was set when neuralflow.api.main was imported")
+        pytest.skip("KOMVOS_DEV=1 was set when komvos.api.main was imported")
     assert (await client.get("/docs")).status_code == 404
     assert (await client.get("/openapi.json")).status_code == 404
 
@@ -319,8 +319,8 @@ async def _measure_max_loop_gap(body: Any) -> tuple[float, float]:
 
 
 def _mock_registry() -> Any:
-    from neuralflow.endpoints.mock import MockEndpoint
-    from neuralflow.scheduler.engine import EndpointRegistry
+    from komvos.endpoints.mock import MockEndpoint
+    from komvos.scheduler.engine import EndpointRegistry
 
     return EndpointRegistry(
         {
@@ -363,8 +363,8 @@ async def test_run_stays_responsive_while_trace_writes_are_slow(
     write blocks for 0.3s, and the event loop keeps servicing other coroutines
     throughout. Reverting any asyncio.to_thread in runner.py fails this.
     """
-    from neuralflow.compiler.dag import compile as compile_pipeline
-    from neuralflow.scheduler.runner import PipelineRunner
+    from komvos.compiler.dag import compile as compile_pipeline
+    from komvos.scheduler.runner import PipelineRunner
 
     sm = _SlowStateManager(tmp_path / "run.db", delay=WRITE_DELAY)
     runner = PipelineRunner(

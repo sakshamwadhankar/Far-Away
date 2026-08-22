@@ -8,14 +8,14 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.models import Node, NodeConfig, Port
-from neuralflow.endpoints.base import GenRequest
-from neuralflow.endpoints.mock import MockEndpoint
-from neuralflow.executors.base import ExecutorContext
-from neuralflow.executors.input_output import InputExecutor, OutputExecutor
-from neuralflow.executors.logic import JudgeExecutor, RouterExecutor, TransformExecutor
-from neuralflow.executors.model import ModelExecutor
-from neuralflow.scheduler.engine import (
+from komvos.compiler.models import Node, NodeConfig, Port
+from komvos.endpoints.base import GenRequest
+from komvos.endpoints.mock import MockEndpoint
+from komvos.executors.base import ExecutorContext
+from komvos.executors.input_output import InputExecutor, OutputExecutor
+from komvos.executors.logic import JudgeExecutor, RouterExecutor, TransformExecutor
+from komvos.executors.model import ModelExecutor
+from komvos.scheduler.engine import (
     CancelToken,
     EndpointRegistry,
     EventKind,
@@ -340,7 +340,7 @@ async def test_model_executor_json_repair_failure(mock_emitter: MockEmitter):
 async def test_compare_executor_different(
     registry: EndpointRegistry, mock_emitter: MockEmitter
 ):
-    from neuralflow.executors.logic import CompareExecutor
+    from komvos.executors.logic import CompareExecutor
 
     node = Node(
         id="comp1",
@@ -364,7 +364,7 @@ async def test_compare_executor_different(
 async def test_compare_executor_same(
     registry: EndpointRegistry, mock_emitter: MockEmitter
 ):
-    from neuralflow.executors.logic import CompareExecutor
+    from komvos.executors.logic import CompareExecutor
 
     node = Node(
         id="comp2",

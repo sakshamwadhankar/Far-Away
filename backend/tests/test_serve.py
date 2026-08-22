@@ -24,11 +24,11 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from neuralflow.api.main import app
-from neuralflow.endpoints.mock import MockEndpoint
-from neuralflow.serve.keys import generate_key, hash_key, verify_key
-from neuralflow.serve.store import DeploymentStore
-from neuralflow.state.sqlite import StateManager
+from komvos.api.main import app
+from komvos.endpoints.mock import MockEndpoint
+from komvos.serve.keys import generate_key, hash_key, verify_key
+from komvos.serve.store import DeploymentStore
+from komvos.state.sqlite import StateManager
 
 AUTH = {"Authorization": "Bearer test-token"}
 
@@ -552,7 +552,7 @@ async def test_stale_stored_policy_is_rejected_before_streaming_starts(
     """
     client, db_path = serve_client
     store = DeploymentStore(db_path)
-    from neuralflow.serve.models import Deployment
+    from komvos.serve.models import Deployment
 
     pipeline = build_pipeline(provider="mock", granted_providers=["mock"])
     for node in pipeline["nodes"]:
@@ -656,7 +656,7 @@ async def test_real_openai_sdk_lists_this_deployment_as_a_model(serve_client) ->
 
 
 def test_is_loopback_recognizes_local_hosts() -> None:
-    from neuralflow.serve.routes import _is_loopback
+    from komvos.serve.routes import _is_loopback
 
     assert _is_loopback("127.0.0.1") is True
     assert _is_loopback("::1") is True

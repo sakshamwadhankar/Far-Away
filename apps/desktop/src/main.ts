@@ -104,7 +104,7 @@ function spawnBackend(win: BrowserWindow) {
 
         backendProcess = spawn(
           venvPython,
-          ['-m', 'uvicorn', 'neuralflow.api.main:app', '--host', '127.0.0.1', '--port', port.toString()],
+          ['-m', 'uvicorn', 'komvos.api.main:app', '--host', '127.0.0.1', '--port', port.toString()],
           {
             cwd: backendDir,
             env: {

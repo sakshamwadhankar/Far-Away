@@ -25,8 +25,8 @@ from httpx import ASGITransport, AsyncClient
 from httpx_ws import aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 
-from neuralflow.api.main import app
-from neuralflow.endpoints.mock import MockEndpoint
+from komvos.api.main import app
+from komvos.endpoints.mock import MockEndpoint
 
 # ---------------------------------------------------------------------------
 # Pipeline fixture
@@ -398,15 +398,15 @@ def test_default_db_path() -> None:
     import os
     from pathlib import Path
 
-    from neuralflow.api.main import _global_state_manager, app
+    from komvos.api.main import _global_state_manager, app
 
     # Ensure no override
     if hasattr(app.state, "state_manager"):
         del app.state.state_manager
 
     sm = _global_state_manager()
-    expected_dir = Path(os.path.expanduser("~/.neuralflow"))
-    assert sm.db_path == expected_dir / "neuralflow.db"
+    expected_dir = Path(os.path.expanduser("~/.komvos"))
+    assert sm.db_path == expected_dir / "komvos.db"
 
 
 @pytest.mark.asyncio
@@ -421,8 +421,8 @@ async def test_cost_divergence_on_retries(client: AsyncClient) -> None:
         else:
             return '{"key": "value"}'
 
-    from neuralflow.api.main import app
-    from neuralflow.endpoints.mock import MockEndpoint
+    from komvos.api.main import app
+    from komvos.endpoints.mock import MockEndpoint
 
     app.state.endpoint_registry = {
         "mock:json_repair": MockEndpoint(

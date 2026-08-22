@@ -28,10 +28,10 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.dag import compile
-from neuralflow.compiler.models import StopCondition
-from neuralflow.endpoints.mock import MockEndpoint
-from neuralflow.scheduler.engine import (
+from komvos.compiler.dag import compile
+from komvos.compiler.models import StopCondition
+from komvos.endpoints.mock import MockEndpoint
+from komvos.scheduler.engine import (
     CancelToken,
     EndpointRegistry,
     EventKind,
@@ -39,7 +39,7 @@ from neuralflow.scheduler.engine import (
     Scheduler,
     SchedulerEvent,
 )
-from neuralflow.scheduler.stop_eval import (
+from komvos.scheduler.stop_eval import (
     StopConditionTypeError,
     StopFieldResolutionError,
     evaluate_stop_condition,
@@ -749,9 +749,9 @@ async def test_budget_cap_halts_pipeline() -> None:
     Verify that PipelineRunner enforcing a strict USD budget cap halts execution
     and emits WsBudgetExceededEvent when the estimate_cost exceeds the cap.
     """
-    from neuralflow.endpoints.base import Cost
-    from neuralflow.scheduler.events import WsBudgetExceededEvent
-    from neuralflow.scheduler.runner import PipelineRunner
+    from komvos.endpoints.base import Cost
+    from komvos.scheduler.events import WsBudgetExceededEvent
+    from komvos.scheduler.runner import PipelineRunner
 
     class ExpensiveMockEndpoint(MockEndpoint):
         def estimate_cost(self, req: Any) -> Cost:

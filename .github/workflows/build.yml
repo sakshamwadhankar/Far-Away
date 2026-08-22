@@ -39,11 +39,11 @@ jobs:
 
     - name: Typecheck backend (mypy --strict)
       working-directory: backend
-      run: mypy neuralflow
+      run: mypy komvos
 
     - name: Test backend (pytest)
       working-directory: backend
-      run: pytest -q --cov=neuralflow
+      run: pytest -q --cov=komvos
 
     - name: Install frontend dependencies
       working-directory: apps/desktop

@@ -10,10 +10,10 @@ meets the PRD metric.
 import asyncio
 import time
 
-from neuralflow.compiler.dag import compile
-from neuralflow.endpoints.base import Cost, GenRequest, ModelEndpoint
-from neuralflow.scheduler.engine import EndpointRegistry
-from neuralflow.scheduler.runner import PipelineRunner
+from komvos.compiler.dag import compile
+from komvos.endpoints.base import Cost, GenRequest, ModelEndpoint
+from komvos.scheduler.engine import EndpointRegistry
+from komvos.scheduler.runner import PipelineRunner
 
 
 class FastMockEndpoint(ModelEndpoint):
@@ -24,7 +24,7 @@ class FastMockEndpoint(ModelEndpoint):
         self.delay = delay
 
     async def generate(self, req: GenRequest):
-        from neuralflow.endpoints.base import Token
+        from komvos.endpoints.base import Token
 
         # Simulate network latency
         await asyncio.sleep(self.delay)
@@ -34,7 +34,7 @@ class FastMockEndpoint(ModelEndpoint):
         return True
 
     def capabilities(self):
-        from neuralflow.endpoints.base import Caps
+        from komvos.endpoints.base import Caps
 
         return Caps(max_context=8192, json_mode=True, tools=False, vision=False)
 

@@ -14,11 +14,11 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.dag import compile
-from neuralflow.endpoints.mock import MockEndpoint
-from neuralflow.scheduler.engine import EndpointRegistry, Scheduler
-from neuralflow.scheduler.runner import PipelineRunner
-from neuralflow.state.sqlite import StateManager
+from komvos.compiler.dag import compile
+from komvos.endpoints.mock import MockEndpoint
+from komvos.scheduler.engine import EndpointRegistry, Scheduler
+from komvos.scheduler.runner import PipelineRunner
+from komvos.state.sqlite import StateManager
 from tests.test_scheduler import LINEAR_PIPELINE
 
 

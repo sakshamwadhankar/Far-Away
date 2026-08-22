@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from neuralflow.api.main import app
-from neuralflow.endpoints.mock import MockEndpoint
+from komvos.api.main import app
+from komvos.endpoints.mock import MockEndpoint
 from tests.test_api import _ws_events
 
 # Create a realistic Solver -> Verifier -> Judge -> Router pipeline
@@ -283,7 +283,7 @@ async def test_merge_c_2e_serializer_scrub_secrets() -> None:
     # 2e: Save the pipeline via the serializer and assert the exported JSON
     # contains NO api_key/token/secret fields. Here we simulate the python
     # equivalent of ensuring Pydantic models drop secrets when serialized.
-    from neuralflow.compiler.models import Pipeline
+    from komvos.compiler.models import Pipeline
 
     model = Pipeline(**PIPELINE_MERGE_C)
     dumped = model.model_dump(exclude_none=True)

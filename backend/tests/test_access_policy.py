@@ -18,17 +18,17 @@ from typing import Any
 
 import pytest
 
-from neuralflow.compiler.dag import compile as compile_pipeline
-from neuralflow.compiler.models import ENDPOINT_KINDS, AccessPolicy
-from neuralflow.compiler.validation import PipelineValidationErrors
-from neuralflow.endpoints.base import AccessDeniedError, GenRequest, Message
-from neuralflow.endpoints.cloud import CloudEndpoint
-from neuralflow.endpoints.mock import MockEndpoint
-from neuralflow.endpoints.ollama import OllamaEndpoint
-from neuralflow.executors.base import ExecutorContext
-from neuralflow.executors.model import ModelExecutor
-from neuralflow.scheduler.engine import EndpointRegistry, EventKind, SchedulerEvent
-from neuralflow.scheduler.runner import _tightest_budget
+from komvos.compiler.dag import compile as compile_pipeline
+from komvos.compiler.models import ENDPOINT_KINDS, AccessPolicy
+from komvos.compiler.validation import PipelineValidationErrors
+from komvos.endpoints.base import AccessDeniedError, GenRequest, Message
+from komvos.endpoints.cloud import CloudEndpoint
+from komvos.endpoints.mock import MockEndpoint
+from komvos.endpoints.ollama import OllamaEndpoint
+from komvos.executors.base import ExecutorContext
+from komvos.executors.model import ModelExecutor
+from komvos.scheduler.engine import EndpointRegistry, EventKind, SchedulerEvent
+from komvos.scheduler.runner import _tightest_budget
 
 PIPELINE_ID = "00000000-0000-4000-a000-0000000000ac"
 
@@ -410,7 +410,7 @@ def test_ollama_endpoint_checks_allow_local_models() -> None:
 
 def test_policy_max_tokens_caps_the_node_setting() -> None:
     """A policy ceiling may lower the node's max_tokens, never raise it."""
-    from neuralflow.compiler.models import Node, NodeConfig
+    from komvos.compiler.models import Node, NodeConfig
 
     captured: dict[str, int] = {}
 
@@ -502,7 +502,7 @@ async def test_denied_endpoint_makes_zero_outbound_calls(
         endpoint.check_access(AccessPolicy(**node_type_config), "summarize")
 
     # And through the executor, which is the real call path.
-    from neuralflow.compiler.models import Node
+    from komvos.compiler.models import Node
 
     ctx = ExecutorContext(
         node=Node(
@@ -542,7 +542,7 @@ async def test_run_emits_access_denied_event() -> None:
     async def capture(event: SchedulerEvent) -> None:
         events.append(event)
 
-    from neuralflow.scheduler.engine import Scheduler
+    from komvos.scheduler.engine import Scheduler
 
     # Tighten the effective policy after compilation to simulate a policy the
     # endpoint refuses at call time.

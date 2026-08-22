@@ -26,8 +26,8 @@ import jsonschema
 import pytest
 from pydantic import ValidationError
 
-from neuralflow.compiler.models import Pipeline
-from neuralflow.compiler.validation import (
+from komvos.compiler.models import Pipeline
+from komvos.compiler.validation import (
     PipelineValidationErrors,
     validate_pipeline,
 )

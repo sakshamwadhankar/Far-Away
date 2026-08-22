@@ -13,7 +13,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from neuralflow.api.auth import DEV_MODE_ENV_VAR
+from komvos.api.auth import DEV_MODE_ENV_VAR
 from tests.test_api import client, slow_client
 
 __all__ = ["client", "slow_client"]

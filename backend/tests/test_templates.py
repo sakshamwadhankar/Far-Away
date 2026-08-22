@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from neuralflow.api.main import app
-from neuralflow.compiler.models import Pipeline
-from neuralflow.state.sqlite import StateManager
+from komvos.api.main import app
+from komvos.compiler.models import Pipeline
+from komvos.state.sqlite import StateManager
 
 
 def test_all_templates_valid() -> None:

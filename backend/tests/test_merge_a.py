@@ -18,12 +18,12 @@ RULES:
 
 import pytest
 
-from neuralflow.endpoints.base import (
+from komvos.endpoints.base import (
     GenRequest,
     Message,
     ModelEndpoint,
 )
-from neuralflow.endpoints.mock import MockEndpoint
+from komvos.endpoints.mock import MockEndpoint
 
 # ---------------------------------------------------------------------------
 # Helpers
