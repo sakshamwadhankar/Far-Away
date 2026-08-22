@@ -170,7 +170,7 @@ export default function Canvas({
   );
 
   return (
-    <div data-tour="canvas" style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowWrapper}>
+    <div data-tour="canvas" style={{ width: '100%', height: '100%', minHeight: '100%', flex: 1, position: 'relative' }} ref={reactFlowWrapper}>
       {/* Empty-state hint when no nodes on canvas */}
       {nodes.length === 0 && (
         <div className="nf-empty-state" data-testid="empty-state-hint">
