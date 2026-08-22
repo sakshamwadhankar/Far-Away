@@ -27,8 +27,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import httpx
-import keyring
 from fastapi import HTTPException
+
+from komvos.secrets import get_secret
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -146,7 +147,7 @@ async def resolve_ollama_base(model_name: str, descriptor_base: str | None) -> s
     if descriptor_base:
         return f"{descriptor_base.rstrip('/')}/v1"
 
-    saved_base = (keyring.get_password("komvos", "ollama_base_url") or keyring.get_password("neuralflow", "ollama_base_url"))
+    saved_base = get_secret("ollama_base_url")
     if not saved_base or not saved_base.startswith("http"):
         return "http://127.0.0.1:11434/v1"
 

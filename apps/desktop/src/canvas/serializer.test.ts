@@ -129,6 +129,64 @@ describe('Serializer', () => {
     expect(edges[0].targetHandle).toBe('text:in');
   });
 
+  it('a graph survives a serialize -> deserialize round trip unchanged', () => {
+    const rfNodes: RFNode<PipelineNodeData>[] = [
+      {
+        id: 'node-1',
+        type: 'pipelineNode',
+        position: { x: 0, y: 0 },
+        data: { type: 'input', outputs: [{ name: 'prompt', type: 'text' }] }
+      },
+      {
+        id: 'node-2',
+        type: 'pipelineNode',
+        position: { x: 200, y: 0 },
+        data: {
+          type: 'model',
+          endpoint_ref: 'mock:default',
+          inputs: [{ name: 'prompt', type: 'text' }],
+          outputs: [{ name: 'response', type: 'text' }],
+          config: { temperature: 0.5, max_tokens: 100 }
+        }
+      },
+      {
+        id: 'node-3',
+        type: 'pipelineNode',
+        position: { x: 400, y: 0 },
+        data: { type: 'output', inputs: [{ name: 'response', type: 'text' }] }
+      }
+    ];
+
+    const rfEdges: RFEdge[] = [
+      { id: 'e1-2', source: 'node-1', target: 'node-2', sourceHandle: 'text:prompt', targetHandle: 'text:prompt' },
+      { id: 'e2-3', source: 'node-2', target: 'node-3', sourceHandle: 'text:response', targetHandle: 'text:response' }
+    ];
+
+    const pipeline = toPipelineSchema(rfNodes, rfEdges);
+    const roundTripped = fromPipelineSchema(JSON.parse(JSON.stringify(pipeline)) as Pipeline);
+
+    expect(roundTripped.nodes.map(n => n.id)).toEqual(rfNodes.map(n => n.id));
+    roundTripped.nodes.forEach((n, i) => {
+      expect(n.data.type).toBe(rfNodes[i].data.type);
+      expect(n.data.endpoint_ref).toBe(rfNodes[i].data.endpoint_ref);
+      expect(n.data.config).toEqual(rfNodes[i].data.config);
+      expect(n.data.inputs).toEqual(rfNodes[i].data.inputs);
+      expect(n.data.outputs).toEqual(rfNodes[i].data.outputs);
+    });
+
+    expect(roundTripped.edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle
+    }))).toEqual(rfEdges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle
+    })));
+  });
+
   it('scrubSecrets removes api_key, token, and secret fields from pipeline', () => {
     const pipeline = {
       schema_version: '2.0',

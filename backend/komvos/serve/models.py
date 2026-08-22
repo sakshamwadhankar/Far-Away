@@ -228,7 +228,7 @@ def _api_field(node: Any) -> str | None:
 
 
 def _api_expose(node: Any) -> bool:
-    return node.config.api_expose if node.config else True
+    return bool(node.config.api_expose) if node.config else True
 
 
 def _ids(nodes: list[Any]) -> str:

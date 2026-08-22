@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  verify:
+    name: Lint, typecheck and test
+    uses: ./.github/workflows/verify.yml
+
   build:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
