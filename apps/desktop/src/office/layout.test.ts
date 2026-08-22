@@ -3,6 +3,7 @@ import {
   DESK_H,
   DESK_W,
   MAX_COLS,
+  WALL_TOP_H,
   computeDeskLayout,
   orderNodesForOffice,
   type OfficeNodeLike,
@@ -19,6 +20,8 @@ describe('computeDeskLayout', () => {
     expect(layout.cols).toBe(0);
     expect(layout.roomW).toBeGreaterThan(0);
     expect(layout.roomH).toBeGreaterThan(0);
+    expect(layout.walls.length).toBeGreaterThan(0);
+    expect(layout.props.length).toBeGreaterThan(0);
   });
 
   it('places every desk for a single node inside the room', () => {
@@ -26,7 +29,7 @@ describe('computeDeskLayout', () => {
     expect(layout.slots).toHaveLength(1);
     const s = layout.slots[0];
     expect(s.x).toBeGreaterThanOrEqual(0);
-    expect(s.y).toBeGreaterThanOrEqual(28); // below the wall band
+    expect(s.y).toBeGreaterThanOrEqual(WALL_TOP_H); // below the wall band
     expect(s.x + DESK_W).toBeLessThanOrEqual(layout.roomW);
     expect(s.y + DESK_H).toBeLessThanOrEqual(layout.roomH);
   });
@@ -43,6 +46,24 @@ describe('computeDeskLayout', () => {
     const layout = computeDeskLayout(50);
     expect(layout.cols).toBe(MAX_COLS);
     expect(layout.rows * layout.cols).toBeGreaterThanOrEqual(50);
+  });
+
+  it('generates multi-room partitioned departments when count >= 4', () => {
+    const layout = computeDeskLayout(6);
+    expect(layout.rooms.length).toBe(2);
+    expect(layout.doorways.length).toBeGreaterThanOrEqual(1);
+    expect(layout.walls.some((w) => w.isInterior)).toBe(true);
+    expect(layout.props.some((p) => p.kind === 'server')).toBe(true);
+  });
+
+  it('populates decorative environment props (plants, clocks, windows, bookshelves)', () => {
+    const layout = computeDeskLayout(4);
+    const kinds = new Set(layout.props.map((p) => p.kind));
+    expect(kinds.has('plant')).toBe(true);
+    expect(kinds.has('window')).toBe(true);
+    expect(kinds.has('clock')).toBe(true);
+    expect(kinds.has('bookshelf')).toBe(true);
+    expect(kinds.has('waterCooler')).toBe(true);
   });
 
   it('is deterministic for a given count', () => {
