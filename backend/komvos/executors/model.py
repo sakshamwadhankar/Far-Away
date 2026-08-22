@@ -8,11 +8,58 @@ import json
 import logging
 from typing import Any
 
-from komvos.endpoints.base import GenRequest, Message
+from komvos.endpoints.base import AccessDeniedError, GenRequest, Message
 from komvos.executors.base import BaseExecutor, ExecutorContext
+from komvos.governance.context import record_decision
+from komvos.governance.decisions import DecisionOutcome, GovernanceDomain
+from komvos.governance.egress import enforce_egress_for_endpoint
 from komvos.scheduler.engine import EventKind, SchedulerEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _provider_kind(endpoint: Any) -> str:
+    """
+    Name the endpoint kind a decision should record, e.g. 'openai' or 'mock'.
+
+    Reads attributes that already exist on every implementation: CloudEndpoint
+    exposes .provider; MockEndpoint and OllamaEndpoint carry the kind as the
+    prefix of their id.
+    """
+    provider = getattr(endpoint, "provider", None)
+    if isinstance(provider, str) and provider:
+        return provider
+    return str(getattr(endpoint, "id", "")).split(":", 1)[0]
+
+
+async def _record_provider_decision(
+    ctx: ExecutorContext,
+    endpoint: Any,
+    *,
+    allowed: bool,
+) -> None:
+    """Emit the providers-domain governance decision for one access check."""
+    kind = _provider_kind(endpoint)
+    if allowed:
+        reason = (
+            f"Node '{ctx.node.id}' may call {kind} endpoint "
+            f"'{ctx.node.endpoint_ref}': granted by its effective policy."
+        )
+    else:
+        reason = (
+            f"Node '{ctx.node.id}' was denied {kind} endpoint "
+            f"'{ctx.node.endpoint_ref}': its effective policy does not "
+            f"grant provider '{kind}'."
+        )
+    await record_decision(
+        domain=GovernanceDomain.PROVIDERS,
+        capability=f"provider:{kind}",
+        outcome=DecisionOutcome.ALLOWED if allowed else DecisionOutcome.DENIED,
+        reason=reason,
+        node_id=ctx.node.id,
+        effective_policy=ctx.policy,
+        governed_by=ctx.policy_sources,
+    )
 
 
 class ModelExecutor(BaseExecutor):
@@ -31,7 +78,23 @@ class ModelExecutor(BaseExecutor):
         # Access control gate. Runs before anything that could touch the
         # network — before the API key is read from the keychain and before a
         # socket is opened — so a denied call never leaves the machine.
-        endpoint.check_access(ctx.policy, node.id)
+        try:
+            endpoint.check_access(ctx.policy, node.id)
+        except AccessDeniedError:
+            await _record_provider_decision(ctx, endpoint, allowed=False)
+            raise
+        await _record_provider_decision(ctx, endpoint, allowed=True)
+
+        # Egress gate: where would this call actually land? A custom
+        # base_url (or a remote Ollama tunnel) is a real egress path; loopback
+        # destinations are exempt. Runs before generate(), so a denied host
+        # never sees a socket.
+        await enforce_egress_for_endpoint(
+            endpoint=endpoint,
+            policy=ctx.policy,
+            node_id=node.id,
+            governed_by=ctx.policy_sources,
+        )
 
         # Gather inputs into a single combined string
         input_text_parts: list[str] = []
@@ -93,6 +156,58 @@ class ModelExecutor(BaseExecutor):
             )
 
             estimated_cost = endpoint.estimate_cost(req)
+
+            # Per-scope cost ceiling: this node's committed spend is checked
+            # against the ceiling of its OWN effective policy, so two scopes
+            # can carry different limits. (The run-wide budget remains a
+            # separate outer limit enforced by the runner's registry wrapper;
+            # both apply and the tighter wins.) Operates on estimates.
+            ceiling = ctx.policy.max_cost_usd
+            projected = total_usd + estimated_cost.usd
+            if ceiling is not None and projected > ceiling:
+                await record_decision(
+                    domain=GovernanceDomain.SPEND,
+                    capability="max_cost_usd",
+                    outcome=DecisionOutcome.DENIED,
+                    reason=(
+                        f"Node '{node.id}' denied: ${projected:.6f} "
+                        f"(${total_usd:.6f} spent + "
+                        f"${estimated_cost.usd:.6f} estimated) would exceed "
+                        f"this scope's max_cost_usd ${ceiling:.6f}."
+                    ),
+                    node_id=node.id,
+                    effective_policy=ctx.policy,
+                    governed_by=ctx.policy_sources,
+                )
+                raise AccessDeniedError(
+                    node_id=node.id,
+                    capability="max_cost_usd",
+                    detail=(
+                        f"Node '{node.id}' would exceed this scope's cost "
+                        f"ceiling: ${total_usd:.6f} already spent plus "
+                        f"${estimated_cost.usd:.6f} estimated for this "
+                        f"request is more than max_cost_usd ${ceiling:.6f}. "
+                        "Raise 'max_cost_usd' on the governing access node "
+                        "for this branch."
+                    ),
+                )
+            await record_decision(
+                domain=GovernanceDomain.SPEND,
+                capability="max_cost_usd",
+                outcome=DecisionOutcome.ALLOWED,
+                reason=(
+                    f"Node '{node.id}' spend within ceiling: ${projected:.6f} "
+                    f"of max_cost_usd ${ceiling:.6f}."
+                )
+                if ceiling is not None
+                else (
+                    f"Node '{node.id}' has no cost ceiling on its effective "
+                    f"policy; ${projected:.6f} estimated."
+                ),
+                node_id=node.id,
+                effective_policy=ctx.policy,
+                governed_by=ctx.policy_sources,
+            )
 
             output_text = ""
             tokens_out = 0

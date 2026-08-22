@@ -40,6 +40,12 @@ class ExecutorContext:
     built without one (tests, non-model executors) behaves as it did before
     schema 2.1.
     """
+    policy_sources: tuple[str, ...] = ()
+    """
+    IDs of the access nodes whose intersection produced `policy`, from
+    CompiledDAG.policy_sources. Empty when the node is ungoverned. Carried so
+    governance decisions can name which access node constrained them.
+    """
 
     def check_cancel(self) -> None:
         """Raise PipelineCancelled if the cancel token is set."""

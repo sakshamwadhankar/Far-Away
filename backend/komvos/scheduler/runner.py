@@ -42,6 +42,8 @@ from komvos.endpoints.base import (
     ModelEndpoint,
     Token,
 )
+from komvos.governance.context import run_context
+from komvos.governance.sinks import InMemoryDecisionSink
 from komvos.scheduler.engine import (
     CancelToken,
     EndpointRegistry,
@@ -139,6 +141,10 @@ class PipelineRunner:
         self._total_tokens_out: int = 0
         self._stopped_by_user: bool = False
         self._start_ms: int = 0
+        # Created fresh per run() and bound into the governance context for
+        # the run's duration, so every enforcement point under this runner
+        # can record decisions without threading a sink through signatures.
+        self.decision_sink: InMemoryDecisionSink | None = None
 
     def stop(self) -> None:
         """Signal the pipeline to halt at the next checkpoint."""
@@ -169,7 +175,16 @@ class PipelineRunner:
 
         Puts WsEvent objects into queue. Always terminates by putting None
         (sentinel) so the WS handler knows the task finished.
+
+        Binds this run's governance decision sink for the duration of the
+        run; see komvos/governance/context.py.
         """
+        self.decision_sink = InMemoryDecisionSink()
+        with run_context(self.decision_sink, self.run_id):
+            await self._run(queue)
+
+    async def _run(self, queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
+        """Body of run(), executing under the bound governance context."""
         self._start_ms = int(time.time() * 1000)
 
         resume_state = None
@@ -431,6 +446,17 @@ class _BudgetCheckingEndpoint:
         self._budget_usd = budget_usd
         self._registry = registry
         self.id = wrapped.id
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        Delegate unknown attributes to the wrapped endpoint.
+
+        Governance reads `.provider` / `.base_url` / `._base_url` off an
+        endpoint to know where its traffic would land; without delegation the
+        budget wrapper would hide those and blind the egress gate for every
+        runner-driven run.
+        """
+        return getattr(self._wrapped, name)
 
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         runner = self._registry._runner

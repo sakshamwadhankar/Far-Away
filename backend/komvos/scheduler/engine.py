@@ -438,6 +438,9 @@ class Scheduler:
                 policy=self._dag.effective_policies.get(
                     node_id, AccessPolicy.permissive()
                 ),
+                # Which access nodes produced that policy, for governance
+                # decision attribution.
+                policy_sources=self._dag.policy_sources.get(node_id, ()),
             )
 
             # Execute

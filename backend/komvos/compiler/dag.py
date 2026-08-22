@@ -267,6 +267,41 @@ def _policy_of(access_node: Node) -> AccessPolicy:
     return config.access_policy
 
 
+def _check_served_governance(
+    pipeline: Pipeline,
+    sources: dict[str, tuple[str, ...]],
+) -> list[str]:
+    """
+    Served mode only: refuse any model node no access node governs.
+
+    Requiring *an* access node somewhere in the pipeline is not enough — a
+    decoy gate wired to an unrelated dead-end branch would satisfy it while
+    the real model nodes ran with a fully permissive policy over HTTP. The
+    per-node governing record (`sources`, computed by
+    compute_effective_policies) already knows which nodes are ungoverned;
+    this reads it rather than walking the graph a second time.
+
+    Local/canvas mode never calls this: a pipeline with no access node must
+    keep running there unchanged.
+    """
+    endpoints = pipeline.endpoints
+    errors: list[str] = []
+    for node in pipeline.nodes:
+        if node.type != "model" or sources.get(node.id):
+            continue
+        descriptor = endpoints.get(node.endpoint_ref or "")
+        kind = descriptor.kind if descriptor else "unknown"
+        errors.append(
+            f"[Access Required] Node '{node.id}' (model:{kind}) is governed "
+            f"by no access node, so it would run with a fully permissive "
+            f"policy. Every model node must sit downstream of an access "
+            f"node before this pipeline can be served. Add an access node "
+            f"and connect it through its 'scope' port to '{node.id}' (or "
+            f"any node upstream of it), stating what '{node.id}' may reach."
+        )
+    return errors
+
+
 def _attribute_denials(
     pipeline: Pipeline,
     sources: dict[str, tuple[str, ...]],
@@ -365,6 +400,12 @@ def compile(raw_json: dict[str, Any], mode: CompileMode = "local") -> CompiledDA
         )
 
     policies, sources = compute_effective_policies(pipeline, topo_order, reverse_adj)
+
+    if mode == "served":
+        ungoverned = _check_served_governance(pipeline, sources)
+        if ungoverned:
+            raise PipelineValidationErrors(ungoverned)
+
     if has_access_node:
         nodes_by_id = {n.id: n for n in pipeline.nodes}
         check_effective_policies(
