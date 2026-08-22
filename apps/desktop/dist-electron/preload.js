@@ -1,1 +1,0 @@
-let e=require("electron");var t=null;e.ipcRenderer.on(`backend-ready`,(e,n)=>{t=n}),e.contextBridge.exposeInMainWorld(`electron`,{onBackendReady:n=>{t&&n(t),e.ipcRenderer.on(`backend-ready`,(e,r)=>{t=r,n(r)})}});

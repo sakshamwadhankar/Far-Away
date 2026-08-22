@@ -2,6 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { toPipelineSchema, fromPipelineSchema, scrubSecrets } from './serializer';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from './nodes/PipelineNode';
+import type { Pipeline } from '@shared/types';
+
+/**
+ * A scrubbed pipeline viewed loosely, so the test can assert that fields which
+ * are *not* part of the Pipeline type (injected secrets) were removed.
+ */
+interface LoosePipeline {
+  nodes: { config: Record<string, unknown> }[];
+  endpoints: Record<string, Record<string, unknown>>;
+}
 
 describe('Serializer', () => {
   it('serializes a 3-node graph to a valid schema v2 JSON', () => {
@@ -57,7 +67,9 @@ describe('Serializer', () => {
 
     const pipeline = toPipelineSchema(rfNodes, rfEdges, 'Test Pipeline');
 
-    expect(pipeline.schema_version).toBe('2.0');
+    // Documents are written as 2.1 since the access node landed. The backend
+    // still reads a 2.0 file (see fromPipelineSchema round-trip below).
+    expect(pipeline.schema_version).toBe('2.1');
     expect(pipeline.name).toBe('Test Pipeline');
     expect(pipeline.nodes).toHaveLength(3);
     expect(pipeline.edges).toHaveLength(2);
@@ -143,9 +155,11 @@ describe('Serializer', () => {
           token: 'tkn2'
         }
       }
-    } as any; // Cast as any to bypass TS type check for secret injection
+      // Cast through unknown: the secret fields above are intentionally not
+      // part of the Pipeline type — that is exactly what scrubSecrets removes.
+    } as unknown as Pipeline;
 
-    const scrubbed = scrubSecrets(pipeline) as any;
+    const scrubbed = scrubSecrets(pipeline) as unknown as LoosePipeline;
 
     expect(scrubbed.endpoints['mock:default'].api_key).toBeUndefined();
     expect(scrubbed.endpoints['mock:default'].token).toBeUndefined();

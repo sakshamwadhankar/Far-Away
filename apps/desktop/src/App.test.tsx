@@ -3,18 +3,39 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import App from './App';
 import { useState } from 'react';
 import * as reactflow from 'reactflow';
+import type { Connection, Node as RFNode, Edge as RFEdge } from 'reactflow';
 import type { PipelineNodeData } from './canvas/nodes/PipelineNode';
 import { ToastProvider } from './contexts/ToastContext';
 
 // We need to spy on addEdge to see if it was called
 const addEdgeSpy = vi.spyOn(reactflow, 'addEdge');
 
+/** The subset of React Flow's props the mock canvas below actually drives. */
+interface MockFlowProps {
+  nodes?: RFNode<PipelineNodeData>[];
+  onConnect: (connection: Connection) => void;
+  onDrop: (event: MockDropEvent) => void;
+}
+
+/** The minimal drag event shape App's onDrop handler reads. */
+interface MockDropEvent {
+  preventDefault: () => void;
+  clientX: number;
+  clientY: number;
+  dataTransfer: { getData: () => string };
+}
+
+/** Test-only handle App exposes in dev mode for seeding canvas state. */
+interface E2EWindow extends Window {
+  setE2EState?: (nodes: RFNode<PipelineNodeData>[], edges: RFEdge[]) => void;
+}
+
 // Mock ReactFlow since it requires DOM measurements not available in jsdom
 vi.mock('reactflow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('reactflow')>();
   return {
     ...actual,
-    default: (props: any) => {
+    default: (props: MockFlowProps) => {
       // Expose a way to manually trigger React Flow events
       return (
         <div data-testid="react-flow-mock">
@@ -29,7 +50,7 @@ vi.mock('reactflow', async (importOriginal) => {
           <button 
             data-testid="trigger-drop" 
             onClick={() => {
-              const mockEvent = {
+              const mockEvent: MockDropEvent = {
                 preventDefault: () => {},
                 clientX: 100,
                 clientY: 100,
@@ -42,7 +63,7 @@ vi.mock('reactflow', async (importOriginal) => {
             }}
           />
           {/* Render nodes for visibility in tests */}
-          {props.nodes?.map((n: any) => (
+          {props.nodes?.map((n) => (
             <div key={n.id} data-testid={`node-${n.id}`} data-status={n.data?.status || 'idle'}>
               {n.data?.type}
             </div>
@@ -53,11 +74,11 @@ vi.mock('reactflow', async (importOriginal) => {
     Background: () => <div />,
     Controls: () => <div />,
     MiniMap: () => <div />,
-    useNodesState: (init: any) => {
+    useNodesState: (init: RFNode<PipelineNodeData>[]) => {
       const [state, setState] = useState(init);
       return [state, setState, vi.fn()];
     },
-    useEdgesState: (init: any) => {
+    useEdgesState: (init: RFEdge[]) => {
       const [state, setState] = useState(init);
       return [state, setState, vi.fn()];
     },
@@ -165,7 +186,8 @@ describe('Tier 2 UI: Status and Estimates', () => {
       </ToastProvider>
     );
     await new Promise(r => setTimeout(r, 50));
-    expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
+    // LeftSidebar renders "Connected · <port>", so match on the prefix.
+    expect(screen.getAllByText(/^Connected/).length).toBeGreaterThan(0);
   });
 
   it('cost estimate sums per-node correctly (incl. ×iterations for a loop)', async () => {
@@ -212,11 +234,11 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
     global.localStorage = {
       getItem: (key: string) => store[key] || null,
       setItem: (key: string, value: string) => { store[key] = value; },
-      clear: () => { for (let key in store) delete store[key]; },
+      clear: () => { for (const key in store) delete store[key]; },
       removeItem: (key: string) => { delete store[key]; },
       length: 0,
       key: () => null
-    } as any;
+    } satisfies Storage;
     
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/health/ollama')) {
@@ -252,7 +274,7 @@ describe('App - P3 Phase 4 Template Gallery & Onboarding', () => {
         });
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -309,7 +331,7 @@ describe('App - Mode Switch', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -345,7 +367,7 @@ describe('App - Chat mode enabled for multi-output pipelines', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -372,7 +394,7 @@ describe('App - Chat mode enabled for multi-output pipelines', () => {
     ];
 
     // Use the E2E state setter from dev mode
-    const setter = (window as any).setE2EState;
+    const setter = (window as E2EWindow).setE2EState;
     if (setter) {
       setter(multiOutputNodes, []);
     }
@@ -392,7 +414,7 @@ describe('App - Empty state hint', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -454,7 +476,7 @@ describe('App - WS node_done flips node visual state', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/custom-nodes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -473,7 +495,7 @@ describe('App - WS node_done flips node visual state', () => {
     render(<ToastProvider><App /></ToastProvider>);
     
     // Inject a node
-    const setter = (window as any).setE2EState;
+    const setter = (window as E2EWindow).setE2EState;
     if (setter) {
       setter(
         [{
@@ -504,11 +526,12 @@ describe('App - WS node_done flips node visual state', () => {
     const file = new File([JSON.stringify(invalidSchema)], 'pipeline.json', { type: 'application/json' });
     
     // Create a mock for FileReader to synchronously call onload
+    type ReaderLoadHandler = (event: { target: { result: string } }) => void;
     class MockFileReader {
-      onload: any = null;
+      onload: ReaderLoadHandler | null = null;
       readAsText() {
         if (this.onload) {
-          this.onload({ target: { result: JSON.stringify(invalidSchema) } } as any);
+          this.onload({ target: { result: JSON.stringify(invalidSchema) } });
         }
       }
     }

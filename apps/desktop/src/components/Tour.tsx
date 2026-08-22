@@ -56,7 +56,7 @@ export default function Tour() {
   
   // Find the target element to position the coachmark near it
   const el = document.querySelector(step.target);
-  let style: React.CSSProperties = {
+  const style: React.CSSProperties = {
     position: 'fixed',
     zIndex: 9999,
     backgroundColor: '#3b82f6',

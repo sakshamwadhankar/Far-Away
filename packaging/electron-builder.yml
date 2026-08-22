@@ -1,5 +1,5 @@
-appId: com.neuralflow.desktop
-productName: NeuralFlow
+appId: com.komvos.desktop
+productName: Komvos
 directories:
   output: release
   buildResources: build
@@ -10,8 +10,8 @@ files:
   - package.json
 
 extraResources:
-  - from: ../packaging/dist/neuralflow-backend
-    to: neuralflow-backend
+  - from: ../packaging/dist/komvos-backend
+    to: komvos-backend
     filter:
       - "**/*"
 
