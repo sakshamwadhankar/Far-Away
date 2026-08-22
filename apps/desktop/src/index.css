@@ -873,3 +873,384 @@ textarea.nf-input {
   font-size: 8px;
   opacity: 0.5;
 }
+
+/* ─── Sidebar Resizer Handle ──────────────────────────────────────────────── */
+.nf-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  transition: background-color var(--transition);
+}
+.nf-sidebar-resizer:hover,
+.nf-sidebar-resizer.resizing {
+  background-color: var(--highlight, #C8D94A);
+}
+.pixel-theme .nf-sidebar-resizer:hover,
+.pixel-theme .nf-sidebar-resizer.resizing {
+  background-color: #f1c471;
+}
+
+/* ─── 16-Bit Retro Pixel UI Theme ─────────────────────────────────────────── */
+.pixel-theme {
+  --bg:           #14121d;
+  --bg-alt:       #1a1824;
+  --surface:      #1f1c2b;
+  --surface-2:    #292438;
+  --border:       #3b3643;
+  --border-subtle:#4a5270;
+
+  --text:         #f2eaf1;
+  --text-2:       #c8966b;
+  --text-3:       #90775e;
+
+  --accent:       #f1c471;
+  --accent-hover: #eecf9b;
+  --accent-fg:    #1a1824;
+
+  --highlight:    #71ddee;
+  --highlight-dim:#4a5270;
+
+  --danger:       #d14b34;
+  --danger-hover: #e0394c;
+  --danger-fg:    #ffffff;
+
+  --success:      #56864c;
+  --error:        #d14b34;
+
+  --radius-pill:  0px;
+  --radius-card:  0px;
+  --radius-input: 0px;
+  --radius-tag:   0px;
+
+  --font-ui:    'Courier New', Courier, monospace;
+  --font-mono:  'Courier New', Courier, monospace;
+
+  --shadow-sm:  2px 2px 0px #000000;
+  --shadow-md:  3px 3px 0px #000000;
+  --shadow-lg:  4px 4px 0px #000000;
+
+  --transition: 0s;
+  image-rendering: pixelated;
+  letter-spacing: 0.3px;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.pixel-theme,
+.pixel-theme button,
+.pixel-theme input,
+.pixel-theme select,
+.pixel-theme textarea,
+.pixel-theme div,
+.pixel-theme span,
+.pixel-theme p,
+.pixel-theme h1,
+.pixel-theme h2,
+.pixel-theme h3,
+.pixel-theme strong {
+  font-family: 'Courier New', Courier, monospace !important;
+}
+
+/* ─── Left Sidebar & Panels ─────────────────────────────────────────────── */
+.pixel-theme .nf-sidebar {
+  background: #171522 !important;
+  border-right: 3px solid #3b3643 !important;
+  box-shadow: 2px 0 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-sidebar-header {
+  border-bottom: 2px solid #3b3643 !important;
+  background: #14121d !important;
+}
+
+.pixel-theme .nf-sidebar-tabs {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #12101b !important;
+  padding: 2px !important;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.8) !important;
+}
+
+.pixel-theme .nf-sidebar-tab {
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  color: #90775e !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+  text-transform: uppercase !important;
+}
+
+.pixel-theme .nf-sidebar-tab.active {
+  background: #252033 !important;
+  border: 1px solid #f1c471 !important;
+  color: #f1c471 !important;
+  box-shadow: inset 0 0 6px rgba(241, 196, 113, 0.3) !important;
+}
+
+.pixel-theme .nf-section-header {
+  color: #f1c471 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid #3b3643 !important;
+  padding-bottom: 4px !important;
+}
+
+/* ─── Inventory Item Cards (Drag Nodes) ──────────────────────────────────── */
+.pixel-theme .nf-node-drag-item {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #231f31 !important;
+  color: #f2eaf1 !important;
+  padding: 6px 10px !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), inset -1px -1px 0 rgba(0, 0, 0, 0.6), 2px 2px 0 #000000 !important;
+  transition: none !important;
+}
+
+.pixel-theme .nf-node-drag-item:hover {
+  background: #2d2740 !important;
+  border-color: #f1c471 !important;
+  color: #f1c471 !important;
+  transform: translate(-1px, -1px) !important;
+  box-shadow: inset 1px 1px 0 rgba(241, 196, 113, 0.3), 3px 3px 0 #000000 !important;
+}
+
+.pixel-theme .nf-template-card {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #231f31 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), inset -1px -1px 0 rgba(0, 0, 0, 0.6), 2px 2px 0 #000000 !important;
+  padding: 10px !important;
+}
+
+.pixel-theme .nf-create-custom-btn {
+  border-radius: 0 !important;
+  border: 2px dashed #f1c471 !important;
+  background: rgba(241, 196, 113, 0.08) !important;
+  color: #f1c471 !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  padding: 8px !important;
+}
+
+.pixel-theme .nf-create-custom-btn:hover {
+  background: rgba(241, 196, 113, 0.18) !important;
+  box-shadow: 2px 2px 0 #000000 !important;
+}
+
+/* ─── Buttons & Mode Switches ────────────────────────────────────────────── */
+.pixel-theme .nf-card,
+.pixel-theme .nf-surface {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  box-shadow: 3px 3px 0px #000000 !important;
+  background: var(--surface) !important;
+}
+
+.pixel-theme .nf-pill-btn,
+.pixel-theme button {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.15), inset -1px -1px 0 rgba(0, 0, 0, 0.6), 2px 2px 0 #000000 !important;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #231f31;
+  color: var(--text);
+  padding: 6px 12px;
+}
+
+.pixel-theme .nf-pill-btn:hover,
+.pixel-theme button:hover {
+  background: #2e2840 !important;
+  border-color: #f1c471 !important;
+}
+
+.pixel-theme .nf-pill-btn:active,
+.pixel-theme button:active {
+  transform: translate(1px, 1px) !important;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.7), 1px 1px 0 #000000 !important;
+}
+
+.pixel-theme .nf-pill-btn--highlight,
+.pixel-theme [data-testid="run-pipeline-button"]:not(:disabled) {
+  background: #f1c471 !important;
+  color: #1a1824 !important;
+  border-color: #3b3643 !important;
+  font-weight: 800 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 0 #9c6546, 3px 3px 0 #000000 !important;
+}
+
+.pixel-theme .nf-mode-switch {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #171522 !important;
+  padding: 2px !important;
+  box-shadow: 2px 2px 0 #000000 !important;
+}
+
+.pixel-theme .nf-mode-switch button {
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  font-size: 11px;
+  color: #aab6c4 !important;
+}
+
+.pixel-theme .nf-mode-switch button.active {
+  background: #2b263d !important;
+  border: 1px solid #f1c471 !important;
+  color: #f1c471 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), inset -1px -1px 0 rgba(0, 0, 0, 0.5), inset 0 0 6px rgba(241, 196, 113, 0.3) !important;
+}
+
+/* ─── Right Configuration Panel ──────────────────────────────────────────── */
+.pixel-theme .nf-right-panel {
+  background: #171522 !important;
+  border-left: 3px solid #3b3643 !important;
+  box-shadow: -2px 0 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-field-label {
+  color: #c8966b !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* ─── Canvas & Nodes ─────────────────────────────────────────────────────── */
+.pixel-theme .react-flow__node {
+  border-radius: 0 !important;
+}
+
+.pixel-theme .pipeline-node,
+.pixel-theme [data-testid^="pipeline-node-"] {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #1e1a2b !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), inset -1px -1px 0 rgba(0, 0, 0, 0.6), 3px 3px 0 #000000 !important;
+}
+
+.pixel-theme .react-flow__handle {
+  border-radius: 0 !important;
+  width: 8px !important;
+  height: 8px !important;
+  border: 1px solid #3b3643 !important;
+  box-shadow: 1px 1px 0 #000 !important;
+}
+
+.pixel-theme .react-flow__edge-path {
+  stroke-width: 2.5px !important;
+  stroke: #4a5270 !important;
+}
+
+.pixel-theme .react-flow__edge.animated .react-flow__edge-path {
+  stroke: #71ddee !important;
+}
+
+.pixel-theme .react-flow__background {
+  background-color: #14121d !important;
+}
+
+.pixel-theme .react-flow__background pattern circle,
+.pixel-theme .react-flow__background pattern line {
+  stroke: #221e30 !important;
+}
+
+/* ─── Input elements in Pixel Theme ──────────────────────────────────────── */
+.pixel-theme .nf-input,
+.pixel-theme .nf-select,
+.pixel-theme textarea {
+  border-radius: 0 !important;
+  border: 2px solid #3b3643 !important;
+  background: #12101b !important;
+  color: #f2eaf1 !important;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.8) !important;
+  padding: 6px 8px !important;
+}
+
+.pixel-theme .nf-input:focus,
+.pixel-theme .nf-select:focus,
+.pixel-theme textarea:focus {
+  border-color: #f1c471 !important;
+  outline: none !important;
+}
+
+/* ─── Range Sliders ──────────────────────────────────────────────────────── */
+.pixel-theme input[type='range'] {
+  -webkit-appearance: none;
+  background: #12101b !important;
+  border: 1px solid #3b3643 !important;
+  height: 6px !important;
+  border-radius: 0 !important;
+}
+
+.pixel-theme input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #f1c471;
+  border: 1px solid #3b3643;
+  border-radius: 0;
+  box-shadow: 1px 1px 0 #000;
+  cursor: pointer;
+}
+
+/* ─── Bottom Monitor Panel ───────────────────────────────────────────────── */
+.pixel-theme .nf-monitor-panel {
+  background: #100e18 !important;
+  border-top: 3px solid #3b3643 !important;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-table {
+  border: 1px solid #3b3643 !important;
+}
+
+.pixel-theme .nf-table th {
+  background: #171522 !important;
+  color: #f1c471 !important;
+  border-bottom: 2px solid #3b3643 !important;
+  text-transform: uppercase !important;
+  font-size: 10px !important;
+}
+
+.pixel-theme .nf-table td {
+  border-bottom: 1px solid #231f31 !important;
+}
+
+/* ─── Modals in Pixel Theme ──────────────────────────────────────────────── */
+.pixel-theme .nf-modal-overlay {
+  background: rgba(10, 8, 16, 0.88) !important;
+}
+
+.pixel-theme .nf-modal-box {
+  border-radius: 0 !important;
+  border: 3px solid #3b3643 !important;
+  outline: 2px solid #f1c471 !important;
+  background: #1a1824 !important;
+  box-shadow: 6px 6px 0 #000000 !important;
+}
+
+/* ─── Scrollbars in Pixel Theme ──────────────────────────────────────────── */
+.pixel-theme ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.pixel-theme ::-webkit-scrollbar-track {
+  background: #14121d;
+  border: 1px solid #3b3643;
+}
+.pixel-theme ::-webkit-scrollbar-thumb {
+  background: #3b3643;
+  border: 1px solid #f1c471;
+  border-radius: 0;
+}
+

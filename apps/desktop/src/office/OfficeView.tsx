@@ -415,7 +415,7 @@ function ThoughtBubble({
       style={{
         position: 'absolute',
         left: (slot.x + DESK_W / 2) * scale,
-        top: (slot.y - 4) * scale,
+        top: (slot.y - 8) * scale,
         transform: 'translate(-50%, -100%)',
         display: 'flex',
         flexDirection: 'column',

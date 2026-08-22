@@ -95,6 +95,10 @@ interface LeftSidebarProps {
   API_BASE: string;
 }
 
+const DEFAULT_SIDEBAR_WIDTH = 280;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 520;
+
 export default function LeftSidebar({ backendPort: _backendPort, backendToken, backendConnected, onLoadTemplate, onPublishClick, onCreateCustomNode, customNodes = [], onDeleteCustomNode, onDeployClick, onManageDeploymentClick, deploymentsRefreshKey, API_BASE }: LeftSidebarProps) {
   const [templates, setTemplates] = useState<Pipeline[]>([]);
   const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([]);
@@ -103,6 +107,59 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'nodes' | 'templates' | 'library' | 'deployments'>('nodes');
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('komvos_sidebar_width');
+      return saved ? Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, parseInt(saved, 10))) : DEFAULT_SIDEBAR_WIDTH;
+    } catch {
+      return DEFAULT_SIDEBAR_WIDTH;
+    }
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, e.clientX));
+      setSidebarWidth(newWidth);
+      try {
+        localStorage.setItem('komvos_sidebar_width', String(newWidth));
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
+  const handleDoubleClickResize = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    try {
+      localStorage.setItem('komvos_sidebar_width', String(DEFAULT_SIDEBAR_WIDTH));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     if (!backendConnected || !backendToken) return;
@@ -196,8 +253,16 @@ export default function LeftSidebar({ backendPort: _backendPort, backendToken, b
     <div
       data-tour="palette"
       className="nf-sidebar"
-      style={{ width: 240, padding: '16px 12px', gap: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}
+      style={{ width: sidebarWidth, padding: '16px 12px', gap: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', position: 'relative', flexShrink: 0 }}
     >
+      {/* Resizer Handle */}
+      <div
+        data-testid="sidebar-resize-handle"
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClickResize}
+        className={`nf-sidebar-resizer ${isResizing ? 'resizing' : ''}`}
+        title="Drag to resize sidebar, double click to reset"
+      />
       {/* Header */}
       <div style={{ padding: '4px 4px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <img src={KomvosLogo} alt="Komvos Logo" style={{ height: 32, objectFit: 'contain' }} />

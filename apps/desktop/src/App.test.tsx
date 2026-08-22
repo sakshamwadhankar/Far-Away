@@ -559,4 +559,55 @@ describe('App - WS node_done flips node visual state', () => {
     
     vi.unstubAllGlobals();
   });
+
+  it('toggles pixel UI theme and updates root class and localStorage', () => {
+    const { container, getByTestId } = render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    const toggleBtn = getByTestId('toggle-pixel-ui');
+    expect(toggleBtn).toBeDefined();
+
+    const rootEl = container.querySelector('.app-root');
+    expect(rootEl).toBeDefined();
+    const initialHasPixel = rootEl?.classList.contains('pixel-theme');
+
+    fireEvent.click(toggleBtn);
+    expect(rootEl?.classList.contains('pixel-theme')).toBe(!initialHasPixel);
+    expect(localStorage.getItem('komvos_pixel_theme')).toBe(String(!initialHasPixel));
+
+    fireEvent.click(toggleBtn);
+    expect(rootEl?.classList.contains('pixel-theme')).toBe(initialHasPixel);
+  });
+
+  it('renders a resizable sidebar with increased default width and double-click reset', () => {
+    localStorage.removeItem('komvos_sidebar_width');
+    const { container, getByTestId } = render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    const sidebar = container.querySelector('.nf-sidebar') as HTMLElement;
+    expect(sidebar).toBeDefined();
+    expect(sidebar.style.width).toBe('280px');
+
+    const handle = getByTestId('sidebar-resize-handle');
+    expect(handle).toBeDefined();
+
+    // Trigger drag resize
+    fireEvent.mouseDown(handle);
+    fireEvent.mouseMove(window, { clientX: 350 });
+    fireEvent.mouseUp(window);
+
+    expect(sidebar.style.width).toBe('350px');
+    expect(localStorage.getItem('komvos_sidebar_width')).toBe('350');
+
+    // Double-click resets to default
+    fireEvent.doubleClick(handle);
+    expect(sidebar.style.width).toBe('280px');
+    expect(localStorage.getItem('komvos_sidebar_width')).toBe('280');
+  });
 });

@@ -36,6 +36,13 @@ export interface EstimateResponse { nodes: Record<string, NodeEstimate>; total_u
 
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('edit');
+  const [isPixelTheme, setIsPixelTheme] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('komvos_pixel_theme') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [deployModalTarget, setDeployModalTarget] = useState<string | 'new' | null>(null);
@@ -155,8 +162,20 @@ export default function App() {
     }
   }, [setIsRunning, setRunId, setShowTrace, setStartTime, setNodeStats, setRunTotals]);
 
+  const togglePixelTheme = useCallback(() => {
+    setIsPixelTheme((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('komvos_pixel_theme', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
   return (
-    <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+    <div className={`app-root ${isPixelTheme ? 'pixel-theme' : ''}`} style={{ display: 'flex', width: '100vw', height: '100vh' }}>
       <LeftSidebar backendPort={backendPort} backendToken={backendToken} backendConnected={backendConnected} onLoadTemplate={loadPipelineFromJson} onPublishClick={() => setShowPublishModal(true)} onCreateCustomNode={() => setShowCustomNodeModal(true)} customNodes={customNodes} onDeleteCustomNode={handleDeleteCustomNode} onDeployClick={() => setDeployModalTarget('new')} onManageDeploymentClick={(id) => setDeployModalTarget(id)} deploymentsRefreshKey={deploymentsRefreshKey} API_BASE={API_BASE} />
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 10, display: 'flex', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
@@ -176,6 +195,15 @@ export default function App() {
                 <button onClick={() => setShowSettingsModal(true)} title="Manage API Keys" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: 'var(--text)' }}>⚙ API</button>
               </>
             )}
+            <button
+              data-testid="toggle-pixel-ui"
+              onClick={togglePixelTheme}
+              className={`nf-pill-btn ${isPixelTheme ? 'nf-pill-btn--highlight' : ''}`}
+              style={{ boxShadow: 'var(--shadow-sm)' }}
+              title="Toggle 16-bit Retro Pixel UI across the whole application"
+            >
+              👾 {isPixelTheme ? 'Pixel UI: ON' : 'Pixel UI'}
+            </button>
           </div>
           <div style={{ marginLeft: 'auto', pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
             {(appMode === 'edit' || appMode === 'office') && (
