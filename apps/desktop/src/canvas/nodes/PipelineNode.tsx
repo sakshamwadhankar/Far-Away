@@ -1,5 +1,6 @@
 import { Handle, Position } from 'reactflow';
 import type { Node as SchemaNode, Port, PortType } from '@shared/types';
+import { isEndpointBearingNode } from '../serializer';
 
 // ─── Per-type color palette (header accent) ────────────────────────────────
 const TYPE_ACCENTS: Record<string, { bg: string; fg: string; dot: string }> = {
@@ -75,7 +76,7 @@ export default function PipelineNode({ data, selected }: { data: PipelineNodeDat
   return (
     <div style={{ position: 'relative' }}>
       {/* Estimate tooltip above node */}
-      {type === 'model' && data.estimate && (
+      {isEndpointBearingNode(type) && data.estimate && (
         <div style={{
           position: 'absolute',
           top: -28,

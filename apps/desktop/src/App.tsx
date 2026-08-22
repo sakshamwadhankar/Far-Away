@@ -8,7 +8,7 @@ import MonitorPanel from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
 import ChatPanel, { ChatMessage } from './panels/ChatPanel';
-import { toPipelineSchema, scrubSecrets } from './canvas/serializer';
+import { toPipelineSchema, scrubSecrets, isEndpointBearingNode } from './canvas/serializer';
 import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
 import PublishModal from './components/PublishModal';
@@ -114,7 +114,7 @@ export default function App() {
 
   const runPipeline = async () => {
     if (nodes.length === 0) return;
-    const missingEndpoint = nodes.filter(n => n.data.type === 'model').filter(n => !n.data.endpoint_ref);
+    const missingEndpoint = nodes.filter(n => isEndpointBearingNode(n.data.type)).filter(n => !n.data.endpoint_ref);
     if (missingEndpoint.length > 0) return showToast(`Please select a model for: ${missingEndpoint.map(n => n.data.role || n.id).join(', ')}`, 'error');
 
     setIsRunning(true); setRunId(null); setShowTrace(false); setStartTime(Date.now());

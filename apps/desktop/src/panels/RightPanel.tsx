@@ -4,6 +4,7 @@ import { Node as RFNode } from 'reactflow';
 import { ModelInfo } from '../App';
 import type { StopOp, OnMax, NodeConfig, AccessPolicy } from '@shared/types';
 import { emptyPolicy } from '../canvas/accessPolicy';
+import { isEndpointBearingNode } from '../canvas/serializer';
 
 interface RightPanelProps {
   selectedNode: RFNode<PipelineNodeData> | null;
@@ -176,10 +177,10 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
           </>
         )}
 
-        {/* ─── MODEL NODE ──────────────────────────────────────────────── */}
-        {data.type === 'model' && (
+        {/* ─── MODEL / COMPUTER NODE ───────────────────────────────────── */}
+        {isEndpointBearingNode(data.type) && (
           <>
-            <div className="nf-section-header">Model Config</div>
+            <div className="nf-section-header">{data.type === 'computer' ? 'Computer Agent Config' : 'Model Config'}</div>
             <div className="nf-field-group">
               <label className="nf-label">Endpoint</label>
               <select
@@ -207,47 +208,51 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                 </optgroup>
               </select>
             </div>
-            <div className="nf-field-group">
-              <label className="nf-label">System Prompt</label>
-              <textarea
-                rows={4}
-                value={config.system_prompt || ''}
-                onChange={(e) => handleConfigChange('system_prompt', e.target.value)}
-                className="nf-input"
-              />
-            </div>
-            <div className="nf-field-group">
-              <label className="nf-label">Temperature — {config.temperature ?? 0.7}</label>
-              <input
-                type="range" min="0" max="2" step="0.1"
-                value={config.temperature ?? 0.7}
-                onChange={(e) => handleConfigChange('temperature', parseFloat(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--accent)' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                <span>0 precise</span><span>2 creative</span>
-              </div>
-            </div>
-            <div className="nf-field-group">
-              <label className="nf-label">Max Tokens</label>
-              <input
-                type="number" min="1"
-                value={config.max_tokens ?? 2048}
-                onChange={(e) => handleConfigChange('max_tokens', parseInt(e.target.value, 10))}
-                className="nf-input nf-input--mono"
-              />
-            </div>
-            <div className="nf-field-group">
-              <label className="nf-label">Response Format</label>
-              <select
-                value={config.response_format || 'text'}
-                onChange={(e) => handleConfigChange('response_format', e.target.value)}
-                className="nf-input"
-              >
-                <option value="text">Text</option>
-                <option value="json">JSON</option>
-              </select>
-            </div>
+            {data.type === 'model' && (
+              <>
+                <div className="nf-field-group">
+                  <label className="nf-label">System Prompt</label>
+                  <textarea
+                    rows={4}
+                    value={config.system_prompt || ''}
+                    onChange={(e) => handleConfigChange('system_prompt', e.target.value)}
+                    className="nf-input"
+                  />
+                </div>
+                <div className="nf-field-group">
+                  <label className="nf-label">Temperature — {config.temperature ?? 0.7}</label>
+                  <input
+                    type="range" min="0" max="2" step="0.1"
+                    value={config.temperature ?? 0.7}
+                    onChange={(e) => handleConfigChange('temperature', parseFloat(e.target.value))}
+                    style={{ width: '100%', accentColor: 'var(--accent)' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                    <span>0 precise</span><span>2 creative</span>
+                  </div>
+                </div>
+                <div className="nf-field-group">
+                  <label className="nf-label">Max Tokens</label>
+                  <input
+                    type="number" min="1"
+                    value={config.max_tokens ?? 2048}
+                    onChange={(e) => handleConfigChange('max_tokens', parseInt(e.target.value, 10))}
+                    className="nf-input nf-input--mono"
+                  />
+                </div>
+                <div className="nf-field-group">
+                  <label className="nf-label">Response Format</label>
+                  <select
+                    value={config.response_format || 'text'}
+                    onChange={(e) => handleConfigChange('response_format', e.target.value)}
+                    className="nf-input"
+                  >
+                    <option value="text">Text</option>
+                    <option value="json">JSON</option>
+                  </select>
+                </div>
+              </>
+            )}
           </>
         )}
 

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
-import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
-import { toPipelineSchema } from '../canvas/serializer';
+import type { PipelineNodeData } from '../canvas/nodes/PipelineNode';
+import { toPipelineSchema, isEndpointBearingNode } from '../canvas/serializer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,8 +92,8 @@ export default function ChatPanel({
     const outputNodes = nodes.filter(n => n.data.type === 'output');
     if (!inputNodes.length || !outputNodes.length || isRunning || !compatible) return;
 
-    // Validate: all model nodes must have an endpoint selected
-    const modelNodes = nodes.filter(n => n.data.type === 'model');
+    // Validate: all endpoint-bearing nodes must have an endpoint selected
+    const modelNodes = nodes.filter(n => isEndpointBearingNode(n.data.type));
     const missingEndpoint = modelNodes.filter(n => !n.data.endpoint_ref);
     if (missingEndpoint.length > 0) {
       const names = missingEndpoint.map(n => n.data.role || n.id).join(', ');

@@ -4,9 +4,34 @@ import type {
   Edge as SchemaEdge,
   EndpointDescriptor,
   EndpointKind,
+  NodeType,
 } from '@shared/types';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from './nodes/PipelineNode';
+
+/**
+ * Node types that require and carry an `endpoint_ref` into the pipeline `endpoints` map.
+ */
+export const ENDPOINT_BEARING_NODE_TYPES: readonly NodeType[] = ['model', 'computer'] as const;
+
+/**
+ * Predicate checking whether a node or node type carries an `endpoint_ref`.
+ */
+export function isEndpointBearingNode(
+  nodeOrType: { type: NodeType | string } | { data?: { type?: NodeType | string } } | NodeType | string | undefined | null
+): boolean {
+  if (!nodeOrType) return false;
+  if (typeof nodeOrType === 'string') {
+    return (ENDPOINT_BEARING_NODE_TYPES as readonly string[]).includes(nodeOrType);
+  }
+  if ('data' in nodeOrType && nodeOrType.data && typeof nodeOrType.data.type === 'string') {
+    return (ENDPOINT_BEARING_NODE_TYPES as readonly string[]).includes(nodeOrType.data.type);
+  }
+  if ('type' in nodeOrType && typeof nodeOrType.type === 'string') {
+    return (ENDPOINT_BEARING_NODE_TYPES as readonly string[]).includes(nodeOrType.type);
+  }
+  return false;
+}
 
 const ENDPOINT_KINDS: readonly EndpointKind[] = [
   'openai',
@@ -52,7 +77,7 @@ export function toPipelineSchema(
     return {
       id: n.id,
       type: n.data.type,
-      endpoint_ref: n.data.type === 'model' ? n.data.endpoint_ref : undefined,
+      endpoint_ref: isEndpointBearingNode(n.data.type) ? n.data.endpoint_ref : undefined,
       role: n.data.role,
       config: n.data.config,
       inputs: n.data.inputs,
@@ -74,7 +99,7 @@ export function toPipelineSchema(
   // Extract unique endpoint refs
   const endpoints: Record<string, EndpointDescriptor> = {};
   schemaNodes.forEach((n) => {
-    if (n.type === 'model' && n.endpoint_ref) {
+    if (isEndpointBearingNode(n.type) && n.endpoint_ref) {
       if (!endpoints[n.endpoint_ref]) {
         const parts = n.endpoint_ref.split(':');
         const provider = parts[0];
