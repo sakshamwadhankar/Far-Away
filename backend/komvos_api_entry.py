@@ -2,7 +2,7 @@ import argparse
 
 import uvicorn
 
-from neuralflow.api.main import app
+from komvos.api.main import app
 
 
 def main():

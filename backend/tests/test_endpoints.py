@@ -1,8 +1,8 @@
-import keyring
 import pytest
 
 from komvos.endpoints import CloudEndpoint, GenRequest, MockEndpoint
 from komvos.endpoints.base import Message
+from komvos.secrets import get_secret
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_mock_endpoint():
 @pytest.mark.asyncio
 async def test_cloud_endpoint_live():
     # Only run if a key is present
-    api_key = (keyring.get_password("komvos", "openai") or keyring.get_password("neuralflow", "openai"))
+    api_key = get_secret("openai")
     if not api_key:
         pytest.skip("No OpenAI key found in keychain, skipping live smoke test")
 

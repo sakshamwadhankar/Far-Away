@@ -3,9 +3,8 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any
 
-import keyring
-
 from komvos.compiler.models import AccessPolicy
+from komvos.secrets import get_secret
 
 from .base import (
     AccessDeniedError,
@@ -61,7 +60,7 @@ class CloudEndpoint(ModelEndpoint):
         # For openai_compatible, we might use the openai key or a specific
         # one; default to the provider name.
         key_name = "openai" if self.provider == "openai_compatible" else self.provider
-        api_key = (keyring.get_password("komvos", key_name) or keyring.get_password("neuralflow", key_name))
+        api_key = get_secret(key_name)
         if not api_key:
             raise ValueError(
                 f"Missing API key for provider '{key_name}' in OS keychain. "

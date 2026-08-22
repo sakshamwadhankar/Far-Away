@@ -66,7 +66,7 @@ export function usePipelineActions({
     reader.onload = (e) => {
       try {
         const schema = JSON.parse(e.target?.result as string) as Pipeline;
-        if (schema.schema_version !== "2.0") throw new Error("Invalid or missing schema_version. Expected '2.0'.");
+        if (schema.schema_version !== "2.0" && schema.schema_version !== "2.1") throw new Error("Invalid or missing schema_version. Expected '2.0' or '2.1'.");
         if (!schema.id || !schema.nodes || !schema.edges || !schema.endpoints) throw new Error("Invalid pipeline structure: missing required fields.");
         loadPipelineFromJson(schema);
         showToast('Pipeline imported successfully', 'success');

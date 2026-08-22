@@ -82,6 +82,7 @@ from komvos.compiler.validation import (
 from komvos.scheduler.engine import EndpointRegistry
 from komvos.scheduler.events import WS_TERMINAL_EVENTS
 from komvos.scheduler.runner import PipelineRunner
+from komvos.secrets import get_secret
 
 logger = logging.getLogger(__name__)
 
@@ -414,7 +415,7 @@ async def get_api_keys_status() -> ApiKeysResponse:
     ]
     status = {}
     for p in providers:
-        status[p] = bool((keyring.get_password("komvos", p) or keyring.get_password("neuralflow", p)))
+        status[p] = bool(get_secret(p))
     return ApiKeysResponse(keys=status)
 
 
@@ -447,7 +448,7 @@ async def update_api_keys(req: ApiKeysUpdateRequest) -> ApiKeysResponse:
     ]
     status = {}
     for p in providers:
-        status[p] = bool((keyring.get_password("komvos", p) or keyring.get_password("neuralflow", p)))
+        status[p] = bool(get_secret(p))
     return ApiKeysResponse(keys=status)
 
 
@@ -482,7 +483,7 @@ async def list_models() -> ModelsResponse:
 
     async with httpx.AsyncClient(timeout=3.0) as client:
         # 1. Ollama — always check localhost AND custom URL (e.g. ngrok)
-        ollama_base = (keyring.get_password("komvos", "ollama_base_url") or keyring.get_password("neuralflow", "ollama_base_url"))
+        ollama_base = get_secret("ollama_base_url")
         if not ollama_base or not ollama_base.startswith("http"):
             ollama_base = None
 
@@ -522,7 +523,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 2. OpenAI
-        openai_key = (keyring.get_password("komvos", "openai") or keyring.get_password("neuralflow", "openai"))
+        openai_key = get_secret("openai")
         if openai_key:
             try:
                 resp = await client.get(
@@ -549,7 +550,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 3. Anthropic
-        anthropic_key = (keyring.get_password("komvos", "anthropic") or keyring.get_password("neuralflow", "anthropic"))
+        anthropic_key = get_secret("anthropic")
         if anthropic_key:
             try:
                 resp = await client.get(
@@ -579,7 +580,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 4. Google
-        google_key = (keyring.get_password("komvos", "google") or keyring.get_password("neuralflow", "google"))
+        google_key = get_secret("google")
         if google_key:
             try:
                 resp = await client.get(
@@ -605,7 +606,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 5. Groq
-        groq_key = (keyring.get_password("komvos", "groq") or keyring.get_password("neuralflow", "groq"))
+        groq_key = get_secret("groq")
         if groq_key:
             try:
                 resp = await client.get(
@@ -631,7 +632,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 6. OpenRouter
-        openrouter_key = (keyring.get_password("komvos", "openrouter") or keyring.get_password("neuralflow", "openrouter"))
+        openrouter_key = get_secret("openrouter")
         if openrouter_key:
             try:
                 resp = await client.get(
@@ -657,7 +658,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 7. Nvidia
-        nvidia_key = (keyring.get_password("komvos", "nvidia") or keyring.get_password("neuralflow", "nvidia"))
+        nvidia_key = get_secret("nvidia")
         if nvidia_key:
             try:
                 resp = await client.get(
@@ -683,7 +684,7 @@ async def list_models() -> ModelsResponse:
                 pass
 
         # 8. Zhipu (GLM)
-        zhipu_key = (keyring.get_password("komvos", "zhipu") or keyring.get_password("neuralflow", "zhipu"))
+        zhipu_key = get_secret("zhipu")
         if zhipu_key:
             for name in ["glm-4", "glm-4v", "glm-4-plus", "glm-3-turbo"]:
                 infos.append(
