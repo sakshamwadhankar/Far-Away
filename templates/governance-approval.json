@@ -4,9 +4,9 @@
   "name": "Governance Approval Demo",
   "version": "1.0.0",
   "endpoints": {
-    "openai:gpt-4o": {
-      "kind": "openai",
-      "model": "gpt-4o"
+    "google:gemini-3.6-flash": {
+      "kind": "google",
+      "model": "gemini-3.6-flash"
     }
   },
   "nodes": [
@@ -26,7 +26,7 @@
       "type": "access",
       "config": {
         "access_policy": {
-          "providers": ["openai", "google"],
+          "providers": ["google", "openai"],
           "allow_local_models": true,
           "allow_network": false,
           "allowed_domains": [],
@@ -40,7 +40,7 @@
     {
       "id": "cloud_llm",
       "type": "model",
-      "endpoint_ref": "openai:gpt-4o",
+      "endpoint_ref": "google:gemini-3.6-flash",
       "config": {
         "system_prompt": "You are a secure assistant analyzing sensitive queries."
       },

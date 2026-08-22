@@ -356,6 +356,33 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                 Allow general network access
               </label>
             </div>
+            <div className="nf-field-group">
+              <label className="nf-label">Allowed Applications (comma-separated, blank for all)</label>
+              <input
+                data-testid="access-allowed-apps"
+                type="text"
+                placeholder="e.g. Komvos, Google Chrome, Settings, Calculator"
+                value={(accessPolicy.allowed_applications || []).join(', ')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const apps = val.trim() ? val.split(',').map((s) => s.trim()).filter(Boolean) : [];
+                  handleAccessPolicyChange('allowed_applications', apps);
+                }}
+                className="nf-input"
+              />
+            </div>
+            <div className="nf-field-group">
+              <label className="nf-label">
+                <input
+                  data-testid="access-allow-destructive"
+                  type="checkbox"
+                  checked={Boolean(accessPolicy.allow_destructive)}
+                  onChange={(e) => handleAccessPolicyChange('allow_destructive', e.target.checked)}
+                  style={{ marginRight: 6 }}
+                />
+                Allow destructive desktop actions
+              </label>
+            </div>
           </>
         )}
 

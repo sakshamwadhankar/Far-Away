@@ -646,7 +646,10 @@ async def list_models() -> ModelsResponse:
                     data = resp.json()
                     for m in data.get("models", []):
                         name = m.get("name", "").replace("models/", "")
-                        if "gemini" in name:
+                        methods = m.get("supportedGenerationMethods")
+                        if "gemini" in name and (
+                            methods is None or "generateContent" in methods
+                        ):
                             infos.append(
                                 ModelInfo(
                                     endpoint_id=f"google:{name}",
