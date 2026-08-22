@@ -236,7 +236,7 @@ export default function AccessNode({
           })
         )}
 
-        {(policy.max_cost_usd !== null || policy.max_tokens !== null) && (
+        {(typeof policy.max_cost_usd === 'number' || typeof policy.max_tokens === 'number') && (
           <div
             data-testid="access-ceilings"
             style={{
@@ -248,8 +248,8 @@ export default function AccessNode({
               gap: 8,
             }}
           >
-            {policy.max_cost_usd !== null && <span>≤ ${policy.max_cost_usd.toFixed(2)}</span>}
-            {policy.max_tokens !== null && <span>≤ {policy.max_tokens} tok</span>}
+            {typeof policy.max_cost_usd === 'number' && <span>≤ ${policy.max_cost_usd.toFixed(2)}</span>}
+            {typeof policy.max_tokens === 'number' && <span>≤ {policy.max_tokens} tok</span>}
           </div>
         )}
       </div>
