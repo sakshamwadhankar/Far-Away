@@ -95,6 +95,10 @@ from komvos.state.sqlite import StateManager
 #: Not user-configurable in this phase — see README.md "Known limitations".
 SERVED_WALL_CLOCK_BUDGET_SECONDS = 300.0
 
+#: Process-wide upper bound on concurrently executing served runs.
+#: Rejects requests clearly with HTTP 429 when capacity is exhausted.
+MAX_CONCURRENT_SERVED_RUNS = 16
+
 #: How long an Ask-posture approval waits for a human before failing closed.
 #: Canonical value lives in komvos.governance.approvals (the enforcement
 #: side reads it there); it is re-bound under this name HERE so both ceilings
@@ -104,6 +108,32 @@ APPROVAL_TIMEOUT_SECONDS = _canonical_approval_timeout_seconds
 # One rate limiter for the process's lifetime — see serve/ratelimit.py for why
 # this is intentionally in-memory and not persisted.
 _rate_limiter = RateLimiter()
+
+_active_served_runs = 0
+_active_served_lock = asyncio.Lock()
+
+
+async def _acquire_served_slot() -> None:
+    """Acquire a concurrency slot for a served run, or reject with HTTP 429."""
+    global _active_served_runs
+    async with _active_served_lock:
+        if _active_served_runs >= MAX_CONCURRENT_SERVED_RUNS:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Process-wide concurrency limit of {MAX_CONCURRENT_SERVED_RUNS} "
+                    "concurrent served runs reached. Please retry shortly."
+                ),
+            )
+        _active_served_runs += 1
+
+
+async def _release_served_slot() -> None:
+    """Release an acquired concurrency slot."""
+    global _active_served_runs
+    async with _active_served_lock:
+        if _active_served_runs > 0:
+            _active_served_runs -= 1
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +163,8 @@ def _to_summary(deployment: Deployment) -> DeploymentSummary:
         request_count=deployment.request_count,
         error_count=deployment.error_count,
         last_request_at=deployment.last_request_at,
+        profile_name=deployment.profile_name,
+        spend_cap_usd_per_request=deployment.spend_cap_usd_per_request,
     )
 
 
@@ -402,6 +434,7 @@ def create_serve_router(
     router = APIRouter()
     verify_deployment_key = _make_verify_deployment_key()
 
+
     def _deployment_profile(deployment: Deployment) -> GovernanceProfile | None:
         """
         The profile SNAPSHOT this deployment runs under, every time.
@@ -447,6 +480,7 @@ def create_serve_router(
             state_manager=get_state_manager_fn(),
             deployment_id=deployment.id,
             initial_inputs=mapped_inputs,
+            budget_usd=deployment.spend_cap_usd_per_request,
             budget_wall_clock_seconds=SERVED_WALL_CLOCK_BUDGET_SECONDS,
             # Served: Ask degrades to Enforce (no human to prompt), and the
             # deployment's own profile snapshot governs — not the active one.
@@ -498,6 +532,7 @@ def create_serve_router(
             chat_output_node=output_id,
             created_at=int(time.time() * 1000),
             profile_name=snapshot_name,
+            spend_cap_usd_per_request=body.spend_cap_usd_per_request,
         )
         store.create(deployment)
 
@@ -594,108 +629,25 @@ def create_serve_router(
             }
         }
 
+        await _acquire_served_slot()
         if body.stream:
             return StreamingResponse(
                 _stream_chat(dag, deployment, mapped_inputs, store),
                 media_type="text/event-stream",
             )
 
-        run_id, queue = await _start_run(dag, deployment, mapped_inputs)
         try:
-            outcome = await _drain_to_completion(queue)
-        finally:
-            run_registry.remove(run_id)
+            run_id, queue = await _start_run(dag, deployment, mapped_inputs)
+            try:
+                outcome = await _drain_to_completion(queue)
+            finally:
+                run_registry.remove(run_id)
 
-        if outcome.error:
-            store.record_request(deployment.id, success=False)
-            raise HTTPException(status_code=502, detail=outcome.error)
+            if outcome.error:
+                store.record_request(deployment.id, success=False)
+                raise HTTPException(status_code=502, detail=outcome.error)
 
-        store.record_request(deployment.id, success=True)
-        content = _as_text(
-            _extract_node_value(
-                dag,
-                deployment.chat_output_node,
-                outcome.node_outputs.get(deployment.chat_output_node, {}),
-            )
-        )
-        return JSONResponse(
-            _chat_response(
-                deployment.id,
-                content,
-                tokens_in=outcome.tokens_in,
-                tokens_out=outcome.tokens_out,
-            )
-        )
-
-    async def _stream_chat(
-        dag: CompiledDAG,
-        deployment: Deployment,
-        mapped_inputs: dict[str, dict[str, Any]],
-        store: DeploymentStore,
-    ) -> AsyncIterator[str]:
-        run_id, queue = await _start_run(dag, deployment, mapped_inputs)
-        chunk_id = f"chatcmpl-{run_id}"
-        created = int(time.time())
-        stream_source = _direct_model_source(dag, deployment.chat_output_node)
-
-        outcome = _RunOutcome()
-        try:
-            yield _sse_frame(
-                _chat_chunk(
-                    chunk_id, created, deployment.id, delta={"role": "assistant"}
-                )
-            )
-            while True:
-                event = await queue.get()
-                if event is None:
-                    break
-                if (
-                    isinstance(event, WsTokenEvent)
-                    and stream_source
-                    and event.node_id == stream_source
-                ):
-                    yield _sse_frame(
-                        _chat_chunk(
-                            chunk_id,
-                            created,
-                            deployment.id,
-                            delta={"content": event.text},
-                        )
-                    )
-                elif isinstance(event, WsNodeDoneEvent):
-                    outcome.node_outputs[event.node_id] = event.outputs
-                elif isinstance(event, WsRunCompletedEvent):
-                    outcome.tokens_in = event.total_tokens_in
-                    outcome.tokens_out = event.total_tokens_out
-                elif isinstance(event, WsAccessDeniedEvent):
-                    outcome.error = f"Node '{event.node_id}' denied: {event.reason}"
-                elif isinstance(event, WsNodeErrorEvent):
-                    outcome.error = f"Node '{event.node_id}' failed: {event.error}"
-                elif isinstance(event, WsRunErrorEvent):
-                    outcome.error = event.error
-                elif isinstance(event, WsRunHaltedEvent):
-                    outcome.error = outcome.error or f"Run halted: {event.reason}"
-                elif isinstance(event, WsBudgetExceededEvent):
-                    outcome.error = outcome.error or "Budget exceeded."
-                elif isinstance(event, WsRunStoppedEvent):
-                    outcome.error = outcome.error or "Run stopped."
-                if isinstance(event, WS_TERMINAL_EVENTS):
-                    break
-        finally:
-            run_registry.remove(run_id)
-
-        if outcome.error:
-            store.record_request(deployment.id, success=False)
-            yield _sse_frame(
-                {"error": {"message": outcome.error, "type": "komvos_error"}}
-            )
-            yield "data: [DONE]\n\n"
-            return
-
-        if not stream_source:
-            # No direct model -> output edge: token-level deltas were never
-            # possible for this topology, so send the whole result as one
-            # buffered delta instead of nothing. See _direct_model_source.
+            store.record_request(deployment.id, success=True)
             content = _as_text(
                 _extract_node_value(
                     dag,
@@ -703,19 +655,109 @@ def create_serve_router(
                     outcome.node_outputs.get(deployment.chat_output_node, {}),
                 )
             )
-            yield _sse_frame(
-                _chat_chunk(
-                    chunk_id, created, deployment.id, delta={"content": content}
+            return JSONResponse(
+                _chat_response(
+                    deployment.id,
+                    content,
+                    tokens_in=outcome.tokens_in,
+                    tokens_out=outcome.tokens_out,
                 )
             )
+        finally:
+            await _release_served_slot()
 
-        store.record_request(deployment.id, success=True)
-        yield _sse_frame(
-            _chat_chunk(
-                chunk_id, created, deployment.id, delta={}, finish_reason="stop"
+    async def _stream_chat(
+        dag: CompiledDAG,
+        deployment: Deployment,
+        mapped_inputs: dict[str, dict[str, Any]],
+        store: DeploymentStore,
+    ) -> AsyncIterator[str]:
+        try:
+            run_id, queue = await _start_run(dag, deployment, mapped_inputs)
+            chunk_id = f"chatcmpl-{run_id}"
+            created = int(time.time())
+            stream_source = _direct_model_source(dag, deployment.chat_output_node)
+
+            outcome = _RunOutcome()
+            try:
+                yield _sse_frame(
+                    _chat_chunk(
+                        chunk_id, created, deployment.id, delta={"role": "assistant"}
+                    )
+                )
+                while True:
+                    event = await queue.get()
+                    if event is None:
+                        break
+                    if (
+                        isinstance(event, WsTokenEvent)
+                        and stream_source
+                        and event.node_id == stream_source
+                    ):
+                        yield _sse_frame(
+                            _chat_chunk(
+                                chunk_id,
+                                created,
+                                deployment.id,
+                                delta={"content": event.text},
+                            )
+                        )
+                    elif isinstance(event, WsNodeDoneEvent):
+                        outcome.node_outputs[event.node_id] = event.outputs
+                    elif isinstance(event, WsRunCompletedEvent):
+                        outcome.tokens_in = event.total_tokens_in
+                        outcome.tokens_out = event.total_tokens_out
+                    elif isinstance(event, WsAccessDeniedEvent):
+                        outcome.error = f"Node '{event.node_id}' denied: {event.reason}"
+                    elif isinstance(event, WsNodeErrorEvent):
+                        outcome.error = f"Node '{event.node_id}' failed: {event.error}"
+                    elif isinstance(event, WsRunErrorEvent):
+                        outcome.error = event.error
+                    elif isinstance(event, WsRunHaltedEvent):
+                        outcome.error = outcome.error or f"Run halted: {event.reason}"
+                    elif isinstance(event, WsBudgetExceededEvent):
+                        outcome.error = outcome.error or "Budget exceeded."
+                    elif isinstance(event, WsRunStoppedEvent):
+                        outcome.error = outcome.error or "Run stopped."
+                    if isinstance(event, WS_TERMINAL_EVENTS):
+                        break
+            finally:
+                run_registry.remove(run_id)
+
+            if outcome.error:
+                store.record_request(deployment.id, success=False)
+                yield _sse_frame(
+                    {"error": {"message": outcome.error, "type": "komvos_error"}}
+                )
+                yield "data: [DONE]\n\n"
+                return
+
+            if not stream_source:
+                # No direct model -> output edge: token-level deltas were never
+                # possible for this topology, so send the whole result as one
+                # buffered delta instead of nothing. See _direct_model_source.
+                content = _as_text(
+                    _extract_node_value(
+                        dag,
+                        deployment.chat_output_node,
+                        outcome.node_outputs.get(deployment.chat_output_node, {}),
+                    )
+                )
+                yield _sse_frame(
+                    _chat_chunk(
+                        chunk_id, created, deployment.id, delta={"content": content}
+                    )
+                )
+
+            store.record_request(deployment.id, success=True)
+            yield _sse_frame(
+                _chat_chunk(
+                    chunk_id, created, deployment.id, delta={}, finish_reason="stop"
+                )
             )
-        )
-        yield "data: [DONE]\n\n"
+            yield "data: [DONE]\n\n"
+        finally:
+            await _release_served_slot()
 
     @router.post(
         "/v1/deployments/{deployment_id}/run", response_model=NativeRunResponse
@@ -746,23 +788,28 @@ def create_serve_router(
             node = nodes_by_id[node_id]
             mapped_inputs[node_id] = {port.name: body[field] for port in node.outputs}
 
-        run_id, queue = await _start_run(dag, deployment, mapped_inputs)
+        await _acquire_served_slot()
         try:
-            outcome = await _drain_to_completion(queue)
+            run_id, queue = await _start_run(dag, deployment, mapped_inputs)
+            try:
+                outcome = await _drain_to_completion(queue)
+            finally:
+                run_registry.remove(run_id)
+
+            if outcome.error:
+                store.record_request(deployment.id, success=False)
+                raise HTTPException(status_code=502, detail=outcome.error)
+
+            store.record_request(deployment.id, success=True)
+            result: dict[str, Any] = {}
+            for node_id, field in native_output_fields(dag.pipeline).items():
+                result[field] = _extract_node_value(
+                    dag, node_id, outcome.node_outputs.get(node_id, {})
+                )
+
+            return NativeRunResponse(outputs=result)
         finally:
-            run_registry.remove(run_id)
-
-        if outcome.error:
-            store.record_request(deployment.id, success=False)
-            raise HTTPException(status_code=502, detail=outcome.error)
-
-        store.record_request(deployment.id, success=True)
-        result: dict[str, Any] = {}
-        for node_id, field in native_output_fields(dag.pipeline).items():
-            result[field] = _extract_node_value(
-                dag, node_id, outcome.node_outputs.get(node_id, {})
-            )
-
-        return NativeRunResponse(outputs=result)
+            await _release_served_slot()
 
     return router
+

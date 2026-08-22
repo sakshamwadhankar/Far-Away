@@ -215,11 +215,14 @@ class PipelineRunner:
             and not self._served
             and self._state_manager is not None
         ):
-            from komvos.governance.profiles import active_profile
+            # Only resolve database profile if active profile has been configured
+            active_val = self._state_manager.get_setting("active_governance_profile")
+            if active_val is not None:
+                from komvos.governance.profiles import active_profile
 
-            self._profile = await asyncio.to_thread(
-                active_profile, self._state_manager
-            )
+                self._profile = await asyncio.to_thread(
+                    active_profile, self._state_manager
+                )
 
         self.decision_sink = InMemoryDecisionSink()
         sinks: list[DecisionSink] = [QueueDecisionSink(queue), self.decision_sink]
@@ -398,7 +401,12 @@ class PipelineRunner:
                 node_type=d.get("type", "unknown"),
             )
         if event.kind == EventKind.NODE_DONE:
-            # Track token counts from node done outputs
+            node_cost = float(d.get("cost_usd", 0.0) or 0.0)
+            node_tin = int(d.get("tokens_in", 0) or 0)
+            node_tout = int(d.get("tokens_out", 0) or 0)
+            self._total_tokens_in += node_tin
+            self._total_tokens_out += node_tout
+            self._cumulative_cost += node_cost
             return WsNodeDoneEvent(
                 run_id=self.run_id,
                 node_id=node_id,
@@ -407,6 +415,7 @@ class PipelineRunner:
                 cost_usd=d.get("cost_usd"),
                 tokens_in=d.get("tokens_in"),
                 tokens_out=d.get("tokens_out"),
+                is_estimate=bool(d.get("is_estimate", False)),
             )
         if event.kind == EventKind.NODE_ERROR:
             from komvos.scheduler.events import WsNodeErrorEvent
@@ -437,7 +446,6 @@ class PipelineRunner:
                 timeout_seconds=float(d.get("timeout_seconds", 0.0)),
             )
         if event.kind == EventKind.TOKEN:
-            self._total_tokens_out += 1
             return WsTokenEvent(
                 run_id=self.run_id,
                 node_id=node_id,
@@ -515,6 +523,7 @@ class _BudgetCheckingEndpoint:
         self._budget_usd = budget_usd
         self._registry = registry
         self.id = wrapped.id
+        self._current_node_id: str | None = None
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -530,14 +539,15 @@ class _BudgetCheckingEndpoint:
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         runner = self._registry._runner
         estimated = self._wrapped.estimate_cost(req)
-        runner._total_tokens_in += estimated.tokens_in
 
         if (
             self._budget_usd is not None
             and runner._cumulative_cost + estimated.usd > self._budget_usd
         ):
             self._registry.budget_exceeded = True
-            self._registry.exceeded_at_node = self.id
+            self._registry.exceeded_at_node = (
+                self._current_node_id or self.id
+            )
             self._cancel.cancel(
                 f"Budget exceeded: ${runner._cumulative_cost + estimated.usd:.6f} "
                 f"> ${self._budget_usd:.6f}"
@@ -547,14 +557,13 @@ class _BudgetCheckingEndpoint:
 
             raise PipelineCancelled(self._cancel.reason)
 
-        runner._cumulative_cost += estimated.usd
-
         async for token in self._wrapped.generate(req):
             yield token
 
     def check_access(self, policy: AccessPolicy, node_id: str) -> None:
         # Delegate: the wrapper only adds budget enforcement, so the wrapped
         # endpoint remains the authority on what its provider is.
+        self._current_node_id = node_id
         self._wrapped.check_access(policy, node_id)
 
     async def health(self) -> Health:
@@ -565,3 +574,17 @@ class _BudgetCheckingEndpoint:
 
     def estimate_cost(self, req: GenRequest) -> Cost:
         return self._wrapped.estimate_cost(req)
+
+    def calculate_cost(
+        self, tokens_in: int, tokens_out: int, is_estimate: bool = False
+    ) -> Cost:
+        if hasattr(self._wrapped, "calculate_cost"):
+            return self._wrapped.calculate_cost(
+                tokens_in, tokens_out, is_estimate=is_estimate
+            )
+        return Cost(
+            usd=0.0,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            is_estimate=is_estimate,
+        )

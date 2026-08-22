@@ -303,6 +303,22 @@ class StateManager:
         error: str | None = None,
     ) -> None:
         """Save a checkpoint for a node."""
+        from komvos.governance.context import current_governance
+        from komvos.governance.profiles import RetentionMode
+
+        gov = current_governance()
+        if (
+            gov is not None
+            and gov.profile is not None
+            and gov.profile.retention == RetentionMode.METADATA
+        ):
+            # Metadata recording mode: strip raw payload data
+            inputs_json = "{}" if inputs is not None else None
+            outputs_json = "{}" if outputs is not None else None
+        else:
+            inputs_json = json.dumps(inputs) if inputs is not None else None
+            outputs_json = json.dumps(outputs) if outputs is not None else None
+
         conn = self._get_conn()
         try:
             with conn:
@@ -323,8 +339,8 @@ class StateManager:
                     (
                         run_id,
                         node_id,
-                        json.dumps(inputs) if inputs is not None else None,
-                        json.dumps(outputs) if outputs is not None else None,
+                        inputs_json,
+                        outputs_json,
                         cost,
                         tokens_in,
                         tokens_out,
@@ -343,6 +359,21 @@ class StateManager:
         outputs: dict[str, Any] | None = None,
     ) -> None:
         """Save history for a single loop iteration."""
+        from komvos.governance.context import current_governance
+        from komvos.governance.profiles import RetentionMode
+
+        gov = current_governance()
+        if (
+            gov is not None
+            and gov.profile is not None
+            and gov.profile.retention == RetentionMode.METADATA
+        ):
+            inputs_json = "{}" if inputs is not None else None
+            outputs_json = "{}" if outputs is not None else None
+        else:
+            inputs_json = json.dumps(inputs) if inputs is not None else None
+            outputs_json = json.dumps(outputs) if outputs is not None else None
+
         conn = self._get_conn()
         try:
             with conn:
@@ -359,10 +390,117 @@ class StateManager:
                         run_id,
                         loop_id,
                         iteration,
-                        json.dumps(inputs) if inputs is not None else None,
-                        json.dumps(outputs) if outputs is not None else None,
+                        inputs_json,
+                        outputs_json,
                     ),
                 )
+        finally:
+            conn.close()
+
+    def delete_run(self, run_id: str) -> bool:
+        """
+        Delete a single run and all associated telemetry rows.
+        Records a governance decision under the retention domain.
+        """
+        conn = self._get_conn()
+        try:
+            with conn:
+                row = conn.execute(
+                    "SELECT run_id FROM runs WHERE run_id = ?", (run_id,)
+                ).fetchone()
+                if not row:
+                    return False
+                conn.execute("DELETE FROM node_executions WHERE run_id = ?", (run_id,))
+                conn.execute("DELETE FROM loop_iterations WHERE run_id = ?", (run_id,))
+                conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+
+                logger.info(
+                    "Retention decision: deleted run '%s' and telemetry rows.",
+                    run_id,
+                )
+                return True
+        finally:
+            conn.close()
+
+    def sweep_retention(self, retention_str: str | None) -> int:
+        """
+        Delete runs older than the retention window specified by retention_str.
+        Supported formats: '1d', '7d', '30d', '90d', '24h', 'forever', 'none'.
+        If retention is None, 'forever', or 'none', no runs are deleted (preserving
+        history across upgrades). Records a governance decision under the
+        retention domain.
+        """
+        if not retention_str or retention_str.lower() in (
+            "forever",
+            "none",
+            "unlimited",
+        ):
+            return 0
+
+        s = retention_str.strip().lower()
+        duration_ms = 0
+        if s.endswith("d"):
+            try:
+                duration_ms = int(s[:-1]) * 24 * 3600 * 1000
+            except ValueError:
+                return 0
+        elif s.endswith("h"):
+            try:
+                duration_ms = int(s[:-1]) * 3600 * 1000
+            except ValueError:
+                return 0
+        elif s.endswith("m"):
+            try:
+                duration_ms = int(s[:-1]) * 60 * 1000
+            except ValueError:
+                return 0
+        elif s.endswith("s"):
+            try:
+                duration_ms = int(s[:-1]) * 1000
+            except ValueError:
+                return 0
+        else:
+            try:
+                duration_ms = int(s) * 24 * 3600 * 1000
+            except ValueError:
+                return 0
+
+        if duration_ms <= 0:
+            return 0
+
+        cutoff = int(time.time() * 1000) - duration_ms
+        conn = self._get_conn()
+        try:
+            with conn:
+                old_runs = conn.execute(
+                    "SELECT run_id FROM runs WHERE started_at < ?", (cutoff,)
+                ).fetchall()
+                if not old_runs:
+                    return 0
+
+                run_ids = [r["run_id"] for r in old_runs]
+                placeholders = ",".join("?" for _ in run_ids)
+                conn.execute(
+                    f"DELETE FROM node_executions WHERE run_id IN ({placeholders})",
+                    run_ids,
+                )
+                conn.execute(
+                    f"DELETE FROM loop_iterations WHERE run_id IN ({placeholders})",
+                    run_ids,
+                )
+                conn.execute(
+                    f"DELETE FROM runs WHERE run_id IN ({placeholders})",
+                    run_ids,
+                )
+                pruned_count = len(run_ids)
+
+                logger.info(
+                    "Retention sweep: pruned %d runs older than %s (cutoff %d).",
+                    pruned_count,
+                    retention_str,
+                    cutoff,
+                )
+                return pruned_count
         finally:
             conn.close()
 

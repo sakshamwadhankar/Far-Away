@@ -8,7 +8,12 @@ import json
 import logging
 from typing import Any
 
-from komvos.endpoints.base import AccessDeniedError, GenRequest, Message
+from komvos.endpoints.base import (
+    AccessDeniedError,
+    Cost,
+    GenRequest,
+    Message,
+)
 from komvos.executors.base import BaseExecutor, ExecutorContext
 from komvos.governance.approvals import APPROVAL_TIMEOUT_SECONDS
 from komvos.governance.context import record_decision
@@ -343,27 +348,44 @@ class ModelExecutor(BaseExecutor):
                 )
 
             output_text = ""
-            tokens_out = 0
+            tokens_chunk_count = 0
+            actual_usage: Cost | None = None
 
             async for token in endpoint.generate(req):
                 ctx.check_cancel()
-                output_text += token.text
-                tokens_out += 1
-                await ctx.emit(
-                    SchedulerEvent(
-                        kind=EventKind.TOKEN,
-                        node_id=node.id,
-                        data={
-                            "text": token.text,
-                            "index": token.index,
-                            "attempt": attempt,
-                        },
+                if token.usage is not None:
+                    actual_usage = token.usage
+                if token.text:
+                    output_text += token.text
+                    tokens_chunk_count += 1
+                    await ctx.emit(
+                        SchedulerEvent(
+                            kind=EventKind.TOKEN,
+                            node_id=node.id,
+                            data={
+                                "text": token.text,
+                                "index": token.index,
+                                "attempt": attempt,
+                            },
+                        )
                     )
-                )
 
-            total_usd += estimated_cost.usd
-            total_tokens_in += estimated_cost.tokens_in
-            total_tokens_out += tokens_out
+            if actual_usage is not None:
+                attempt_usd = actual_usage.usd
+                attempt_tokens_in = actual_usage.tokens_in
+                attempt_tokens_out = actual_usage.tokens_out
+                is_estimate = actual_usage.is_estimate
+            else:
+                is_estimate = True
+                attempt_tokens_in = estimated_cost.tokens_in
+                attempt_tokens_out = (
+                    max(1, len(output_text) // 4) if output_text else 0
+                )
+                attempt_usd = estimated_cost.usd
+
+            total_usd += attempt_usd
+            total_tokens_in += attempt_tokens_in
+            total_tokens_out += attempt_tokens_out
             last_output_text = output_text
 
             if response_format == "json":
@@ -371,7 +393,12 @@ class ModelExecutor(BaseExecutor):
                     parsed_json = json.loads(output_text)
                     outputs = self._build_outputs(node, parsed_json)
                     await self._emit_done(
-                        ctx, outputs, total_usd, total_tokens_in, total_tokens_out
+                        ctx,
+                        outputs,
+                        total_usd,
+                        total_tokens_in,
+                        total_tokens_out,
+                        is_estimate=is_estimate,
                     )
                     return outputs
                 except json.JSONDecodeError as exc:
@@ -406,7 +433,12 @@ class ModelExecutor(BaseExecutor):
             else:
                 outputs = self._build_outputs(node, output_text)
                 await self._emit_done(
-                    ctx, outputs, total_usd, total_tokens_in, total_tokens_out
+                    ctx,
+                    outputs,
+                    total_usd,
+                    total_tokens_in,
+                    total_tokens_out,
+                    is_estimate=is_estimate,
                 )
                 return outputs
 
@@ -426,6 +458,7 @@ class ModelExecutor(BaseExecutor):
         usd: float,
         tokens_in: int,
         tokens_out: int,
+        is_estimate: bool = False,
     ) -> None:
         """Emit the NODE_DONE event with final cost metrics."""
         await ctx.emit(
@@ -438,6 +471,7 @@ class ModelExecutor(BaseExecutor):
                     "cost_usd": usd,
                     "tokens_in": tokens_in,
                     "tokens_out": tokens_out,
+                    "is_estimate": is_estimate,
                 },
             )
         )

@@ -109,12 +109,27 @@ class CloudEndpoint(ModelEndpoint):
 
             if req.response_format == "json":
                 kwargs["response_format"] = {"type": "json_object"}
+            kwargs["stream_options"] = {"include_usage": True}
 
             stream = await client.chat.completions.create(**kwargs)
             index = 0
             async for chunk in stream:
+                cost_obj = None
+                usage_obj = getattr(chunk, "usage", None)
+                if usage_obj is not None:
+                    tin = getattr(usage_obj, "prompt_tokens", 0) or 0
+                    tout = getattr(usage_obj, "completion_tokens", 0) or 0
+                    cost_obj = self.calculate_cost(tin, tout, is_estimate=False)
+
                 if chunk.choices and chunk.choices[0].delta.content is not None:
-                    yield Token(text=chunk.choices[0].delta.content, index=index)
+                    yield Token(
+                        text=chunk.choices[0].delta.content,
+                        index=index,
+                        usage=cost_obj,
+                    )
+                    index += 1
+                elif cost_obj is not None:
+                    yield Token(text="", index=index, usage=cost_obj)
                     index += 1
 
         elif self.provider == "anthropic":
@@ -144,6 +159,18 @@ class CloudEndpoint(ModelEndpoint):
                     yield Token(text=text, index=index)
                     index += 1
 
+                try:
+                    final_msg = await stream.get_final_message()
+                    if final_msg and hasattr(final_msg, "usage") and final_msg.usage:
+                        tin = getattr(final_msg.usage, "input_tokens", 0) or 0
+                        tout = getattr(final_msg.usage, "output_tokens", 0) or 0
+                        cost_obj = self.calculate_cost(
+                            tin, tout, is_estimate=False
+                        )
+                        yield Token(text="", index=index, usage=cost_obj)
+                except Exception:
+                    pass
+
         elif self.provider == "google":
             from google import genai
 
@@ -158,8 +185,18 @@ class CloudEndpoint(ModelEndpoint):
             )
             index = 0
             async for chunk in response_stream:
+                cost_obj = None
+                usage_meta = getattr(chunk, "usage_metadata", None)
+                if usage_meta is not None:
+                    tin = getattr(usage_meta, "prompt_token_count", 0) or 0
+                    tout = getattr(usage_meta, "candidates_token_count", 0) or 0
+                    cost_obj = self.calculate_cost(tin, tout, is_estimate=False)
+
                 if chunk.text:
-                    yield Token(text=chunk.text, index=index)
+                    yield Token(text=chunk.text, index=index, usage=cost_obj)
+                    index += 1
+                elif cost_obj is not None:
+                    yield Token(text="", index=index, usage=cost_obj)
                     index += 1
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
@@ -183,17 +220,27 @@ class CloudEndpoint(ModelEndpoint):
         )
         return Caps(max_context=128000, json_mode=json_mode, tools=True, vision=True)
 
-    def estimate_cost(self, req: GenRequest) -> Cost:
+    def calculate_cost(
+        self, tokens_in: int, tokens_out: int, is_estimate: bool = False
+    ) -> Cost:
         provider_pricing = PRICING.get(self.provider, {})
         model_pricing = provider_pricing.get(
             self.model_name, {"input": 0.0, "output": 0.0}
         )
 
+        cost_in = (tokens_in / 1_000_000) * model_pricing.get("input", 0.0)
+        cost_out = (tokens_out / 1_000_000) * model_pricing.get("output", 0.0)
+
+        return Cost(
+            usd=cost_in + cost_out,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            is_estimate=is_estimate,
+        )
+
+    def estimate_cost(self, req: GenRequest) -> Cost:
         chars = sum(len(m.content) for m in req.messages)
         tokens_in = max(1, chars // 4)
         tokens_out = getattr(req, "max_tokens", 1024)
+        return self.calculate_cost(tokens_in, tokens_out, is_estimate=True)
 
-        cost_in = (tokens_in / 1_000_000) * model_pricing["input"]
-        cost_out = (tokens_out / 1_000_000) * model_pricing["output"]
-
-        return Cost(usd=cost_in + cost_out, tokens_in=tokens_in, tokens_out=tokens_out)

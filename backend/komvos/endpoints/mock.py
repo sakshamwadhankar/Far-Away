@@ -26,6 +26,7 @@ from komvos.endpoints.base import (
     Cost,
     GenRequest,
     Health,
+    Message,
     Token,
 )
 
@@ -86,6 +87,17 @@ class MockEndpoint:
             usd=0.001,
             tokens_in=10,
             tokens_out=len(self.predefined_text.split(" ")),
+            is_estimate=True,
+        )
+
+    def calculate_cost(
+        self, tokens_in: int, tokens_out: int, is_estimate: bool = False
+    ) -> Cost:
+        return Cost(
+            usd=0.001,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            is_estimate=is_estimate,
         )
 
     def check_access(self, policy: AccessPolicy, node_id: str) -> None:

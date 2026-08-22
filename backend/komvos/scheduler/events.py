@@ -49,6 +49,7 @@ class WsNodeDoneEvent(BaseModel):
     cost_usd: float | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    is_estimate: bool = False
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 

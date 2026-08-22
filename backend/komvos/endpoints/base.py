@@ -76,6 +76,10 @@ class Token(BaseModel):
 
     text: str
     index: int
+    usage: Cost | None = Field(
+        default=None,
+        description="Actual measured token usage / cost reported by the provider.",
+    )
 
 
 class Health(BaseModel):
@@ -101,6 +105,12 @@ class Cost(BaseModel):
     usd: float = Field(ge=0.0, description="Cost in US dollars.")
     tokens_in: int = Field(ge=0, description="Prompt token count.")
     tokens_out: int = Field(ge=0, description="Completion token count.")
+    is_estimate: bool = Field(
+        default=False,
+        description=(
+            "True if cost is an estimate fallback rather than measured provider usage."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -171,3 +181,12 @@ class ModelEndpoint(Protocol):
         Raises NotImplementedError only if pricing data is genuinely unavailable.
         """
         ...
+
+    def calculate_cost(
+        self, tokens_in: int, tokens_out: int, is_estimate: bool = False
+    ) -> Cost:
+        """
+        Calculate cost from measured or estimated token counts.
+        """
+        ...
+

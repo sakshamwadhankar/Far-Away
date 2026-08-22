@@ -118,6 +118,25 @@ def _allowed_origins() -> list[str]:
 
 _DEV_MODE = is_dev_mode()
 
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> Any:
+    """Lifespan context manager: execute startup sweeps and cleanups."""
+    try:
+        sm = _global_state_manager()
+        from komvos.governance.profiles import (
+            get_active_profile_name,
+            load_profile,
+        )
+
+        active_name = get_active_profile_name(sm)
+        profile = load_profile(active_name, sm)
+        if profile and profile.retention:
+            sm.sweep_retention(profile.retention)
+    except Exception as exc:
+        logger.warning(f"Startup retention sweep skipped/failed: {exc}")
+    yield
+
+
 app = FastAPI(
     title="NeuralFlow Backend",
     version="0.1.0",
@@ -127,6 +146,7 @@ app = FastAPI(
     docs_url="/docs" if _DEV_MODE else None,
     redoc_url=None,
     openapi_url="/openapi.json" if _DEV_MODE else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -171,6 +191,18 @@ async def health_ollama() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /health/hermes  (no auth — used for Hermes Agent detection)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health/hermes")
+async def health_hermes() -> dict[str, Any]:
+    from komvos.endpoints.hermes import probe_hermes_server
+
+    return await probe_hermes_server()
+
+
+# ---------------------------------------------------------------------------
 # GET /health/desktop  (no auth — used for desktop server detection)
 # ---------------------------------------------------------------------------
 
@@ -180,6 +212,7 @@ async def health_desktop() -> dict[str, Any]:
     from komvos.desktop.detection import probe_computer_server
 
     return await probe_computer_server()
+
 
 
 # ---------------------------------------------------------------------------
@@ -888,6 +921,25 @@ async def get_run_trace(run_id: str) -> dict[str, Any]:
     if trace is None:
         raise HTTPException(status_code=404, detail="Run not found in trace database.")
     return trace
+
+
+# ---------------------------------------------------------------------------
+# DELETE /runs/{run_id}  (auth required)
+# ---------------------------------------------------------------------------
+
+
+@app.delete(
+    "/runs/{run_id}",
+    dependencies=[Depends(verify_token)],
+)
+async def delete_run(run_id: str) -> dict[str, Any]:
+    """Delete a single run and all associated telemetry rows."""
+    sm = _global_state_manager()
+    deleted = sm.delete_run(run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return {"run_id": run_id, "deleted": True}
+
 
 
 # ---------------------------------------------------------------------------

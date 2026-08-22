@@ -26,6 +26,7 @@ interface DeploySummary {
   request_count: number;
   error_count: number;
   last_request_at: number | null;
+  spend_cap_usd_per_request?: number | null;
 }
 
 interface DeployModalProps {
@@ -52,6 +53,7 @@ export default function DeployModal({
 
   const [name, setName] = useState(pipeline.name || 'My Pipeline');
   const [rateLimit, setRateLimit] = useState(60);
+  const [spendCapUsd, setSpendCapUsd] = useState<number | ''>('');
   const [exposeLan, setExposeLan] = useState(false);
   const [showLanConfirm, setShowLanConfirm] = useState(false);
 
@@ -103,6 +105,7 @@ export default function DeployModal({
           name: name.trim() || undefined,
           expose_lan: exposeLan,
           rate_limit_per_minute: rateLimit,
+          spend_cap_usd_per_request: spendCapUsd === '' ? undefined : Number(spendCapUsd),
         }),
       });
       const data = await res.json();
@@ -221,6 +224,16 @@ export default function DeployModal({
                 type="number" min={1} max={6000} value={rateLimit}
                 onChange={e => setRateLimit(Math.max(1, parseInt(e.target.value, 10) || 60))}
                 className="nf-input nf-input--mono"
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label className="nf-label">Spend cap (USD / request, optional)</label>
+              <input
+                data-testid="deploy-spend-cap"
+                type="number" step="0.0001" min={0} value={spendCapUsd}
+                onChange={e => setSpendCapUsd(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                className="nf-input nf-input--mono" placeholder="e.g. 0.05 (unlimited if empty)"
               />
             </div>
 

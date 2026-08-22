@@ -84,6 +84,7 @@ EndpointKind = Literal[
     "google",
     "openai_compatible",
     "ollama",
+    "hermes",
     "mock",
     "groq",
     "openrouter",

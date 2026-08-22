@@ -231,13 +231,22 @@ async def build_endpoint_registry(
                 base_url=ollama_base,
                 model=ollama_model,
             )
+        elif descriptor.kind == "hermes":
+            from komvos.endpoints.hermes import get_hermes_base_url
+
+            hermes_base = descriptor.base_url or get_hermes_base_url()
+            run_endpoints[ref] = CloudEndpoint(
+                provider="openai_compatible",
+                model_name=descriptor.model or "hermes-3-llama-3.1-8b",
+                base_url=hermes_base,
+            )
         else:
             raise HTTPException(
                 status_code=422,
                 detail=(
                     f"Unsupported endpoint kind '{descriptor.kind}' "
                     f"for ref '{ref}'. Supported: openai, anthropic, "
-                    "google, openai_compatible, ollama."
+                    "google, openai_compatible, ollama, hermes."
                 ),
             )
 

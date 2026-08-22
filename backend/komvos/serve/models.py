@@ -48,6 +48,11 @@ class Deployment(BaseModel):
     error_count: int = 0
     last_request_at: int | None = None
     profile_name: str = "locked"
+    spend_cap_usd_per_request: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Per-request USD spending ceiling for this deployment.",
+    )
     """
     Profile in force for this deployment. Rows from before Gov-2 predate the
     column and load as 'locked' (LOCKED), which reproduces exactly the
@@ -76,6 +81,9 @@ class DeploymentCreateRequest(BaseModel):
         ),
     )
     rate_limit_per_minute: int = Field(default=60, ge=1, le=6000)
+    spend_cap_usd_per_request: float | None = Field(
+        default=None, ge=0.0, description="Per-request USD spend ceiling."
+    )
 
 
 class DeploymentCreateResponse(BaseModel):
@@ -108,6 +116,7 @@ class DeploymentSummary(BaseModel):
     error_count: int
     last_request_at: int | None
     profile_name: str = "locked"
+    spend_cap_usd_per_request: float | None = None
 
 
 class DeploymentListResponse(BaseModel):

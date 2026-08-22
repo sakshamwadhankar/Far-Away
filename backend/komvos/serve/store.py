@@ -58,11 +58,13 @@ class DeploymentStore:
                         request_count INTEGER NOT NULL DEFAULT 0,
                         error_count INTEGER NOT NULL DEFAULT 0,
                         last_request_at INTEGER,
-                        profile_name TEXT NOT NULL DEFAULT 'locked'
+                        profile_name TEXT NOT NULL DEFAULT 'locked',
+                        spend_cap_usd_per_request REAL DEFAULT NULL
                     )
                     """
                 )
                 self._migrate_deployments_profile_name(conn)
+                self._migrate_deployments_spend_cap_usd_per_request(conn)
         finally:
             conn.close()
 
@@ -87,6 +89,25 @@ class DeploymentStore:
                 "TEXT NOT NULL DEFAULT 'locked'"
             )
 
+    @staticmethod
+    def _migrate_deployments_spend_cap_usd_per_request(
+        conn: sqlite3.Connection,
+    ) -> None:
+        """
+        Add `deployments.spend_cap_usd_per_request` for databases created before P3.
+
+        Pre-existing rows get NULL (unconstrained by deployment ceiling, governed by
+        pipeline and active profile spend policies).
+        """
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(deployments)")
+        }
+        if "spend_cap_usd_per_request" not in columns:
+            conn.execute(
+                "ALTER TABLE deployments ADD COLUMN spend_cap_usd_per_request "
+                "REAL DEFAULT NULL"
+            )
+
     # -- writes ---------------------------------------------------------
 
     def create(self, deployment: Deployment) -> None:
@@ -99,8 +120,8 @@ class DeploymentStore:
                         id, name, pipeline_json, key_hash, expose_lan,
                         rate_limit_per_minute, chat_input_node, chat_output_node,
                         created_at, request_count, error_count, last_request_at,
-                        profile_name
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        profile_name, spend_cap_usd_per_request
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         deployment.id,
@@ -116,6 +137,7 @@ class DeploymentStore:
                         deployment.error_count,
                         deployment.last_request_at,
                         deployment.profile_name,
+                        deployment.spend_cap_usd_per_request,
                     ),
                 )
         finally:

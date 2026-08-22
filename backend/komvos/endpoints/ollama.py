@@ -88,12 +88,26 @@ class OllamaEndpoint:
                         break
                     try:
                         data = json.loads(data_str)
+                        cost_obj = None
+                        usage = data.get("usage")
+                        if usage:
+                            tin = int(usage.get("prompt_tokens", 0) or 0)
+                            tout = int(usage.get("completion_tokens", 0) or 0)
+                            cost_obj = self.calculate_cost(
+                                tin, tout, is_estimate=False
+                            )
+
                         choices = data.get("choices", [])
                         if choices and "delta" in choices[0]:
                             text = choices[0]["delta"].get("content", "")
                             if text:
-                                yield Token(text=text, index=idx)
+                                yield Token(
+                                    text=text, index=idx, usage=cost_obj
+                                )
                                 idx += 1
+                        elif cost_obj is not None:
+                            yield Token(text="", index=idx, usage=cost_obj)
+                            idx += 1
                     except json.JSONDecodeError:
                         logger.warning(f"Failed to decode stream line: {data_str}")
 
@@ -117,10 +131,17 @@ class OllamaEndpoint:
             vision=False,
         )
 
-    def estimate_cost(self, req: GenRequest) -> Cost:
-        tokens_in = sum(len(msg.content) // 4 for msg in req.messages)
+    def calculate_cost(
+        self, tokens_in: int, tokens_out: int, is_estimate: bool = False
+    ) -> Cost:
         return Cost(
             usd=0.0,
             tokens_in=tokens_in,
-            tokens_out=0,
+            tokens_out=tokens_out,
+            is_estimate=is_estimate,
         )
+
+    def estimate_cost(self, req: GenRequest) -> Cost:
+        tokens_in = sum(len(msg.content) // 4 for msg in req.messages)
+        return self.calculate_cost(tokens_in, 0, is_estimate=True)
+

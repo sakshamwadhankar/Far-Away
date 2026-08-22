@@ -829,6 +829,6 @@ async def test_budget_cap_halts_pipeline() -> None:
     # model_1 costs $10 (passes, cumulative $10)
     # model_2 costs $10 (fails, $20 > $15)
     assert budget_events[0].cumulative_cost_usd == 10.0
-    assert budget_events[0].node_id == "mock:expensive"
+    assert budget_events[0].node_id == "model_2"
     assert runner._cancel.is_cancelled is True
     assert "Budget exceeded" in runner._cancel.reason

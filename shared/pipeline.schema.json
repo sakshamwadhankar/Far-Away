@@ -36,7 +36,7 @@
 
     "EndpointKind": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama", "mock", "groq", "openrouter", "zhipu", "nvidia"],
+      "enum": ["openai", "anthropic", "google", "openai_compatible", "ollama", "hermes", "mock", "groq", "openrouter", "zhipu", "nvidia"],
       "description": "Supported model endpoint kinds."
     },
 
