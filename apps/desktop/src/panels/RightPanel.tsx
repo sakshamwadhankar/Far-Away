@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { Node as RFNode } from 'reactflow';
 import { ModelInfo } from '../App';
-import type { StopOp, OnMax, NodeConfig } from '@shared/types';
+import type { StopOp, OnMax, NodeConfig, AccessPolicy } from '@shared/types';
+import { emptyPolicy } from '../canvas/accessPolicy';
 
 interface RightPanelProps {
   selectedNode: RFNode<PipelineNodeData> | null;
@@ -55,6 +56,19 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
 
   const handleBaseChange = (key: string, value: string) => {
     updateNodeData(selectedNode.id, { [key]: value });
+  };
+
+  // Access nodes: the per-capability grants live on the node body; the
+  // inspector owns the numeric ceilings and the network switch.
+  const accessPolicy = (config.access_policy as AccessPolicy | undefined) ?? emptyPolicy();
+
+  const handleAccessPolicyChange = (
+    key: 'max_cost_usd' | 'max_tokens' | 'allow_network',
+    value: number | boolean | null,
+  ) => {
+    updateNodeData(selectedNode.id, {
+      config: { ...config, access_policy: { ...accessPolicy, [key]: value } },
+    });
   };
 
   const groupedModels = availableModels.reduce((acc, model) => {
@@ -270,6 +284,58 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
           <>
             <div className="nf-section-header">Router Config</div>
             <RouterConfig config={config} onConfigChange={handleConfigChange} />
+          </>
+        )}
+
+        {/* ─── ACCESS NODE ─────────────────────────────────────────────── */}
+        {data.type === 'access' && (
+          <>
+            <div className="nf-section-header">Access Policy</div>
+            <p style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.5, margin: '0 0 10px' }}>
+              Applies to every node downstream. Where several access nodes reach
+              the same node, the most restrictive wins. Grant and revoke
+              individual capabilities on the node itself.
+            </p>
+            <div className="nf-field-group">
+              <label className="nf-label">Max cost (USD)</label>
+              <input
+                data-testid="access-max-cost"
+                type="number" min={0} step={0.01}
+                placeholder="no ceiling"
+                value={accessPolicy.max_cost_usd ?? ''}
+                onChange={(e) => handleAccessPolicyChange(
+                  'max_cost_usd',
+                  e.target.value === '' ? null : Math.max(0, parseFloat(e.target.value) || 0),
+                )}
+                className="nf-input nf-input--mono"
+              />
+            </div>
+            <div className="nf-field-group">
+              <label className="nf-label">Max tokens per request</label>
+              <input
+                data-testid="access-max-tokens"
+                type="number" min={1} step={1}
+                placeholder="no ceiling"
+                value={accessPolicy.max_tokens ?? ''}
+                onChange={(e) => handleAccessPolicyChange(
+                  'max_tokens',
+                  e.target.value === '' ? null : Math.max(1, parseInt(e.target.value, 10) || 1),
+                )}
+                className="nf-input nf-input--mono"
+              />
+            </div>
+            <div className="nf-field-group">
+              <label className="nf-label">
+                <input
+                  data-testid="access-allow-network"
+                  type="checkbox"
+                  checked={accessPolicy.allow_network}
+                  onChange={(e) => handleAccessPolicyChange('allow_network', e.target.checked)}
+                  style={{ marginRight: 6 }}
+                />
+                Allow general network access
+              </label>
+            </div>
           </>
         )}
 

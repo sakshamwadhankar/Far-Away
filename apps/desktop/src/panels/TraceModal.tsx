@@ -1,6 +1,30 @@
 import { useEffect, useState } from 'react';
 import { diffLines, Change } from 'diff';
 
+/** Shape returned by GET /runs/{run_id}/trace (see StateManager.get_full_trace). */
+export interface TraceNodeExecution {
+  node_id: string;
+  cost?: number | null;
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  error?: string | null;
+  inputs?: unknown;
+  outputs?: unknown;
+}
+
+export interface TraceLoopIteration {
+  loop_id: string;
+  iteration: number;
+  inputs?: unknown;
+  outputs?: unknown;
+}
+
+export interface RunTrace {
+  run: Record<string, unknown>;
+  nodes: TraceNodeExecution[];
+  loops: TraceLoopIteration[];
+}
+
 interface TraceModalProps {
   runId: string;
   backendPort: number | null;
@@ -9,7 +33,7 @@ interface TraceModalProps {
 }
 
 export default function TraceModal({ runId, backendPort, backendToken, onClose }: TraceModalProps) {
-  const [trace, setTrace] = useState<any>(null);
+  const [trace, setTrace] = useState<RunTrace | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,10 +55,10 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
         if (!res.ok) {
           throw new Error(`Failed to fetch trace: ${await res.text()}`);
         }
-        const data = await res.json();
+        const data: RunTrace = await res.json();
         setTrace(data);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch trace');
       } finally {
         setLoading(false);
       }
@@ -86,7 +110,7 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
               </pre>
 
               <h3>Node Executions ({trace.nodes?.length})</h3>
-              {trace.nodes?.map((node: any, idx: number) => (
+              {trace.nodes?.map((node: TraceNodeExecution, idx: number) => (
                 <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
                   <strong>Node ID:</strong> {node.node_id} <br />
                   <strong>Cost:</strong> ${node.cost} | <strong>Tokens:</strong> {node.tokens_in} in, {node.tokens_out} out <br />
@@ -110,7 +134,7 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
 
               <h3>Loop Iterations ({trace.loops?.length})</h3>
               {trace.loops?.length > 0 ? (
-                trace.loops.map((loop: any, idx: number) => {
+                trace.loops.map((loop: TraceLoopIteration, idx: number) => {
                   let diffElements: JSX.Element[] | null = null;
                   if (idx > 0) {
                     const prevOutputs = JSON.stringify(trace.loops[idx - 1].outputs, null, 2) || '';

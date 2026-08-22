@@ -1,9 +1,13 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react';
 import ReactFlow, { Background, Controls, MiniMap, useReactFlow, OnNodesChange, OnEdgesChange, Connection, Edge, Node, NodeChange, EdgeChange } from 'reactflow';
 import PipelineNode, { PipelineNodeData } from './nodes/PipelineNode';
+import AccessNode from './nodes/AccessNode';
 
 const nodeTypes = {
   pipelineNode: PipelineNode,
+  // Access nodes render a live capability list rather than ports, so they get
+  // their own React Flow type.
+  accessNode: AccessNode,
 };
 
 interface CanvasProps {
@@ -83,7 +87,7 @@ export default function Canvas({
 
       const newNode: Node<PipelineNodeData> = {
         id: `node-${Date.now()}`,
-        type: 'pipelineNode',
+        type: type === 'access' ? 'accessNode' : 'pipelineNode',
         position,
         data: { type, ...data },
       };

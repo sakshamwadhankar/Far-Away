@@ -1,6 +1,38 @@
-import type { Pipeline, Node as SchemaNode, Edge as SchemaEdge, EndpointDescriptor } from '@shared/types';
+import type {
+  Pipeline,
+  Node as SchemaNode,
+  Edge as SchemaEdge,
+  EndpointDescriptor,
+  EndpointKind,
+} from '@shared/types';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import { PipelineNodeData } from './nodes/PipelineNode';
+
+const ENDPOINT_KINDS: readonly EndpointKind[] = [
+  'openai',
+  'anthropic',
+  'google',
+  'openai_compatible',
+  'ollama',
+  'mock',
+];
+
+/**
+ * Narrow the provider prefix of an `endpoint_ref` to a schema `EndpointKind`.
+ * Unknown providers are treated as `openai_compatible`, which is the schema's
+ * catch-all for third-party OpenAI-shaped services.
+ */
+function toEndpointKind(provider: string): EndpointKind {
+  return ENDPOINT_KINDS.includes(provider as EndpointKind)
+    ? (provider as EndpointKind)
+    : 'openai_compatible';
+}
+
+/**
+ * A pipeline edge as it may appear on disk. The backend pydantic model aliases
+ * `from` to `from_`, so files written by older backend versions carry that key.
+ */
+type SerializedEdge = SchemaEdge & { from_?: string };
 
 // Generate a random UUID v4
 function uuidv4() {
@@ -55,7 +87,7 @@ export function toPipelineSchema(
           };
         } else {
           endpoints[n.endpoint_ref] = {
-            kind: provider as any,
+            kind: toEndpointKind(provider),
             model: modelName,
           };
         }
@@ -64,7 +96,9 @@ export function toPipelineSchema(
   });
 
   return {
-    schema_version: '2.0',
+    // 2.1 adds the access node. Documents are written as 2.1 going forward;
+    // the backend still accepts 2.0 and reads it as "no access node".
+    schema_version: '2.1',
     id: uuidv4(),
     name: pipelineName,
     version: '1.0.0',
@@ -78,7 +112,9 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
   const nodes: RFNode<PipelineNodeData>[] = pipeline.nodes.map((n, index) => {
     return {
       id: n.id,
-      type: 'pipelineNode',
+      // Access nodes render a capability list instead of ports, so they map to
+      // their own React Flow node type.
+      type: n.type === 'access' ? 'accessNode' : 'pipelineNode',
       position: { x: 100 + index * 250, y: 100 }, // Simple layout
       data: {
         type: n.type,
@@ -91,8 +127,8 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
     };
   });
 
-  const edges: RFEdge[] = pipeline.edges.map((e: any, index) => {
-    const fromStr = e.from || e.from_;
+  const edges: RFEdge[] = (pipeline.edges as SerializedEdge[]).map((e, index) => {
+    const fromStr = e.from || e.from_ || '';
     const [sourceNode, sourcePort] = fromStr.split('.');
     const [targetNode, targetPort] = e.to.split('.');
 
