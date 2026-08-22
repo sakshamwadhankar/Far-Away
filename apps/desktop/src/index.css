@@ -881,10 +881,9 @@ textarea.nf-input {
 
 /* ─── Governance UI (P1) ───────────────────────────────────────────────────── */
 .nf-gov-indicator {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 50;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 .nf-gov-indicator-btn {
@@ -1391,3 +1390,479 @@ textarea.nf-input {
   justify-content: center;
   padding: 16px;
 }
+
+/* ─── Panel Resizer Handles ────────────────────────────────────────────────── */
+.nf-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 100;
+  user-select: none;
+  touch-action: none;
+  background: transparent;
+}
+.nf-sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background-color var(--transition);
+}
+.nf-sidebar-resizer:hover::after,
+.nf-sidebar-resizer.resizing::after {
+  background: var(--highlight, #C8D94A);
+  box-shadow: 0 0 6px var(--highlight, #C8D94A);
+}
+
+.nf-right-panel-resizer {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 100;
+  user-select: none;
+  touch-action: none;
+  background: transparent;
+}
+.nf-right-panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background-color var(--transition);
+}
+.nf-right-panel-resizer:hover::after,
+.nf-right-panel-resizer.resizing::after {
+  background: var(--highlight, #C8D94A);
+  box-shadow: 0 0 6px var(--highlight, #C8D94A);
+}
+
+.pixel-theme .nf-sidebar-resizer:hover::after,
+.pixel-theme .nf-sidebar-resizer.resizing::after,
+.pixel-theme .nf-right-panel-resizer:hover::after,
+.pixel-theme .nf-right-panel-resizer.resizing::after {
+  background: #f1c471;
+  box-shadow: 0 0 4px #f1c471;
+}
+
+/* ─── 16-Bit Retro Pixel UI Theme ─────────────────────────────────────────── */
+@keyframes pixel-pulse {
+  0%, 100% {
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 0 #9c6546, 3px 3px 0 #000000;
+  }
+  50% {
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.8), inset -1px -1px 0 #9c6546, 3px 3px 0 #000000, 0 0 10px rgba(246, 209, 123, 0.5);
+  }
+}
+
+@keyframes pixel-hover-step {
+  0%   { transform: translate(-1px, -1px); }
+  50%  { transform: translate(-1px, -3px); }
+  100% { transform: translate(-1px, -1px); }
+}
+
+@keyframes pixel-badge-glint {
+  0%   { filter: brightness(1); }
+  25%  { filter: brightness(1.25) drop-shadow(0 0 6px rgba(246, 209, 123, 0.6)); }
+  50%  { filter: brightness(1); }
+  100% { filter: brightness(1); }
+}
+
+@keyframes pixel-scanline {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(100%); }
+}
+
+.pixel-theme {
+  --bg:           #272233;
+  --bg-alt:       #322c42;
+  --surface:      #3d3550;
+  --surface-2:    #4a4162;
+  --border:       #5c5275;
+  --border-subtle:#70648c;
+
+  --text:         #ffffff;
+  --text-2:       #ebd3a8;
+  --text-3:       #cbb494;
+
+  --accent:       #f6d17b;
+  --accent-hover: #fae09e;
+  --accent-fg:    #1a1824;
+
+  --highlight:    #82e8f8;
+  --highlight-dim:#5b6f8a;
+
+  --danger:       #e25848;
+  --danger-hover: #ef6b5c;
+  --danger-fg:    #ffffff;
+
+  --success:      #67a659;
+  --error:        #e25848;
+
+  --radius-pill:  0px;
+  --radius-card:  0px;
+  --radius-input: 0px;
+  --radius-tag:   0px;
+
+  --font-ui:    'Courier New', Courier, monospace;
+  --font-mono:  'Courier New', Courier, monospace;
+
+  --shadow-sm:  2px 2px 0px #000000;
+  --shadow-md:  3px 3px 0px #000000;
+  --shadow-lg:  4px 4px 0px #000000;
+
+  --transition: 0s;
+  image-rendering: pixelated;
+  letter-spacing: 0.3px;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.pixel-theme,
+.pixel-theme button,
+.pixel-theme input,
+.pixel-theme select,
+.pixel-theme textarea,
+.pixel-theme div,
+.pixel-theme span,
+.pixel-theme p,
+.pixel-theme h1,
+.pixel-theme h2,
+.pixel-theme h3,
+.pixel-theme strong {
+  font-family: 'Courier New', Courier, monospace !important;
+}
+
+/* ─── Left Sidebar & Panels ─────────────────────────────────────────────── */
+.pixel-theme .nf-sidebar {
+  background: #2b253a !important;
+  border-right: 3px solid #5c5275 !important;
+  box-shadow: 2px 0 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-sidebar-header {
+  border-bottom: 2px solid #5c5275 !important;
+  background: #241f30 !important;
+}
+
+.pixel-theme .nf-sidebar-tabs {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #221c2e !important;
+  padding: 2px !important;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.8) !important;
+}
+
+.pixel-theme .nf-sidebar-tab {
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  color: #cbb494 !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+  text-transform: uppercase !important;
+  transition: none !important;
+}
+
+.pixel-theme .nf-sidebar-tab:hover {
+  background: #39304d !important;
+  color: #f6d17b !important;
+}
+
+.pixel-theme .nf-sidebar-tab.active {
+  background: #42385b !important;
+  border: 1px solid #f6d17b !important;
+  color: #f6d17b !important;
+  box-shadow: inset 0 0 8px rgba(246, 209, 123, 0.4) !important;
+}
+
+.pixel-theme .nf-section-header {
+  color: #f6d17b !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid #5c5275 !important;
+  padding-bottom: 4px !important;
+}
+
+/* ─── Inventory Item Cards (Drag Nodes) ──────────────────────────────────── */
+.pixel-theme .nf-node-drag-item {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #38304c !important;
+  color: #ffffff !important;
+  padding: 7px 10px !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.12), inset -1px -1px 0 rgba(0, 0, 0, 0.5), 2px 2px 0 #000000 !important;
+  transition: none !important;
+}
+
+.pixel-theme .nf-node-drag-item:hover {
+  background: #4c4266 !important;
+  border-color: #f6d17b !important;
+  color: #f6d17b !important;
+  box-shadow: inset 1px 1px 0 rgba(246, 209, 123, 0.4), 3px 3px 0 #000000 !important;
+  animation: pixel-hover-step 1s steps(2) infinite !important;
+}
+
+.pixel-theme .nf-template-card {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #38304c !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.12), inset -1px -1px 0 rgba(0, 0, 0, 0.5), 2px 2px 0 #000000 !important;
+  padding: 10px !important;
+}
+
+.pixel-theme .nf-template-card:hover {
+  border-color: #f6d17b !important;
+  background: #443b5c !important;
+}
+
+.pixel-theme .nf-create-custom-btn {
+  border-radius: 0 !important;
+  border: 2px dashed #f6d17b !important;
+  background: rgba(246, 209, 123, 0.12) !important;
+  color: #f6d17b !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  padding: 8px !important;
+}
+
+.pixel-theme .nf-create-custom-btn:hover {
+  background: rgba(246, 209, 123, 0.25) !important;
+  box-shadow: 2px 2px 0 #000000 !important;
+  transform: translate(-1px, -1px) !important;
+}
+
+/* ─── Buttons & Mode Switches ────────────────────────────────────────────── */
+.pixel-theme .nf-card,
+.pixel-theme .nf-surface {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  box-shadow: 3px 3px 0px #000000 !important;
+  background: var(--surface) !important;
+}
+
+.pixel-theme .nf-pill-btn,
+.pixel-theme button {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18), inset -1px -1px 0 rgba(0, 0, 0, 0.5), 2px 2px 0 #000000 !important;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #3a324e;
+  color: #ffffff;
+  padding: 6px 12px;
+}
+
+.pixel-theme .nf-pill-btn:hover,
+.pixel-theme button:hover {
+  background: #4a4063 !important;
+  border-color: #f6d17b !important;
+  color: #f6d17b !important;
+}
+
+.pixel-theme .nf-pill-btn:active,
+.pixel-theme button:active {
+  transform: translate(2px, 2px) !important;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.7), 1px 1px 0 #000000 !important;
+}
+
+.pixel-theme .nf-pill-btn--highlight,
+.pixel-theme [data-testid="run-pipeline-button"]:not(:disabled) {
+  background: #f6d17b !important;
+  color: #1a1824 !important;
+  border-color: #5c5275 !important;
+  font-weight: 800 !important;
+  animation: pixel-pulse 2.2s steps(4) infinite !important;
+}
+
+.pixel-theme [data-testid="toggle-pixel-ui"].nf-pill-btn--highlight {
+  animation: pixel-badge-glint 3s steps(3) infinite !important;
+}
+
+.pixel-theme .nf-mode-switch {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #272134 !important;
+  padding: 2px !important;
+  box-shadow: 2px 2px 0 #000000 !important;
+}
+
+.pixel-theme .nf-mode-switch button {
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  font-size: 11px;
+  color: #aab6c4 !important;
+}
+
+.pixel-theme .nf-mode-switch button.active {
+  background: #2b263d !important;
+  border: 1px solid #f1c471 !important;
+  color: #f1c471 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), inset -1px -1px 0 rgba(0, 0, 0, 0.5), inset 0 0 6px rgba(241, 196, 113, 0.3) !important;
+}
+
+/* ─── Right Configuration Panel ──────────────────────────────────────────── */
+.pixel-theme .nf-right-panel {
+  background: #2b253a !important;
+  border-left: 3px solid #5c5275 !important;
+  box-shadow: -2px 0 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-field-label {
+  color: #ebd3a8 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* ─── Canvas & Nodes ─────────────────────────────────────────────────────── */
+.pixel-theme .react-flow__node {
+  border-radius: 0 !important;
+}
+
+.pixel-theme .pipeline-node,
+.pixel-theme [data-testid^="pipeline-node-"] {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #342d47 !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.12), inset -1px -1px 0 rgba(0, 0, 0, 0.5), 3px 3px 0 #000000 !important;
+}
+
+.pixel-theme .pipeline-node:hover,
+.pixel-theme [data-testid^="pipeline-node-"]:hover {
+  border-color: #f6d17b !important;
+}
+
+.pixel-theme .react-flow__handle {
+  border-radius: 0 !important;
+  width: 8px !important;
+  height: 8px !important;
+  border: 1px solid #5c5275 !important;
+  box-shadow: 1px 1px 0 #000 !important;
+}
+
+.pixel-theme .react-flow__edge-path {
+  stroke-width: 2.5px !important;
+  stroke: #70648c !important;
+}
+
+.pixel-theme .react-flow__edge.animated .react-flow__edge-path {
+  stroke: #82e8f8 !important;
+}
+
+.pixel-theme .react-flow__background {
+  background-color: #241f30 !important;
+}
+
+.pixel-theme .react-flow__background pattern circle,
+.pixel-theme .react-flow__background pattern line {
+  stroke: #38304a !important;
+}
+
+/* ─── Input elements in Pixel Theme ──────────────────────────────────────── */
+.pixel-theme .nf-input,
+.pixel-theme .nf-select,
+.pixel-theme textarea {
+  border-radius: 0 !important;
+  border: 2px solid #5c5275 !important;
+  background: #221c2e !important;
+  color: #ffffff !important;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.7) !important;
+  padding: 6px 8px !important;
+}
+
+.pixel-theme .nf-input:focus,
+.pixel-theme .nf-select:focus,
+.pixel-theme textarea:focus {
+  border-color: #f6d17b !important;
+  outline: none !important;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.7), 0 0 6px rgba(246, 209, 123, 0.4) !important;
+}
+
+/* ─── Range Sliders ──────────────────────────────────────────────────────── */
+.pixel-theme input[type='range'] {
+  -webkit-appearance: none;
+  background: #221c2e !important;
+  border: 1px solid #5c5275 !important;
+  height: 6px !important;
+  border-radius: 0 !important;
+}
+
+.pixel-theme input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #f6d17b;
+  border: 1px solid #5c5275;
+  border-radius: 0;
+  box-shadow: 1px 1px 0 #000;
+  cursor: pointer;
+}
+
+/* ─── Bottom Monitor Panel ───────────────────────────────────────────────── */
+.pixel-theme .nf-monitor-panel {
+  background: #201a2b !important;
+  border-top: 3px solid #5c5275 !important;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.7) !important;
+}
+
+.pixel-theme .nf-table {
+  border: 1px solid #5c5275 !important;
+}
+
+.pixel-theme .nf-table th {
+  background: #2c253b !important;
+  color: #f6d17b !important;
+  border-bottom: 2px solid #5c5275 !important;
+  text-transform: uppercase !important;
+  font-size: 10px !important;
+}
+
+.pixel-theme .nf-table td {
+  border-bottom: 1px solid #362e49 !important;
+}
+
+/* ─── Modals in Pixel Theme ──────────────────────────────────────────────── */
+.pixel-theme .nf-modal-overlay {
+  background: rgba(18, 14, 25, 0.85) !important;
+}
+
+.pixel-theme .nf-modal-box {
+  border-radius: 0 !important;
+  border: 3px solid #5c5275 !important;
+  outline: 2px solid #f6d17b !important;
+  background: #2e273e !important;
+  box-shadow: 6px 6px 0 #000000 !important;
+}
+
+/* ─── Scrollbars in Pixel Theme ──────────────────────────────────────────── */
+.pixel-theme ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.pixel-theme ::-webkit-scrollbar-track {
+  background: #221c2e;
+  border: 1px solid #5c5275;
+}
+.pixel-theme ::-webkit-scrollbar-thumb {
+  background: #5c5275;
+  border: 1px solid #f6d17b;
+  border-radius: 0;
+}
+

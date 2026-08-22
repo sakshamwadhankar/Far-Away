@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { Node as RFNode } from 'reactflow';
 import { ModelInfo } from '../App';
@@ -28,10 +28,84 @@ const TYPE_COLORS: Record<string, string> = {
   compare:   '#5A3A8A',
 };
 
+const DEFAULT_RIGHT_PANEL_WIDTH = 320;
+const MIN_RIGHT_PANEL_WIDTH = 240;
+const MAX_RIGHT_PANEL_WIDTH = 600;
+
 export default function RightPanel({ selectedNode, updateNodeData, availableModels = [], onDeleteNode, onManageApis }: RightPanelProps) {
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('komvos_right_panel_width');
+      return saved ? Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, parseInt(saved, 10))) : DEFAULT_RIGHT_PANEL_WIDTH;
+    } catch {
+      return DEFAULT_RIGHT_PANEL_WIDTH;
+    }
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, window.innerWidth - e.clientX));
+      setPanelWidth(newWidth);
+      try {
+        localStorage.setItem('komvos_right_panel_width', String(newWidth));
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
+  const handleDoubleClickResize = useCallback(() => {
+    setPanelWidth(DEFAULT_RIGHT_PANEL_WIDTH);
+    try {
+      localStorage.setItem('komvos_right_panel_width', String(DEFAULT_RIGHT_PANEL_WIDTH));
+    } catch {
+      // ignore
+    }
+  }, []);
+
   if (!selectedNode) {
     return (
-      <div className="nf-right-panel">
+      <div
+        className="nf-right-panel"
+        style={{
+          width: panelWidth,
+          minWidth: panelWidth,
+          maxWidth: panelWidth,
+          position: 'relative',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          data-testid="right-panel-resize-handle"
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClickResize}
+          className={`nf-right-panel-resizer ${isResizing ? 'resizing' : ''}`}
+          title="Drag to resize panel, double click to reset"
+        />
         <div style={{ padding: '16px 16px 0' }}>
           <div className="nf-section-header" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>Configuration</div>
         </div>
@@ -91,7 +165,23 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
   };
 
   return (
-    <div className="nf-right-panel nf-fade-in">
+    <div
+      className="nf-right-panel nf-fade-in"
+      style={{
+        width: panelWidth,
+        minWidth: panelWidth,
+        maxWidth: panelWidth,
+        position: 'relative',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        data-testid="right-panel-resize-handle"
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClickResize}
+        className={`nf-right-panel-resizer ${isResizing ? 'resizing' : ''}`}
+        title="Drag to resize panel, double click to reset"
+      />
       {/* Node type header */}
       <div style={{
         padding: '14px 16px 12px',
