@@ -8,6 +8,7 @@ import MonitorPanel from './panels/MonitorPanel';
 import TraceModal from './panels/TraceModal';
 import OnboardingModal from './panels/OnboardingModal';
 import ChatPanel, { ChatMessage } from './panels/ChatPanel';
+import OfficeView from './office/OfficeView';
 import { toPipelineSchema, scrubSecrets } from './canvas/serializer';
 import { useToast } from './contexts/ToastContext';
 import ExportModal from './components/ExportModal';
@@ -26,7 +27,7 @@ import { useRunStore } from './state/runStore';
 import { useRunSocket } from './hooks/useRunSocket';
 import { usePipelineActions } from './hooks/usePipelineActions';
 
-export type AppMode = 'edit' | 'use';
+export type AppMode = 'edit' | 'use' | 'office';
 
 interface ValidationDetail { msg?: string; loc?: (string | number)[]; type?: string; }
 export interface ModelInfo { endpoint_id: string; provider: string; model_name: string; max_context: number; json_mode: boolean; tools: boolean; vision: boolean; }
@@ -163,6 +164,7 @@ export default function App() {
             <div className="nf-mode-switch" data-testid="mode-switch" style={{ boxShadow: 'var(--shadow-md)' }}>
               <button className={appMode === 'edit' ? 'active' : ''} onClick={() => setAppMode('edit')} data-testid="mode-edit">✏ Edit</button>
               <button className={appMode === 'use' ? 'active' : ''} onClick={() => setAppMode('use')} data-testid="mode-use">◎ Use</button>
+              <button className={appMode === 'office' ? 'active' : ''} onClick={() => setAppMode('office')} data-testid="mode-office">🏢 Office</button>
             </div>
             {appMode === 'edit' && (
               <>
@@ -176,7 +178,7 @@ export default function App() {
             )}
           </div>
           <div style={{ marginLeft: 'auto', pointerEvents: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-            {appMode === 'edit' && (
+            {(appMode === 'edit' || appMode === 'office') && (
               <>
                 {runId && !isRunning && <button onClick={() => setShowTrace(true)} className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>◉ View Trace</button>}
                 <button data-testid="run-pipeline-button" onClick={runPipeline} disabled={isRunning || nodes.length === 0} className={`nf-pill-btn nf-pill-btn--lg ${isRunning ? '' : 'nf-pill-btn--highlight'}`} style={{ boxShadow: 'var(--shadow-md)', background: isRunning ? 'var(--surface-2)' : undefined, color: isRunning ? 'var(--text-2)' : undefined, borderColor: isRunning ? 'var(--border)' : undefined }}>
@@ -193,7 +195,18 @@ export default function App() {
           </div>
         </div>
         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {appMode === 'edit' ? <Canvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} setNodes={setNodes} onSelectionChange={(ids) => setSelectedNodeIds(ids)} onBeforeDelete={handleBeforeDelete} onUndo={handleUndo} onRedo={handleRedo} onDuplicate={handleDuplicate} animatedEdgeIds={animatedEdgeIds} /> : <ChatPanel nodes={nodes} edges={edges} backendPort={backendPort} backendToken={backendToken} apiBase={API_BASE} isRunning={isRunning} onRunStateChange={handleChatRunStateChange} updateNodeData={updateNodeDataSilent} resetNodes={resetAllNodes} onWsEvent={handleWsEvent} messages={chatMessages} setMessages={setChatMessages} inputValues={chatInputValues} setInputValues={setChatInputValues} />}
+          {appMode === 'edit' ? <Canvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} setNodes={setNodes} onSelectionChange={(ids) => setSelectedNodeIds(ids)} onBeforeDelete={handleBeforeDelete} onUndo={handleUndo} onRedo={handleRedo} onDuplicate={handleDuplicate} animatedEdgeIds={animatedEdgeIds} /> : appMode === 'office' ? (
+            <OfficeView
+              nodes={nodes}
+              edges={edges}
+              nodeStats={nodeStats}
+              animatedEdgeIds={animatedEdgeIds}
+              isRunning={isRunning}
+              startTime={startTime}
+              selectedNodeIds={selectedNodeIds}
+              onSelectNode={(id) => setSelectedNodeIds([id])}
+            />
+          ) : <ChatPanel nodes={nodes} edges={edges} backendPort={backendPort} backendToken={backendToken} apiBase={API_BASE} isRunning={isRunning} onRunStateChange={handleChatRunStateChange} updateNodeData={updateNodeDataSilent} resetNodes={resetAllNodes} onWsEvent={handleWsEvent} messages={chatMessages} setMessages={setChatMessages} inputValues={chatInputValues} setInputValues={setChatInputValues} />}
           {appMode === 'edit' && <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}><button onClick={handleClearWorkspace} title="Clear Workspace" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F', background: 'var(--surface)' }}>🗑 Clear</button></div>}
         </div>
         {(runId || isRunning) && <div style={{ height: 250, position: 'relative' }}><MonitorPanel runId={runId} isRunning={isRunning} nodeStats={nodeStats} runTotals={runTotals} startTime={startTime} onStop={stopRun} /></div>}

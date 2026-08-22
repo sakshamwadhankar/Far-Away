@@ -343,6 +343,21 @@ describe('App - Mode Switch', () => {
     expect(screen.getByTestId('mode-switch')).toBeDefined();
     expect(screen.getByTestId('mode-edit')).toBeDefined();
     expect(screen.getByTestId('mode-use')).toBeDefined();
+    expect(screen.getByTestId('mode-office')).toBeDefined();
+  });
+
+  it('shows the pixel-art office view in Office mode', () => {
+    render(<ToastProvider><App /></ToastProvider>);
+
+    fireEvent.click(screen.getByTestId('mode-office'));
+
+    // Canvas view replaced by the office; graph is gone.
+    expect(screen.queryByTestId('react-flow-mock')).toBeNull();
+    expect(screen.getByTestId('office-view')).toBeDefined();
+    // Empty pipeline → hint instead of desks.
+    expect(screen.getByTestId('office-empty-hint')).toBeDefined();
+    // Run controls stay available while watching agents.
+    expect(screen.getByTestId('run-pipeline-button')).toBeDefined();
   });
 
   it('shows canvas in Edit mode and chat in Use mode', () => {
