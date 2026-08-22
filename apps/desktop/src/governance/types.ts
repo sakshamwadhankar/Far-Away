@@ -10,6 +10,7 @@
 export type DomainKey = 'providers' | 'egress' | 'spend' | 'retention' | 'desktop';
 export type PostureValue = 'enforce' | 'ask' | 'audit';
 export type OutcomeValue = 'allow' | 'deny' | 'timeout';
+export type RetentionMode = 'full' | 'metadata';
 
 export interface ProfileSpec {
   name: string;
@@ -17,7 +18,8 @@ export interface ProfileSpec {
   postures: Record<DomainKey, PostureValue>;
   spend_cap_usd: number | null;
   spend_ask_threshold_usd: number | null;
-  retention: string;
+  retention: RetentionMode;
+  retention_window: string;
 }
 
 export interface ProfileEntry {

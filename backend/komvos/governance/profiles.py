@@ -79,6 +79,14 @@ class GovernanceProfile(BaseModel):
         ),
     )
     retention: RetentionMode = RetentionMode.FULL
+    retention_window: str = Field(
+        default="forever",
+        description=(
+            "How long runs are kept before retention sweeps delete them, "
+            "e.g. '30d', '7d', 'forever'. 'forever', 'none', and empty "
+            "strings preserve history."
+        ),
+    )
 
     @model_validator(mode="after")
     def _postures_cover_every_domain(self) -> GovernanceProfile:
@@ -120,6 +128,7 @@ def _profile(
     spend_cap_usd: float | None = None,
     spend_ask_threshold_usd: float | None = None,
     retention: RetentionMode,
+    retention_window: str = "forever",
 ) -> GovernanceProfile:
     return GovernanceProfile(
         name=name,
@@ -134,6 +143,7 @@ def _profile(
         spend_cap_usd=spend_cap_usd,
         spend_ask_threshold_usd=spend_ask_threshold_usd,
         retention=retention,
+        retention_window=retention_window,
     )
 
 
@@ -144,6 +154,7 @@ EXPLORE = _profile(
     spend=Posture.AUDIT,
     desktop=Posture.AUDIT,
     retention=RetentionMode.FULL,
+    retention_window="forever",
 )
 
 REVIEW = _profile(
@@ -154,6 +165,7 @@ REVIEW = _profile(
     desktop=Posture.ASK,
     spend_ask_threshold_usd=1.0,
     retention=RetentionMode.FULL,
+    retention_window="30d",
 )
 
 LOCKED = _profile(
@@ -163,6 +175,7 @@ LOCKED = _profile(
     spend=Posture.ENFORCE,
     desktop=Posture.ENFORCE,
     retention=RetentionMode.METADATA,
+    retention_window="forever",
 )
 
 BUILT_IN_PROFILES: dict[str, GovernanceProfile] = {

@@ -46,7 +46,8 @@ export default function ProfilePicker({
       postures: { providers: 'ask', egress: 'ask', spend: 'ask', retention: 'ask', desktop: 'ask' },
       spend_cap_usd: null,
       spend_ask_threshold_usd: null,
-      retention: '30d'
+      retention: 'full',
+      retention_window: '30d'
     });
   };
 
@@ -74,7 +75,8 @@ export default function ProfilePicker({
         postures: editForm.postures as Record<DomainKey, PostureValue>,
         spend_cap_usd: editForm.spend_cap_usd || null,
         spend_ask_threshold_usd: editForm.spend_ask_threshold_usd || null,
-        retention: editForm.retention || '30d'
+        retention: (editForm.retention || 'full') as 'full' | 'metadata',
+        retention_window: editForm.retention_window || 'forever'
       };
       
       if (isCreating) {
@@ -138,7 +140,30 @@ export default function ProfilePicker({
             ))}
           </div>
           
-          <div className="nf-section-header" style={{ marginTop: 12 }}>Limits</div>
+          <div className="nf-section-header" style={{ marginTop: 12 }}>Recording & Retention</div>
+          <div className="nf-field-group">
+            <label className="nf-label">Recording Level</label>
+            <select
+              className="nf-input"
+              value={editForm.retention || 'full'}
+              onChange={e => setEditForm(prev => ({ ...prev!, retention: e.target.value as 'full' | 'metadata' }))}
+            >
+              <option value="full">Full (Inputs, Outputs & Artifacts)</option>
+              <option value="metadata">Metadata Only (No Node Payload)</option>
+            </select>
+          </div>
+          <div className="nf-field-group" style={{ marginTop: 8 }}>
+            <label className="nf-label">Retention Window</label>
+            <input
+              type="text"
+              className="nf-input"
+              value={editForm.retention_window || 'forever'}
+              onChange={e => setEditForm(prev => ({ ...prev!, retention_window: e.target.value }))}
+              placeholder="e.g. 30d, 7d, 24h, forever"
+            />
+          </div>
+
+          <div className="nf-section-header" style={{ marginTop: 12 }}>Spend Limits</div>
           <div className="nf-field-group">
             <label className="nf-label">Spend Cap (USD)</label>
             <input
@@ -198,6 +223,14 @@ export default function ProfilePicker({
                     <span className="nf-gov-posture-name">{POSTURE_LABELS[p.profile.postures[d]]}</span>
                   </div>
                 ))}
+                <div className="nf-gov-profile-domain-info" title="Recording level">
+                  <span className="nf-gov-domain-name">Recording:</span>
+                  <span className="nf-gov-posture-name">{p.profile.retention === 'metadata' ? 'Metadata' : 'Full'}</span>
+                </div>
+                <div className="nf-gov-profile-domain-info" title="Retention window">
+                  <span className="nf-gov-domain-name">Window:</span>
+                  <span className="nf-gov-posture-name">{p.profile.retention_window || 'forever'}</span>
+                </div>
               </div>
               {!p.profile.built_in && (
                 <div className="nf-gov-profile-actions">

@@ -26,7 +26,6 @@ from komvos.endpoints.base import (
     Cost,
     GenRequest,
     Health,
-    Message,
     Token,
 )
 

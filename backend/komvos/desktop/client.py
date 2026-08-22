@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import importlib
+import json
 import logging
 from typing import Any
 from urllib.parse import urlsplit
@@ -69,6 +70,14 @@ class DesktopClient:
         async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
             resp = await client.post(f"{self._base_url}/cmd", json=payload)
             resp.raise_for_status()
+            text = resp.text.strip()
+            if text.startswith("data:"):
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("data:"):
+                        raw_json = stripped[5:].strip()
+                        if raw_json:
+                            return json.loads(raw_json)  # type: ignore[no-any-return]
             return resp.json()  # type: ignore[no-any-return]
 
     async def screenshot(self) -> bytes:

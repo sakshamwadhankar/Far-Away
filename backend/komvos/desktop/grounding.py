@@ -137,9 +137,15 @@ def annotate_screenshot(
         pil_image = importlib.import_module("PIL.Image")
         pil_draw = importlib.import_module("PIL.ImageDraw")
         pil_font = importlib.import_module("PIL.ImageFont")
+        if image_bytes:
+            try:
+                img = pil_image.open(io.BytesIO(image_bytes)).convert("RGBA")
+                width, height = img.size
+            except Exception:
+                img = pil_image.new("RGBA", (width, height), (30, 30, 30, 255))
+        else:
+            img = pil_image.new("RGBA", (width, height), (30, 30, 30, 255))
 
-        img = pil_image.open(io.BytesIO(image_bytes)).convert("RGBA")
-        width, height = img.size
         elements = extract_interactive_elements(a11y_tree, width, height)
         grid_used = False
 

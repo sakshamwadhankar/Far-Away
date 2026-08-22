@@ -76,6 +76,7 @@ class _PostureBody(BaseModel):
     spend_cap_usd: float | None = Field(default=None, ge=0.0)
     spend_ask_threshold_usd: float | None = Field(default=None, ge=0.0)
     retention: RetentionMode = RetentionMode.FULL
+    retention_window: str = "forever"
 
 
 class ProfileCreateRequest(_PostureBody):
@@ -235,6 +236,7 @@ def _build_custom_profile(
             spend_cap_usd=body.spend_cap_usd,
             spend_ask_threshold_usd=body.spend_ask_threshold_usd,
             retention=body.retention,
+            retention_window=body.retention_window,
         )
     except ValidationError as exc:
         # str() rather than exc.errors(): the raw error list carries

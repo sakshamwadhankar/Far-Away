@@ -1,0 +1,82 @@
+{
+  "schema_version": "2.0",
+  "id": "7820a1bc-341e-45fa-9231-6b81d7101890",
+  "name": "Governance Approval Demo",
+  "version": "1.0.0",
+  "endpoints": {
+    "openai:gpt-4o": {
+      "kind": "openai",
+      "model": "gpt-4o"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "policy_gate",
+      "type": "access",
+      "config": {
+        "access_policy": {
+          "providers": ["ollama"],
+          "allow_local_models": true,
+          "allow_network": false,
+          "allowed_domains": [],
+          "allow_desktop": false,
+          "allow_destructive": false
+        }
+      },
+      "inputs": [],
+      "outputs": []
+    },
+    {
+      "id": "cloud_llm",
+      "type": "model",
+      "endpoint_ref": "openai:gpt-4o",
+      "config": {
+        "system_prompt": "You are a secure assistant analyzing sensitive queries."
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reply",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.prompt",
+      "to": "cloud_llm.input"
+    },
+    {
+      "from": "cloud_llm.reply",
+      "to": "out.result"
+    }
+  ]
+}

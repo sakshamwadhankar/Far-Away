@@ -5,91 +5,89 @@ This guide provides a reproducible walkthrough demonstrating how the Komvos gove
 ---
 
 ## 1. Setup & Environment
-1. Launch the backend service:
+1. Start the desktop automation server:
+   ```bash
+   cd backend
+   ./.venv/Scripts/python.exe -m computer_server --port 8100 --host 127.0.0.1
+   ```
+2. In a second terminal, launch the backend API service:
    ```bash
    cd backend
    ./.venv/Scripts/python.exe -m uvicorn komvos.api.main:app --port 8000
    ```
-2. In a second terminal, launch the desktop frontend:
+3. In a third terminal, launch the desktop frontend:
    ```bash
    cd apps/desktop
    npm run dev
    ```
-3. Open the Komvos application window in your browser or Electron shell.
+4. Open the Komvos application window in your browser or desktop shell.
 
 ---
 
-## 2. Canvas Construction: Building a Governed Desktop Pipeline
-1. In the left sidebar palette under **Node Types**, drag an **Input** node onto the canvas.
-2. Drag a **Computer** node (`🖥`) onto the canvas.
-3. Drag an **Access** node (`⛨`) onto the canvas between the Input and Computer nodes.
-4. Drag an **Output** node onto the canvas.
-5. Connect the nodes:
-   - `Input [prompt]` ➔ `Access` ➔ `Computer [task]`
-   - `Computer [result]` ➔ `Output [response]`
-6. Configure the **Access** node:
-   - Click the Access node to view its capability list.
-   - Leave `Desktop Control` and `Destructive Actions` **unchecked (denied)** to simulate a restrictive boundary.
-7. Configure the **Computer** node:
-   - Set the `endpoint_ref` to an active vision model (e.g. `anthropic:claude-3-5-sonnet-20241022` or `openai:gpt-4o`).
-   - Set the prompt input to: `"Open settings and clear temporary cache files."`
+## 2. Pipeline Loading
+1. Load the pre-configured seed template: `Desktop Automation Demo` (located in `templates/desktop-automation.json`).
+2. The pipeline structure:
+   - **Input Node (`in`)**: provides the desktop task prompt (e.g. `"Open settings and clear temporary cache files."`).
+   - **Access Node (`policy_boundary`)**: scoped policy marker defining allowed applications and withholding destructive permissions.
+   - **Computer Node (`computer_agent`)**: connects to the vision model and local `cua-computer-server` execution layer.
+   - **Output Node (`out`)**: displays the execution outcome.
+   - Data flow: `in.task` ➔ `computer_agent.task` ➔ `out.result`.
 
 ---
 
 ## 3. Scenario A: Executing under the REVIEW Profile (Ask Posture)
 
 ### Expected Behavior:
-Under the **REVIEW** profile, the `desktop` domain is configured with the **Ask** posture. When the pipeline reaches the Computer node attempting a desktop action without an explicit policy grant, execution **suspends** and requests operator confirmation.
+Under **REVIEW**, the `desktop` domain posture is **Ask**. When the Computer node attempts an action requiring desktop control or targeting an ungranted destructive capability, execution **suspends** and requests operator confirmation.
 
 ### Step-by-Step Execution:
-1. Click the **Profile Indicator** in the bottom-left corner of the app and select the **REVIEW** profile.
+1. Click the **Governance Indicator** in the bottom-left corner and select the **REVIEW** profile.
 2. Click **▶ Run Pipeline**.
-3. **Observation — Loop Execution**:
-   - The Computer node captures the initial screen state and overlays Set-of-Marks badges.
-   - The model selects an action that targets system settings.
-   - The classifier detects a destructive / system setting action (`category="system_security"`).
+3. **Observation — Screen Grounding & Gating**:
+   - The Computer node captures screen state and overlays Set-of-Marks grounding badges.
+   - The vision model selects a desktop action targeting system settings.
+   - The classifier detects a system setting / destructive operation (`category="system_security"`).
 4. **Observation — Interactive Approval Prompt**:
-   - Execution immediately pauses.
-   - An **Approval Prompt** dialog appears with the message:
-     > *"Node 'computer-1' requires desktop control / destructive action, which its access policy does not grant."*
-   - Three choices are presented:
-     1. **Allow Once**: Permits this single step and continues the loop.
-     2. **Allow for Run**: Grants the capability for the remainder of this execution run.
-     3. **Deny**: Rejects the action and halts the node with an `AccessDeniedError`.
+   - Execution pauses immediately.
+   - The **Approval Prompt** dialog appears with the message:
+     > *"Destructive action 'click' withheld: Target is system/security setting"*
+   - Options presented:
+     1. **Allow Once**: Permits this single action and resumes loop.
+     2. **Allow for Run**: Grants the capability for the remainder of this run.
+     3. **Deny**: Rejects the action and halts the node with `AccessDeniedError`.
 5. Click **Allow Once**:
-   - The action executes against the desktop layer.
-   - The verifier validates the resulting visual delta.
-   - The decision is logged in **🛡 History** with `outcome: "allow"` and `origin: "human_approval"`.
+   - The mechanical action executes via the local `cua-computer-server`.
+   - The post-action verifier computes visual delta and records verification.
+   - The decision is logged in **🛡 History** with `outcome: "allow"` and `origin: "human_allow_once"`.
 
 ---
 
 ## 4. Scenario B: Executing under the LOCKED Profile (Enforce Posture)
 
 ### Expected Behavior:
-Under the **LOCKED** profile, the `desktop` domain is configured with the **Enforce** posture. The pipeline's access policy is strictly enforced. Any unauthorized desktop control or ungranted destructive action is immediately **denied and halted** without human intervention.
+Under **LOCKED**, the `desktop` domain posture is **Enforce**. The pipeline's access policy is strictly enforced: any ungranted desktop control or destructive action is immediately **denied and halted** without human intervention.
 
 ### Step-by-Step Execution:
-1. Click the **Profile Indicator** and switch the active profile to **LOCKED**.
+1. Click the bottom-left **Governance Indicator** and switch the active profile to **LOCKED**.
 2. Click **▶ Run Pipeline**.
-3. **Observation — Immediate Enforcement**:
-   - The Computer node attempts to initiate desktop control.
-   - The governance gate consults the **LOCKED** posture.
-   - Because the upstream Access node does not grant `allow_desktop`, the governance gate **denies** the action immediately.
+3. **Observation — Immediate Fail-Closed Enforcement**:
+   - The Computer node reaches the governance gate.
+   - Because the policy withholds permission for destructive operations and the profile posture is **Enforce**, the gate immediately halts execution.
    - No approval popup is displayed.
-   - The node fails with `AccessDeniedError: Node 'computer-1' (computer) requires desktop control, which its access policy does not grant.`
+   - The pipeline fails safely with an `AccessDeniedError`.
 4. **Observation — Audit Trail**:
    - Open **🛡 History** from the top toolbar.
    - A decision record appears:
      - **Domain**: `desktop`
-     - **Capability**: `allow_desktop`
-     - **Outcome**: `DENY`
-     - **Origin**: `pipeline_policy`
-     - **Reason**: `Posture ENFORCE: pipeline policy withheld permission.`
+     - **Capability**: `destructive:click` (or `allow_desktop`)
+     - **Outcome**: `DENIED`
+     - **Origin**: `Pipeline & Profile`
+     - **Reason**: Confirms the profile enforced the withholding without human interaction.
 
 ---
 
 ## 5. Reviewing Open Source Licences & Attributions
 1. Click the **📜 Licences** button in the top toolbar.
 2. Verify that:
-   - **CC-BY-4.0** attribution is prominent and links to the official license terms.
+   - **CC-BY-4.0** attribution is prominent and links to official terms.
    - All third-party components (including `cua-computer-server`, `FastAPI`, `React`, `React Flow`, and `Pydantic`) are accurately documented.

@@ -335,7 +335,13 @@ class ComputerExecutor(BaseExecutor):
 
             data = json.loads(cleaned)
             action_type_str = (
-                str(data.get("action_type") or "done").lower().strip()
+                str(
+                    data.get("action_type")
+                    or data.get("action")
+                    or ("click" if "target_mark" in data else "done")
+                )
+                .lower()
+                .strip()
             )
 
             valid_types = {a.value for a in ActionType}

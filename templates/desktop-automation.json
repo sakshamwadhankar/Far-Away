@@ -1,0 +1,83 @@
+{
+  "schema_version": "2.0",
+  "id": "e931b204-c5a1-4328-9844-4821d3f99012",
+  "name": "Desktop Automation Demo",
+  "version": "1.0.0",
+  "endpoints": {
+    "openai:gpt-4o": {
+      "kind": "openai",
+      "model": "gpt-4o"
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "task",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "policy_boundary",
+      "type": "access",
+      "config": {
+        "access_policy": {
+          "providers": ["openai"],
+          "allow_local_models": true,
+          "allow_network": true,
+          "allowed_domains": [],
+          "allow_desktop": true,
+          "allowed_applications": ["Settings", "Calculator", "Notepad"],
+          "allow_destructive": false
+        }
+      },
+      "inputs": [],
+      "outputs": []
+    },
+    {
+      "id": "computer_agent",
+      "type": "computer",
+      "endpoint_ref": "openai:gpt-4o",
+      "config": {
+        "system_prompt": "You are an autonomous desktop assistant using screen vision."
+      },
+      "inputs": [
+        {
+          "name": "task",
+          "type": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "result",
+          "type": "text"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "in.task",
+      "to": "computer_agent.task"
+    },
+    {
+      "from": "computer_agent.result",
+      "to": "out.result"
+    }
+  ]
+}

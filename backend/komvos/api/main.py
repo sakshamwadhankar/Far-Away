@@ -130,8 +130,8 @@ async def lifespan(app: FastAPI) -> Any:
 
         active_name = get_active_profile_name(sm)
         profile = load_profile(active_name, sm)
-        if profile and profile.retention:
-            sm.sweep_retention(profile.retention)
+        if profile and profile.retention_window:
+            sm.sweep_retention(profile.retention_window)
     except Exception as exc:
         logger.warning(f"Startup retention sweep skipped/failed: {exc}")
     yield

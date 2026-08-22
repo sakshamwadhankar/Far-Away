@@ -75,7 +75,8 @@ export interface ProfileBody {
   postures: Record<DomainKey, PostureValue>;
   spend_cap_usd: number | null;
   spend_ask_threshold_usd: number | null;
-  retention: string;
+  retention: 'full' | 'metadata';
+  retention_window: string;
 }
 
 export async function createProfile(
