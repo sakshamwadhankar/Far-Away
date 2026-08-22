@@ -157,7 +157,10 @@ class ComputerExecutor(BaseExecutor):
                         kind=EventKind.TOKEN,
                         node_id=ctx.node.id,
                         data={
-                            "text": f"[Vision: Screen grounded with {len(marked_screen.elements)} marks]",
+                            "text": (
+                                "[Vision: Screen grounded with "
+                                f"{len(marked_screen.elements)} marks]"
+                            ),
                             "screenshot": last_screenshot_b64,
                             "index": steps_taken,
                         },

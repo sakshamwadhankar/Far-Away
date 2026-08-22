@@ -139,8 +139,8 @@ export function fromPipelineSchema(pipeline: Pipeline): { nodes: RFNode<Pipeline
     const sPortDef = sNode?.outputs?.find((p) => p.name === sourcePort);
     const tPortDef = tNode?.inputs?.find((p) => p.name === targetPort);
 
-    const sourceHandleType = sPortDef?.type || 'text';
-    const targetHandleType = tPortDef?.type || 'text';
+    const sourceHandleType = sNode?.type === 'access' || sourcePort === 'scope' ? 'scope' : (sPortDef?.type || 'text');
+    const targetHandleType = tNode?.type === 'access' || targetPort === 'scope' ? 'scope' : (tPortDef?.type || 'text');
 
     return {
       id: `edge-${index}`,

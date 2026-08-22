@@ -50,7 +50,8 @@ export default function Canvas({
       let isInvalid = false;
       const sourceHandleType = e.sourceHandle?.split(':')[0];
       const targetHandleType = e.targetHandle?.split(':')[0];
-      if (sourceHandleType && targetHandleType && sourceHandleType !== targetHandleType) {
+      const isScopeEdge = sourceHandleType === 'scope' || targetHandleType === 'scope';
+      if (!isScopeEdge && sourceHandleType && targetHandleType && sourceHandleType !== targetHandleType) {
         isInvalid = true;
       }
       return {

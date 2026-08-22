@@ -19,7 +19,9 @@ export function usePipelineStore(showToast: (msg: string, type: 'error' | 'succe
   const onConnect = useCallback((params: Edge | Connection) => {
     const sourceHandleType = params.sourceHandle?.split(':')[0];
     const targetHandleType = params.targetHandle?.split(':')[0];
-    if (sourceHandleType !== targetHandleType) {
+    const isScopeEdge = sourceHandleType === 'scope' || targetHandleType === 'scope';
+
+    if (!isScopeEdge && sourceHandleType !== targetHandleType) {
       showToast(`Incompatible port types: cannot connect ${sourceHandleType} to ${targetHandleType}`, 'error');
       return;
     }
