@@ -63,9 +63,9 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
   // inspector owns the numeric ceilings and the network switch.
   const accessPolicy = (config.access_policy as AccessPolicy | undefined) ?? emptyPolicy();
 
-  const handleAccessPolicyChange = (
-    key: 'max_cost_usd' | 'max_tokens' | 'allow_network',
-    value: number | boolean | null,
+  const handleAccessPolicyChange = <K extends keyof AccessPolicy>(
+    key: K,
+    value: AccessPolicy[K],
   ) => {
     updateNodeData(selectedNode.id, {
       config: { ...config, access_policy: { ...accessPolicy, [key]: value } },
