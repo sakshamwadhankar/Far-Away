@@ -30,8 +30,8 @@
 
     "NodeType": {
       "type": "string",
-      "enum": ["input", "output", "model", "loop", "judge", "router", "transform", "compare", "access"],
-      "description": "Allowed node types. 'access' was added in schema 2.1."
+      "enum": ["input", "output", "model", "loop", "judge", "router", "transform", "compare", "access", "computer"],
+      "description": "Allowed node types. 'access' was added in schema 2.1; 'computer' added for desktop control."
     },
 
     "EndpointKind": {
@@ -72,6 +72,19 @@
           "type": ["integer", "null"],
           "minimum": 1,
           "description": "Per-request token ceiling for this scope."
+        },
+        "allow_desktop": {
+          "type": "boolean",
+          "description": "Whether downstream nodes may control the desktop."
+        },
+        "allowed_applications": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Applications downstream nodes may interact with. Empty means no application restriction."
+        },
+        "allow_destructive": {
+          "type": "boolean",
+          "description": "Whether destructive desktop actions are permitted."
         }
       }
     },

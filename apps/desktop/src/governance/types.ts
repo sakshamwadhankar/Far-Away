@@ -7,7 +7,7 @@
  *  - approvals:   WsApprovalPendingEvent frames (scheduler/events.py)
  */
 
-export type DomainKey = 'providers' | 'egress' | 'spend' | 'retention';
+export type DomainKey = 'providers' | 'egress' | 'spend' | 'retention' | 'desktop';
 export type PostureValue = 'enforce' | 'ask' | 'audit';
 export type OutcomeValue = 'allow' | 'deny' | 'timeout';
 
@@ -98,6 +98,7 @@ export const DOMAIN_LABELS: Record<DomainKey, string> = {
   egress: 'Egress',
   spend: 'Spend',
   retention: 'Retention',
+  desktop: 'Desktop',
 };
 
 export const POSTURE_LABELS: Record<PostureValue, string> = {

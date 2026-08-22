@@ -66,6 +66,7 @@ NodeType = Literal[
     "transform",
     "compare",
     "access",
+    "computer",
 ]
 
 # ---------------------------------------------------------------------------
@@ -136,6 +137,21 @@ class AccessPolicy(BaseModel):
         ge=1,
         description="Per-request token ceiling for this scope.",
     )
+    allow_desktop: bool = Field(
+        default=False,
+        description="Whether downstream nodes may control the desktop.",
+    )
+    allowed_applications: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Applications downstream nodes may interact with. "
+            "Empty means no application restriction."
+        ),
+    )
+    allow_destructive: bool = Field(
+        default=False,
+        description="Whether destructive desktop actions are permitted.",
+    )
 
     @staticmethod
     def permissive() -> AccessPolicy:
@@ -152,6 +168,9 @@ class AccessPolicy(BaseModel):
             allowed_domains=[],
             max_cost_usd=None,
             max_tokens=None,
+            allow_desktop=True,
+            allowed_applications=[],
+            allow_destructive=True,
         )
 
     def intersect(self, other: AccessPolicy) -> AccessPolicy:
@@ -167,6 +186,9 @@ class AccessPolicy(BaseModel):
         restriction", so it intersects as the identity rather than as the empty
         set — otherwise an unrestricted policy would silently zero out a
         restricted one.
+
+        `allowed_applications` works identically: an empty list means "no
+        restriction", so it intersects as identity against a restricted list.
         """
         if not self.allowed_domains:
             domains = list(other.allowed_domains)
@@ -177,6 +199,14 @@ class AccessPolicy(BaseModel):
             allowed = set(other.allowed_domains)
             domains = [d for d in self.allowed_domains if d in allowed]
 
+        if not self.allowed_applications:
+            apps = list(other.allowed_applications)
+        elif not other.allowed_applications:
+            apps = list(self.allowed_applications)
+        else:
+            allowed_apps = set(other.allowed_applications)
+            apps = [a for a in self.allowed_applications if a in allowed_apps]
+
         return AccessPolicy(
             providers=[p for p in self.providers if p in set(other.providers)],
             allow_local_models=self.allow_local_models and other.allow_local_models,
@@ -184,6 +214,9 @@ class AccessPolicy(BaseModel):
             allowed_domains=domains,
             max_cost_usd=_min_optional(self.max_cost_usd, other.max_cost_usd),
             max_tokens=_min_optional(self.max_tokens, other.max_tokens),
+            allow_desktop=self.allow_desktop and other.allow_desktop,
+            allowed_applications=apps,
+            allow_destructive=self.allow_destructive and other.allow_destructive,
         )
 
 
@@ -279,14 +312,14 @@ class Node(BaseModel):
 
     @model_validator(mode="after")
     def _validate_model_node_endpoint(self) -> Node:
-        if self.type == "model" and not self.endpoint_ref:
+        if self.type in ("model", "computer") and not self.endpoint_ref:
             raise ValueError(
-                f"[Missing Endpoint] Node '{self.id}' of type 'model' "
+                f"[Missing Endpoint] Node '{self.id}' of type '{self.type}' "
                 "must define an 'endpoint_ref'."
             )
-        if self.type != "model" and self.endpoint_ref is not None:
+        if self.type not in ("model", "computer") and self.endpoint_ref is not None:
             raise ValueError(
-                "[Invalid Endpoint] Only 'model' nodes may have "
+                "[Invalid Endpoint] Only 'model' and 'computer' nodes may have "
                 f"'endpoint_ref'; node '{self.id}' has type '{self.type}'."
             )
         return self

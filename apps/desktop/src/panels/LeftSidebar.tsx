@@ -15,11 +15,13 @@ const ICON_MAP: Record<string, string> = {
   transform: '⟳',
   compare:   '≈',
   access:    '⛨',
+  computer:  '🖥',
 };
 
 const NODE_TYPES: { type: NodeType; label: string; defaultData: Partial<PipelineNodeData> }[] = [
   { type: 'input',     label: 'Input',     defaultData: { outputs: [{ name: 'prompt', type: 'text' }] } },
   { type: 'model',     label: 'Model',     defaultData: { endpoint_ref: '', inputs: [{ name: 'prompt', type: 'text' }], outputs: [{ name: 'response', type: 'text' }], config: { temperature: 0.7, max_tokens: 2048, response_format: 'text' } } },
+  { type: 'computer',  label: 'Computer',  defaultData: { endpoint_ref: '', inputs: [{ name: 'task', type: 'text' }], outputs: [{ name: 'result', type: 'text' }, { name: 'last_screenshot', type: 'image' }], config: { max_steps: 30, timeout_seconds: 300 } } },
   { type: 'output',    label: 'Output',    defaultData: { inputs: [{ name: 'response', type: 'text' }] } },
   { type: 'loop',      label: 'Loop',      defaultData: {} },
   { type: 'judge',     label: 'Judge',     defaultData: { inputs: [{ name: 'input', type: 'text' }], outputs: [{ name: 'decision', type: 'boolean' }], role: 'judge', config: { score_field: 'verified', strategy: 'truthy' } } },

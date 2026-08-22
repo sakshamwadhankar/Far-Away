@@ -11,6 +11,7 @@ const TYPE_ACCENTS: Record<string, { bg: string; fg: string; dot: string }> = {
   router:    { bg: '#D4EDF5', fg: '#0F3A4D', dot: '#1A7D9D' },
   transform: { bg: '#DFF5D4', fg: '#204D0F', dot: '#4A9D1A' },
   compare:   { bg: '#E4D4F5', fg: '#30175C', dot: '#6B3AB8' },
+  computer:  { bg: '#D4EAF5', fg: '#0F3A5C', dot: '#1A6D9D' },
 };
 
 const FALLBACK_ACCENT = { bg: '#E8EDE4', fg: '#2B2E26', dot: '#5A5E54' };

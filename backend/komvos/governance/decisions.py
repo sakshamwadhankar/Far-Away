@@ -41,6 +41,9 @@ class GovernanceDomain(StrEnum):
     """What may be kept, and for how long. Declared but not yet enforced:
     the schema carries no retention field yet."""
 
+    DESKTOP = "desktop"
+    """Desktop and operating system automation actions."""
+
 
 class DecisionOutcome(StrEnum):
     """What was decided. ALLOWED is recorded as deliberately as DENIED."""

@@ -36,7 +36,9 @@ export type NodeType =
   | "transform"
   | "compare"
   /** Scope marker carrying an AccessPolicy. Added in schema 2.1. */
-  | "access";
+  | "access"
+  /** Operating system and desktop control node. */
+  | "computer";
 
 /**
  * The set of capabilities a scope of the pipeline is permitted to reach.
@@ -62,6 +64,12 @@ export interface AccessPolicy {
   max_cost_usd: number | null;
   /** Per-request token ceiling for this scope. */
   max_tokens: number | null;
+  /** Whether downstream nodes may control the desktop. */
+  allow_desktop?: boolean;
+  /** Applications downstream nodes may interact with. Empty means unrestricted. */
+  allowed_applications?: string[];
+  /** Whether destructive desktop actions are permitted. */
+  allow_destructive?: boolean;
 }
 
 export interface NodeConfig {

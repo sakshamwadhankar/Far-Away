@@ -283,11 +283,11 @@ def _check_served_governance(
     sources: dict[str, tuple[str, ...]],
 ) -> list[str]:
     """
-    Served mode only: refuse any model node no access node governs.
+    Served mode only: refuse any model or computer node no access node governs.
 
     Requiring *an* access node somewhere in the pipeline is not enough — a
     decoy gate wired to an unrelated dead-end branch would satisfy it while
-    the real model nodes ran with a fully permissive policy over HTTP. The
+    the real governed nodes ran with a fully permissive policy over HTTP. The
     per-node governing record (`sources`, computed by
     compute_effective_policies) already knows which nodes are ungoverned;
     this reads it rather than walking the graph a second time.
@@ -298,14 +298,14 @@ def _check_served_governance(
     endpoints = pipeline.endpoints
     errors: list[str] = []
     for node in pipeline.nodes:
-        if node.type != "model" or sources.get(node.id):
+        if node.type not in ("model", "computer") or sources.get(node.id):
             continue
         descriptor = endpoints.get(node.endpoint_ref or "")
         kind = descriptor.kind if descriptor else "unknown"
         errors.append(
-            f"[Access Required] Node '{node.id}' (model:{kind}) is governed "
+            f"[Access Required] Node '{node.id}' ({node.type}:{kind}) is governed "
             f"by no access node, so it would run with a fully permissive "
-            f"policy. Every model node must sit downstream of an access "
+            f"policy. Every {node.type} node must sit downstream of an access "
             f"node before this pipeline can be served. Add an access node "
             f"and connect it through its 'scope' port to '{node.id}' (or "
             f"any node upstream of it), stating what '{node.id}' may reach."
@@ -339,6 +339,10 @@ def _attribute_denials(
                 reasons.setdefault("allow_local_models", gate_id)
             if not policy.allow_network:
                 reasons.setdefault("allow_network", gate_id)
+            if not policy.allow_desktop:
+                reasons.setdefault("allow_desktop", gate_id)
+            if not policy.allow_destructive:
+                reasons.setdefault("allow_destructive", gate_id)
             for kind in ENDPOINT_KINDS:
                 if kind not in policy.providers:
                     reasons.setdefault(f"provider:{kind}", gate_id)

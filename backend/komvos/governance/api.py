@@ -162,7 +162,7 @@ class GovernanceDecisionsSummary(BaseModel):
 #: Filterable columns shared by the list and export endpoints. Literal types
 #: make an unknown value a 422 from the framework rather than a silent empty
 #: result set.
-DomainFilter = Literal["providers", "egress", "spend", "retention"]
+DomainFilter = Literal["providers", "egress", "spend", "retention", "desktop"]
 OutcomeFilter = Literal["allow", "deny", "timeout"]
 OriginFilter = Literal[
     "pipeline_policy",

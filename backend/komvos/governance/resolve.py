@@ -104,6 +104,21 @@ def resolve_policy(
             resolved.allowed_domains = []
             origins["allowed_domains"] = DecisionOrigin.PROFILE
 
+    # -- desktop -----------------------------------------------------------
+    # Ask/Audit open desktop control at the POLICY level: the compiler check
+    # passes, and the posture layer handles interactively what the pipeline
+    # would have denied.
+    if profile.postures[GovernanceDomain.DESKTOP] in (Posture.ASK, Posture.AUDIT):
+        if not resolved.allow_desktop:
+            resolved.allow_desktop = True
+            origins["allow_desktop"] = DecisionOrigin.PROFILE
+        if resolved.allowed_applications:
+            resolved.allowed_applications = []
+            origins["allowed_applications"] = DecisionOrigin.PROFILE
+        if not resolved.allow_destructive:
+            resolved.allow_destructive = True
+            origins["allow_destructive"] = DecisionOrigin.PROFILE
+
     # -- spend ---------------------------------------------------------------
     ceiling = pipeline_policy.max_cost_usd
     posture = profile.postures[GovernanceDomain.SPEND]

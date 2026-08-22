@@ -43,7 +43,7 @@ export default function ProfilePicker({
     setEditForm({
       name: '',
       built_in: false,
-      postures: { providers: 'ask', egress: 'ask', spend: 'ask', retention: 'ask' },
+      postures: { providers: 'ask', egress: 'ask', spend: 'ask', retention: 'ask', desktop: 'ask' },
       spend_cap_usd: null,
       spend_ask_threshold_usd: null,
       retention: '30d'

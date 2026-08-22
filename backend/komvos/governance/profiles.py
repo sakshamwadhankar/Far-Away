@@ -82,12 +82,14 @@ class GovernanceProfile(BaseModel):
 
     @model_validator(mode="after")
     def _postures_cover_every_domain(self) -> GovernanceProfile:
+        if GovernanceDomain.DESKTOP not in self.postures:
+            self.postures[GovernanceDomain.DESKTOP] = Posture.ENFORCE
         missing = [d for d in GovernanceDomain if d not in self.postures]
         if missing:
             names = ", ".join(sorted(m.value for m in missing))
             raise ValueError(
                 f"[Invalid Profile] Profile '{self.name}' has no posture for: "
-                f"{names}. A profile must bind all four domains."
+                f"{names}. A profile must bind all domains."
             )
         extra = [d for d in self.postures if d not in GovernanceDomain]
         if extra:  # pragma: no cover — dict[GovernanceDomain, ...] types this out
@@ -114,6 +116,7 @@ def _profile(
     providers: Posture,
     egress: Posture,
     spend: Posture,
+    desktop: Posture,
     spend_cap_usd: float | None = None,
     spend_ask_threshold_usd: float | None = None,
     retention: RetentionMode,
@@ -126,6 +129,7 @@ def _profile(
             GovernanceDomain.EGRESS: egress,
             GovernanceDomain.SPEND: spend,
             GovernanceDomain.RETENTION: _retention_posture(spend),
+            GovernanceDomain.DESKTOP: desktop,
         },
         spend_cap_usd=spend_cap_usd,
         spend_ask_threshold_usd=spend_ask_threshold_usd,
@@ -138,6 +142,7 @@ EXPLORE = _profile(
     providers=Posture.AUDIT,
     egress=Posture.AUDIT,
     spend=Posture.AUDIT,
+    desktop=Posture.AUDIT,
     retention=RetentionMode.FULL,
 )
 
@@ -146,6 +151,7 @@ REVIEW = _profile(
     providers=Posture.ASK,
     egress=Posture.ASK,
     spend=Posture.ASK,
+    desktop=Posture.ASK,
     spend_ask_threshold_usd=1.0,
     retention=RetentionMode.FULL,
 )
@@ -155,6 +161,7 @@ LOCKED = _profile(
     providers=Posture.ENFORCE,
     egress=Posture.ENFORCE,
     spend=Posture.ENFORCE,
+    desktop=Posture.ENFORCE,
     retention=RetentionMode.METADATA,
 )
 

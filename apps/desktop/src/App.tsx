@@ -15,6 +15,7 @@ import PublishModal from './components/PublishModal';
 import DeployModal from './components/DeployModal';
 import CustomNodeModal from './components/CustomNodeModal';
 import SettingsModal from './components/SettingsModal';
+import LicensesModal from './components/LicensesModal';
 import Tour from './components/Tour';
 import type { CustomNodeDef } from './panels/LeftSidebar';
 import type { PipelineNodeData } from './canvas/nodes/PipelineNode';
@@ -46,6 +47,7 @@ export default function App() {
   const [deploymentsRefreshKey, setDeploymentsRefreshKey] = useState(0);
   const [showCustomNodeModal, setShowCustomNodeModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showLicensesModal, setShowLicensesModal] = useState(false);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
   const [showDecisionHistory, setShowDecisionHistory] = useState(false);
   const [customNodes, setCustomNodes] = useState<CustomNodeDef[]>([]);
@@ -181,6 +183,7 @@ export default function App() {
                 <div className="nf-divider" style={{ width: 1, height: 24, margin: '0 4px' }} />
                 <button onClick={() => setShowDecisionHistory(true)} className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>🛡 History</button>
                 <button onClick={() => setShowSettingsModal(true)} title="Manage API Keys" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: 'var(--text)' }}>⚙ API</button>
+                <button onClick={() => setShowLicensesModal(true)} title="Open Source Licences & Attributions" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)' }}>📜 Licences</button>
               </>
             )}
           </div>
@@ -216,6 +219,7 @@ export default function App() {
       {deployModalTarget && <DeployModal pipeline={scrubSecrets(toPipelineSchema(nodes as Node<PipelineNodeData>[], edges))} existingDeploymentId={deployModalTarget === 'new' ? undefined : deployModalTarget} backendToken={backendToken} API_BASE={API_BASE} onClose={() => setDeployModalTarget(null)} onChanged={() => setDeploymentsRefreshKey(k => k + 1)} />}
       {showCustomNodeModal && <CustomNodeModal onSave={handleSaveCustomNode} onCancel={() => setShowCustomNodeModal(false)} />}
       {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} backendPort={backendPort} backendToken={backendToken} API_BASE={API_BASE} />}
+      {showLicensesModal && <LicensesModal isOpen={showLicensesModal} onClose={() => setShowLicensesModal(false)} />}
       <ActiveProfileIndicator activeName={active?.name || null} activeProfile={active?.profile || null} connected={!!backendConnected} onOpenPicker={() => setShowProfilePicker(true)} />
       {showProfilePicker && <ProfilePicker apiBase={API_BASE} token={backendToken || ''} profiles={profiles} active={active} refreshProfiles={refreshProfiles} onClose={() => setShowProfilePicker(false)} />}
       {showDecisionHistory && <DecisionHistory apiBase={API_BASE} token={backendToken || ''} onClose={() => setShowDecisionHistory(false)} liveDecisions={liveDecisions} />}

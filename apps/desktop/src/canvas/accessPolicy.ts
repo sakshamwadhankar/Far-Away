@@ -39,7 +39,9 @@ export const ENDPOINT_KINDS: EndpointKind[] = [
 export type Capability =
   | { kind: 'provider'; provider: EndpointKind }
   | { kind: 'allow_local_models' }
-  | { kind: 'allow_network' };
+  | { kind: 'allow_network' }
+  | { kind: 'allow_desktop' }
+  | { kind: 'allow_destructive' };
 
 export type CapabilityState =
   /** Policy allows it and something downstream calls it. */
@@ -66,6 +68,9 @@ export function emptyPolicy(): AccessPolicy {
     allowed_domains: [],
     max_cost_usd: null,
     max_tokens: null,
+    allow_desktop: false,
+    allowed_applications: [],
+    allow_destructive: false,
   };
 }
 
@@ -119,10 +124,20 @@ export function requestedCapabilities(
   const requested = new Set<string>();
 
   for (const node of nodes) {
-    if (!scope.has(node.id) || node.data?.type !== 'model') continue;
-    const provider = providerOf(node.data.endpoint_ref);
-    if (provider === 'ollama') requested.add('allow_local_models');
-    else if (provider) requested.add(`provider:${provider}`);
+    if (!scope.has(node.id)) continue;
+    if (node.data?.type === 'model') {
+      const provider = providerOf(node.data.endpoint_ref);
+      if (provider === 'ollama') requested.add('allow_local_models');
+      else if (provider) requested.add(`provider:${provider}`);
+    } else if (node.data?.type === 'computer') {
+      requested.add('allow_desktop');
+      requested.add('allow_destructive');
+      if (node.data.endpoint_ref) {
+        const provider = providerOf(node.data.endpoint_ref);
+        if (provider === 'ollama') requested.add('allow_local_models');
+        else if (provider) requested.add(`provider:${provider}`);
+      }
+    }
   }
 
   return requested;
@@ -139,9 +154,13 @@ function isGranted(policy: AccessPolicy, capability: Capability): boolean {
     case 'provider':
       return policy.providers.includes(capability.provider);
     case 'allow_local_models':
-      return policy.allow_local_models;
+      return Boolean(policy.allow_local_models);
     case 'allow_network':
-      return policy.allow_network;
+      return Boolean(policy.allow_network);
+    case 'allow_desktop':
+      return Boolean(policy.allow_desktop);
+    case 'allow_destructive':
+      return Boolean(policy.allow_destructive);
   }
 }
 
@@ -164,6 +183,8 @@ export function capabilityRows(
     ),
     { kind: 'allow_local_models' },
     { kind: 'allow_network' },
+    { kind: 'allow_desktop' },
+    { kind: 'allow_destructive' },
   ];
 
   const rows: CapabilityRow[] = [];
@@ -182,7 +203,11 @@ export function capabilityRows(
           ? capability.provider
           : capability.kind === 'allow_local_models'
             ? 'local models'
-            : 'network',
+            : capability.kind === 'allow_network'
+              ? 'network'
+              : capability.kind === 'allow_desktop'
+                ? 'desktop control'
+                : 'destructive actions',
       capability,
       state: !granted ? 'requested-denied' : used ? 'granted-used' : 'granted-unused',
     });

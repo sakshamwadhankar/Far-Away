@@ -171,6 +171,18 @@ async def health_ollama() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /health/desktop  (no auth — used for desktop server detection)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health/desktop")
+async def health_desktop() -> dict[str, Any]:
+    from komvos.desktop.detection import probe_computer_server
+
+    return await probe_computer_server()
+
+
+# ---------------------------------------------------------------------------
 # GET /pipelines/templates  (auth required)
 # ---------------------------------------------------------------------------
 

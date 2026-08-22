@@ -316,6 +316,44 @@ def check_effective_policies(
     endpoints = pipeline.endpoints
 
     for node in pipeline.nodes:
+        if node.type == "computer":
+            policy = policies[node.id]
+            if not policy.allow_desktop:
+                gate = denied_by.get(node.id, {}).get("allow_desktop", "?")
+                errors.append(
+                    f"[Access Denied] Node '{node.id}' (computer) requires "
+                    f"desktop access, denied by access node '{gate}' which does "
+                    "not grant 'allow_desktop'."
+                )
+            if node.endpoint_ref:
+                descriptor = endpoints.get(node.endpoint_ref)
+                if descriptor is not None:
+                    kind = descriptor.kind
+                    if kind == "ollama" and not policy.allow_local_models:
+                        gate = denied_by.get(node.id, {}).get(
+                            "allow_local_models", "?"
+                        )
+                        errors.append(
+                            f"[Access Denied] Node '{node.id}' "
+                            f"(computer:{kind}) requires local models, denied by "
+                            f"access node '{gate}' which does not grant "
+                            "'allow_local_models'."
+                        )
+                    elif kind != "ollama" and kind not in policy.providers:
+                        gate = denied_by.get(node.id, {}).get(f"provider:{kind}", "?")
+                        granted = (
+                            ", ".join(policy.providers)
+                            if policy.providers
+                            else "(none)"
+                        )
+                        errors.append(
+                            f"[Access Denied] Node '{node.id}' "
+                            f"(computer:{kind}) requires provider '{kind}', "
+                            f"denied by access node '{gate}' which grants: "
+                            f"[{granted}]."
+                        )
+            continue
+
         if node.type != "model" or node.endpoint_ref is None:
             continue
 
