@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -57,9 +58,24 @@ class OllamaEndpoint:
             )
 
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
+        formatted_messages: list[dict[str, Any]] = []
+        for msg in req.messages:
+            if msg.images:
+                parts: list[dict[str, Any]] = [{"type": "text", "text": msg.content}]
+                for img in msg.images:
+                    url = (
+                        img
+                        if img.startswith("data:")
+                        else f"data:image/jpeg;base64,{img}"
+                    )
+                    parts.append({"type": "image_url", "image_url": {"url": url}})
+                formatted_messages.append({"role": msg.role, "content": parts})
+            else:
+                formatted_messages.append({"role": msg.role, "content": msg.content})
+
         payload = {
             "model": self._model,
-            "messages": [msg.model_dump() for msg in req.messages],
+            "messages": formatted_messages,
             "temperature": req.temperature,
             "max_tokens": req.max_tokens,
             "stream": True,
@@ -124,11 +140,15 @@ class OllamaEndpoint:
         return Health(online=False, loaded=False, warm=False)
 
     def capabilities(self) -> Caps:
+        is_vision = any(
+            tag in self._model.lower()
+            for tag in ("vision", "llava", "vl", "bakllava", "minicpm", "moondream")
+        )
         return Caps(
             max_context=8192,
             json_mode=True,
             tools=False,
-            vision=False,
+            vision=is_vision,
         )
 
     def calculate_cost(

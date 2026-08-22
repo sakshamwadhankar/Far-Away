@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from collections.abc import AsyncIterator
@@ -94,7 +95,21 @@ class CloudEndpoint(ModelEndpoint):
 
             client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-            msgs_dicts = [m.model_dump() for m in req.messages]
+            msgs_dicts: list[dict[str, Any]] = []
+            for m in req.messages:
+                if m.images:
+                    parts: list[dict[str, Any]] = [{"type": "text", "text": m.content}]
+                    for img in m.images:
+                        url = (
+                            img
+                            if img.startswith("data:")
+                            else f"data:image/jpeg;base64,{img}"
+                        )
+                        parts.append({"type": "image_url", "image_url": {"url": url}})
+                    msgs_dicts.append({"role": m.role, "content": parts})
+                else:
+                    msgs_dicts.append({"role": m.role, "content": m.content})
+
             kwargs: dict[str, Any] = {
                 "model": self.model_name,
                 "messages": msgs_dicts,
@@ -141,7 +156,31 @@ class CloudEndpoint(ModelEndpoint):
             system_msg = next(
                 (m.content for m in req.messages if m.role == "system"), ""
             )
-            user_msgs = [m.model_dump() for m in req.messages if m.role != "system"]
+            user_msgs: list[dict[str, Any]] = []
+            for m in req.messages:
+                if m.role == "system":
+                    continue
+                if m.images:
+                    content_blocks: list[dict[str, Any]] = []
+                    for img in m.images:
+                        raw_b64 = img
+                        media_type = "image/jpeg"
+                        if img.startswith("data:"):
+                            header, raw_b64 = img.split(",", 1)
+                            if ":" in header and ";" in header:
+                                media_type = header.split(":", 1)[1].split(";", 1)[0]
+                        content_blocks.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": raw_b64,
+                            },
+                        })
+                    content_blocks.append({"type": "text", "text": m.content})
+                    user_msgs.append({"role": m.role, "content": content_blocks})
+                else:
+                    user_msgs.append({"role": m.role, "content": m.content})
 
             kwargs = {
                 "model": self.model_name,
@@ -173,15 +212,29 @@ class CloudEndpoint(ModelEndpoint):
 
         elif self.provider == "google":
             from google import genai
+            from google.genai import types as genai_types
 
             client = genai.Client(
                 api_key=api_key, http_options={"api_version": "v1alpha"}
             )
-            contents = [m.content for m in req.messages]
-            prompt = "\n".join(contents)
+            contents_list: list[Any] = []
+            for m in req.messages:
+                if m.images:
+                    for img in m.images:
+                        raw_b64 = img
+                        mime = "image/jpeg"
+                        if img.startswith("data:"):
+                            header, raw_b64 = img.split(",", 1)
+                            if ":" in header and ";" in header:
+                                mime = header.split(":", 1)[1].split(";", 1)[0]
+                        img_bytes = base64.b64decode(raw_b64)
+                        contents_list.append(
+                            genai_types.Part.from_bytes(data=img_bytes, mime_type=mime)
+                        )
+                contents_list.append(m.content)
 
             response_stream = await client.aio.models.generate_content_stream(
-                model=self.model_name, contents=prompt
+                model=self.model_name, contents=contents_list
             )
             index = 0
             async for chunk in response_stream:

@@ -51,6 +51,10 @@ class Message(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str
+    images: list[str] = Field(
+        default_factory=list,
+        description="Base64-encoded image payloads attached to this message.",
+    )
 
 
 class GenRequest(BaseModel):

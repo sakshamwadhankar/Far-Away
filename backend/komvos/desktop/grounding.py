@@ -46,33 +46,81 @@ def extract_interactive_elements(
         return elements
 
     mark_counter = 1
+    seen_boxes: set[tuple[int, int, int, int]] = set()
+
+    def _parse_bbox(node: dict[str, Any]) -> tuple[int, int, int, int] | None:
+        rect = node.get("rect") or node.get("bounds") or node.get("bbox")
+        if isinstance(rect, list | tuple) and len(rect) == 4:
+            return int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
+
+        pos = node.get("position")
+        size = node.get("size")
+        if isinstance(pos, dict) and isinstance(size, dict):
+            x = int(pos.get("x", 0) or 0)
+            y = int(pos.get("y", 0) or 0)
+            w = int(size.get("width", 0) or size.get("w", 0) or 0)
+            h = int(size.get("height", 0) or size.get("h", 0) or 0)
+            return x, y, w, h
+
+        if (
+            "x" in node
+            and "y" in node
+            and ("width" in node or "w" in node)
+            and ("height" in node or "h" in node)
+        ):
+            x = int(node["x"] or 0)
+            y = int(node["y"] or 0)
+            w = int(node.get("width") or node.get("w") or 0)
+            h = int(node.get("height") or node.get("h") or 0)
+            return x, y, w, h
+
+        return None
 
     def _walk_node(node: dict[str, Any]) -> None:
         nonlocal mark_counter
         if not isinstance(node, dict):
             return
 
-        rect = node.get("rect") or node.get("bounds") or node.get("bbox")
-        role = str(node.get("role") or node.get("type") or "element")
-        name = str(node.get("name") or node.get("title") or node.get("label") or "")
+        bbox = _parse_bbox(node)
+        role = str(
+            node.get("role")
+            or node.get("type")
+            or node.get("class")
+            or "element"
+        )
+        name = str(
+            node.get("name")
+            or node.get("title")
+            or node.get("label")
+            or node.get("text")
+            or ""
+        )
 
-        if isinstance(rect, list | tuple) and len(rect) == 4:
-            x, y, w, h = (int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3]))
+        if bbox is not None:
+            x, y, w, h = bbox
             if 0 <= x < screen_width and 0 <= y < screen_height and w >= 8 and h >= 8:
-                cx = x + w // 2
-                cy = y + h // 2
-                elements.append(
-                    ScreenElement(
-                        mark_id=mark_counter,
-                        role=role,
-                        name=name,
-                        bbox=(x, y, w, h),
-                        center=(cx, cy),
+                box_key = (x, y, w, h)
+                if box_key not in seen_boxes:
+                    seen_boxes.add(box_key)
+                    cx = x + w // 2
+                    cy = y + h // 2
+                    elements.append(
+                        ScreenElement(
+                            mark_id=mark_counter,
+                            role=role,
+                            name=name,
+                            bbox=(x, y, w, h),
+                            center=(cx, cy),
+                        )
                     )
-                )
-                mark_counter += 1
+                    mark_counter += 1
 
-        children = node.get("children") or node.get("nodes") or []
+        children = (
+            node.get("children")
+            or node.get("nodes")
+            or node.get("elements")
+            or []
+        )
         if isinstance(children, list):
             for child in children:
                 if isinstance(child, dict):

@@ -198,9 +198,24 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                 <option value="" disabled>Select a model…</option>
                 {Object.entries(groupedModels).map(([provider, models]) => (
                   <optgroup key={provider} label={providerNames[provider] || provider}>
-                    {models.map(m => (
-                      <option key={m.endpoint_id} value={m.endpoint_id}>{m.model_name}</option>
-                    ))}
+                    {models.map(m => {
+                      const isComputer = data.type === 'computer';
+                      const isOptionDisabled = isComputer && !m.vision;
+                      const visionBadge = m.vision
+                        ? ' 👁 Vision'
+                        : isComputer
+                        ? ' (No Vision - Incompatible)'
+                        : '';
+                      return (
+                        <option
+                          key={m.endpoint_id}
+                          value={m.endpoint_id}
+                          disabled={isOptionDisabled}
+                        >
+                          {m.model_name}{visionBadge}
+                        </option>
+                      );
+                    })}
                   </optgroup>
                 ))}
                 <optgroup label="Providers">

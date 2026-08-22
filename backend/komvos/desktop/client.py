@@ -89,7 +89,18 @@ class DesktopClient:
         except Exception as exc:
             logger.debug("Failed to capture screenshot via server: %s", exc)
 
-        # Fallback in-process screen capture if server endpoint is unavailable
+        # In-process screen capture with Windows input desktop attachment
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            hdesk = user32.OpenInputDesktop(0, False, 0x01FF)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+                user32.CloseDesktop(hdesk)
+        except Exception as exc:
+            logger.debug("Desktop switch error: %s", exc)
+
         imagegrab = _get_imagegrab()
         if imagegrab:
             try:
@@ -100,19 +111,122 @@ class DesktopClient:
                 img.save(buf, format="PNG")
                 return buf.getvalue()
             except Exception as exc:
-                logger.debug("Screen capture in-process fallback failed: %s", exc)
+                logger.debug(
+                    "Screen capture in-process fallback failed: %s", exc
+                )
 
         return b""
+
+    @staticmethod
+    def _get_windows_a11y_tree() -> list[dict[str, Any]]:
+        """
+        Direct in-process Windows UI element tree extraction
+        via EnumDesktopWindows.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            DESKENUMPROC = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+            WNDENUMPROC = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+
+            hdesk = user32.OpenInputDesktop(0, False, 0x0100)
+            if not hdesk:
+                return []
+
+            elements: list[dict[str, Any]] = []
+
+            def get_node_info(hwnd: int) -> tuple[str, str, int, int, int, int]:
+                length = user32.GetWindowTextLengthW(hwnd)
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                rect = wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                w = rect.right - rect.left
+                h = rect.bottom - rect.top
+                cls_buf = ctypes.create_unicode_buffer(256)
+                user32.GetClassNameW(hwnd, cls_buf, 256)
+                return (
+                    buf.value.strip(),
+                    cls_buf.value.strip(),
+                    rect.left,
+                    rect.top,
+                    w,
+                    h,
+                )
+
+            def desk_enum_cb(hwnd: int, lparam: int) -> bool:
+                if user32.IsWindowVisible(hwnd):
+                    title, role, x, y, w, h = get_node_info(hwnd)
+                    if w >= 16 and h >= 16 and x > -1000 and y > -1000:
+                        node: dict[str, Any] = {
+                            "title": title,
+                            "role": role or "Window",
+                            "position": {"x": x, "y": y},
+                            "size": {"width": w, "height": h},
+                            "rect": [x, y, w, h],
+                            "children": [],
+                        }
+
+                        def child_cb(chwnd: int, _: int) -> bool:
+                            if user32.IsWindowVisible(chwnd):
+                                (
+                                    ctitle,
+                                    crole,
+                                    cx,
+                                    cy,
+                                    cw,
+                                    ch,
+                                ) = get_node_info(chwnd)
+                                if (
+                                    cw >= 8
+                                    and ch >= 8
+                                    and cx > -1000
+                                    and cy > -1000
+                                ):
+                                    node["children"].append(
+                                        {
+                                            "title": ctitle,
+                                            "role": crole or "Control",
+                                            "position": {"x": cx, "y": cy},
+                                            "size": {"width": cw, "height": ch},
+                                            "rect": [cx, cy, cw, ch],
+                                        }
+                                    )
+                            return True
+
+                        user32.EnumChildWindows(
+                            hwnd, WNDENUMPROC(child_cb), 0
+                        )
+                        elements.append(node)
+                return True
+
+            user32.EnumDesktopWindows(hdesk, DESKENUMPROC(desk_enum_cb), 0)
+            user32.CloseDesktop(hdesk)
+            return elements
+        except Exception as exc:
+            logger.debug("In-process Windows a11y tree failed: %s", exc)
+            return []
 
     async def get_accessibility_tree(self) -> dict[str, Any] | list[Any] | None:
         """Retrieve the current accessibility tree for interactive elements."""
         try:
             res = await self._send_cmd("get_accessibility_tree")
             if res.get("success"):
-                return res.get("tree") or res.get("elements") or res
+                tree = res.get("tree") or res.get("elements")
+                if tree:
+                    return tree  # type: ignore[no-any-return]
         except Exception as exc:
             logger.debug("Accessibility tree retrieval skipped: %s", exc)
-        return None
+
+        # In-process Windows UI element tree fallback
+        tree_fallback = self._get_windows_a11y_tree()
+        return tree_fallback if tree_fallback else None
 
     async def get_active_window(self) -> str | None:
         """Get the title or process name of the active foreground window."""

@@ -43,16 +43,20 @@ class MockEndpoint:
         self,
         *,
         id: str = "mock-endpoint",
+        provider: str = "mock",
         token_delay: float = 0.0,
         predefined_text: str = "This is a mock response.",
         json_response: dict[str, Any] | None = None,
         response_fn: Callable[[GenRequest], str] | None = None,
+        vision: bool = True,
     ) -> None:
         self.id = id
+        self.provider = provider
         self.token_delay = token_delay
         self.predefined_text = predefined_text
         self.json_response = json_response
         self.response_fn = response_fn
+        self.vision = vision
 
     async def generate(self, req: GenRequest) -> AsyncIterator[Token]:
         """
@@ -79,7 +83,12 @@ class MockEndpoint:
         return Health(online=True, loaded=True, warm=True)
 
     def capabilities(self) -> Caps:
-        return Caps(max_context=4096, json_mode=True, tools=False, vision=False)
+        return Caps(
+            max_context=4096,
+            json_mode=True,
+            tools=False,
+            vision=self.vision,
+        )
 
     def estimate_cost(self, req: GenRequest) -> Cost:
         return Cost(
@@ -102,16 +111,16 @@ class MockEndpoint:
     def check_access(self, policy: AccessPolicy, node_id: str) -> None:
         """
         The mock endpoint is a named endpoint kind like any other, so a policy
-        that does not list "mock" withholds it.
+        that does not list its provider withholds it.
         """
-        if "mock" not in policy.providers:
+        if self.provider not in policy.providers:
             granted = ", ".join(policy.providers) if policy.providers else "(none)"
             raise AccessDeniedError(
                 node_id=node_id,
-                capability="provider:mock",
+                capability=f"provider:{self.provider}",
                 detail=(
-                    f"Node '{node_id}' (model:mock) requires provider 'mock', "
-                    f"which its access policy does not grant. "
+                    f"Node '{node_id}' (model:{self.provider}) requires provider "
+                    f"'{self.provider}', which its access policy does not grant. "
                     f"Granted providers: [{granted}]."
                 ),
             )

@@ -553,6 +553,17 @@ async def list_models() -> ModelsResponse:
                         eid = f"ollama:{name}"
                         if name and eid not in seen_ollama_ids:
                             seen_ollama_ids.add(eid)
+                            is_vision = any(
+                                tag in name.lower()
+                                for tag in (
+                                    "vision",
+                                    "llava",
+                                    "vl",
+                                    "bakllava",
+                                    "minicpm",
+                                    "moondream",
+                                )
+                            )
                             infos.append(
                                 ModelInfo(
                                     endpoint_id=eid,
@@ -561,7 +572,7 @@ async def list_models() -> ModelsResponse:
                                     max_context=8192,
                                     json_mode=True,
                                     tools=False,
-                                    vision=False,
+                                    vision=is_vision,
                                 )
                             )
             except Exception:

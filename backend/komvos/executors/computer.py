@@ -281,6 +281,16 @@ class ComputerExecutor(BaseExecutor):
         ctx: ExecutorContext,
     ) -> DesktopAction:
         """Call vision model to decide next structured desktop action."""
+        caps = endpoint.capabilities()
+        if not caps.vision:
+            ep_id = getattr(endpoint, "id", str(endpoint))
+            raise ValueError(
+                f"Endpoint '{ep_id}' does not support vision / image input. "
+                "A vision-capable model (e.g. 'openai:gpt-4o', "
+                "'anthropic:claude-3-5-sonnet', or a vision Ollama model) "
+                "is required for computer automation."
+            )
+
         elements_preview = []
         for elem in marked_screen.elements[:80]:
             name_str = f" - '{elem.name}'" if elem.name else ""
@@ -297,18 +307,22 @@ class ComputerExecutor(BaseExecutor):
 
         system_msg = (
             "You are an expert autonomous desktop assistant.\n"
-            "You receive a screenshot with numbered mark badges and element list.\n"
-            "Select a MARK NUMBER to interact with elements on screen.\n"
-            "Return JSON matching:\n"
+            "You receive an annotated screenshot with numbered mark badges "
+            "overlaid on interactive UI elements, accompanied by the active "
+            "window title and a list of detected UI elements.\n"
+            "Analyze the visual screenshot and choose the next action to advance "
+            "toward the goal.\n"
+            "Return ONLY a JSON object matching:\n"
             "{\n"
             '  "action_type": "click" | "double_click" | "right_click" | '
             '"type_text" | "press_key" | "hotkey" | "scroll" | "wait" | "done",\n'
-            '  "target_mark": <integer mark number>,\n'
-            '  "text": <string to type>,\n'
-            '  "key": <single key name>,\n'
-            '  "keys": <array of key names>,\n'
-            '  "thought": <brief reasoning>,\n'
-            '  "expected_outcome": <expected change>\n'
+            '  "target_mark": <integer mark number from screenshot>,\n'
+            '  "text": <string to type if type_text>,\n'
+            '  "key": <single key name if press_key>,\n'
+            '  "keys": <array of key names if hotkey>,\n'
+            '  "thought": <brief reasoning explaining what you see on screen '
+            'and why you selected this action>,\n'
+            '  "expected_outcome": <expected visual or state change>\n'
             "}"
         )
 
@@ -321,10 +335,14 @@ class ComputerExecutor(BaseExecutor):
             "Choose the next action to advance toward the goal. Return ONLY JSON."
         )
 
+        images = (
+            [marked_screen.image_base64] if marked_screen.image_base64 else []
+        )
+
         req = GenRequest(
             messages=[
                 Message(role="system", content=system_msg),
-                Message(role="user", content=user_content),
+                Message(role="user", content=user_content, images=images),
             ],
             temperature=0.1,
             max_tokens=600,
