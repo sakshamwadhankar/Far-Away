@@ -14,6 +14,7 @@ interface MonitorPanelProps {
   runTotals: { costUsd: number; tokensIn: number; tokensOut: number; iterations: number };
   startTime: number | null;
   onStop: () => void;
+  liveScreenshot?: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -31,7 +32,7 @@ const STATUS_BG: Record<string, string> = {
 };
 
 export default function MonitorPanel({
-  runId, isRunning, nodeStats, runTotals, startTime, onStop,
+  runId, isRunning, nodeStats, runTotals, startTime, onStop, liveScreenshot,
 }: MonitorPanelProps) {
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -105,52 +106,104 @@ export default function MonitorPanel({
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-alt)', position: 'sticky', top: 0 }}>
-              {['Node ID', 'Status', 'Tokens In', 'Tokens Out', 'Cost'].map(h => (
-                <th key={h} style={{
-                  padding: '6px 10px', textAlign: 'left',
-                  fontFamily: 'var(--font-mono)', fontWeight: 500,
-                  fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase',
-                  letterSpacing: '0.08em', borderBottom: '1px solid var(--border-subtle)',
-                }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {nodeEntries.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 12, textAlign: 'center', color: 'var(--text-3)', fontStyle: 'italic' }}>
-                  No nodes executed yet.
-                </td>
-              </tr>
-            ) : nodeEntries.map(([id, stat]) => (
-              <tr key={id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                <td style={{ padding: '6px 10px', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{id}</td>
-                <td style={{ padding: '6px 10px' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: 99,
-                    fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
-                    color: STATUS_COLORS[stat.status] || 'var(--text-3)',
-                    background: STATUS_BG[stat.status] || 'transparent',
+      {/* Body: Table + optional Live Vision */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-alt)', position: 'sticky', top: 0 }}>
+                {['Node ID', 'Status', 'Tokens In', 'Tokens Out', 'Cost'].map(h => (
+                  <th key={h} style={{
+                    padding: '6px 10px', textAlign: 'left',
+                    fontFamily: 'var(--font-mono)', fontWeight: 500,
+                    fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase',
+                    letterSpacing: '0.08em', borderBottom: '1px solid var(--border-subtle)',
                   }}>
-                    {stat.status.toUpperCase()}
-                  </span>
-                </td>
-                <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>{stat.tokensIn}</td>
-                <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>{stat.tokensOut}</td>
-                <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>${stat.costUsd.toFixed(5)}</td>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {nodeEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 12, textAlign: 'center', color: 'var(--text-3)', fontStyle: 'italic' }}>
+                    No nodes executed yet.
+                  </td>
+                </tr>
+              ) : nodeEntries.map(([id, stat]) => (
+                <tr key={id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <td style={{ padding: '6px 10px', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{id}</td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: 99,
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+                      color: STATUS_COLORS[stat.status] || 'var(--text-3)',
+                      background: STATUS_BG[stat.status] || 'transparent',
+                    }}>
+                      {stat.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>{stat.tokensIn}</td>
+                  <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>{stat.tokensOut}</td>
+                  <td style={{ padding: '6px 10px', color: 'var(--text-2)' }}>${stat.costUsd.toFixed(5)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {liveScreenshot && (
+          <div
+            data-testid="monitor-live-vision"
+            style={{
+              width: 300,
+              borderLeft: '1px solid var(--border-subtle)',
+              background: 'var(--bg-alt)',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '8px 12px',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+            }}>
+              <span style={{
+                fontSize: 10,
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: 'var(--text)',
+              }}>
+                👁 Live Agent Vision
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--text-3)' }}>Grounding Marks</span>
+            </div>
+            <div style={{
+              flex: 1,
+              borderRadius: 6,
+              overflow: 'hidden',
+              border: '1px solid var(--border)',
+              background: '#0d0d0d',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <img
+                src={liveScreenshot.startsWith('data:') ? liveScreenshot : `data:image/jpeg;base64,${liveScreenshot}`}
+                alt="Live agent vision with grounding marks"
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

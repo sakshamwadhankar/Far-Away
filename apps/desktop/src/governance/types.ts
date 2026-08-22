@@ -77,6 +77,7 @@ export interface ApprovalPendingFrame {
   allow_for_run_effect: string;
   deny_effect: string;
   timeout_seconds: number;
+  screenshot?: string | null;
   timestamp_ms: number;
 }
 

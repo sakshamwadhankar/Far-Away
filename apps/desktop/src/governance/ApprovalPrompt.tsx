@@ -77,6 +77,28 @@ export default function ApprovalPrompt({ apiBase, token, prompt, isExpired, onDi
               <span>{prompt.reason}</span>
             </div>
           </div>
+
+          {prompt.screenshot && (
+            <div style={{ marginTop: 10, marginBottom: 12 }}>
+              <span className="nf-label" style={{ display: 'block', marginBottom: 4, fontSize: 11 }}>Target Screen & Grounding Marks</span>
+              <div style={{
+                borderRadius: 6,
+                overflow: 'hidden',
+                border: '1px solid var(--border)',
+                maxHeight: 180,
+                background: '#111',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <img
+                  src={prompt.screenshot.startsWith('data:') ? prompt.screenshot : `data:image/jpeg;base64,${prompt.screenshot}`}
+                  alt="Grounded target screen"
+                  style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain' }}
+                />
+              </div>
+            </div>
+          )}
           
           {isExpired ? (
             <div className="nf-gov-expired-message">

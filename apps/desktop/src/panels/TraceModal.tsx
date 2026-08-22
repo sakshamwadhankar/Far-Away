@@ -32,6 +32,79 @@ interface TraceModalProps {
   onClose: () => void;
 }
 
+function isBase64Image(val: unknown): boolean {
+  if (typeof val !== 'string') return false;
+  return val.startsWith('data:image/') || (/^[A-Za-z0-9+/=]{100,}$/.test(val.replace(/\s+/g, '')) && val.length > 300);
+}
+
+function renderPayload(data: unknown): JSX.Element {
+  if (data === null || data === undefined) {
+    return <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', margin: 0 }}>null</pre>;
+  }
+
+  if (typeof data === 'string') {
+    if (isBase64Image(data)) {
+      const src = data.startsWith('data:') ? data : `data:image/jpeg;base64,${data}`;
+      return (
+        <div style={{ marginTop: 4 }}>
+          <img src={src} alt="Visual payload" style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '4px', border: '1px solid #444', objectFit: 'contain' }} />
+        </div>
+      );
+    }
+    return <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', margin: 0, whiteSpace: 'pre-wrap' }}>{data}</pre>;
+  }
+
+  if (typeof data === 'object' && !Array.isArray(data)) {
+    const obj = data as Record<string, unknown>;
+    const imageEntries: [string, string][] = [];
+    const nonImageEntries: Record<string, unknown> = {};
+
+    for (const [k, v] of Object.entries(obj)) {
+      if ((k.includes('screenshot') || k.includes('image') || k.includes('screen')) && typeof v === 'string' && v.length > 50) {
+        imageEntries.push([k, v]);
+      } else if (isBase64Image(v)) {
+        imageEntries.push([k, v as string]);
+      } else {
+        nonImageEntries[k] = v;
+      }
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {Object.keys(nonImageEntries).length > 0 && (
+          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', margin: 0, overflowX: 'auto', maxHeight: '200px' }}>
+            {JSON.stringify(nonImageEntries, null, 2)}
+          </pre>
+        )}
+        {imageEntries.map(([key, imgVal]) => {
+          const src = imgVal.startsWith('data:') ? imgVal : `data:image/jpeg;base64,${imgVal}`;
+          return (
+            <div key={key} style={{ marginTop: 4, background: '#111', padding: 8, borderRadius: 4, border: '1px solid #333' }}>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                📷 {key}:
+              </div>
+              <img
+                src={src}
+                alt={key}
+                style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '4px', border: '1px solid #444', objectFit: 'contain', display: 'block' }}
+              />
+            </div>
+          );
+        })}
+        {imageEntries.length === 0 && Object.keys(nonImageEntries).length === 0 && (
+          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', margin: 0 }}>{"{}"}</pre>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', margin: 0, overflowX: 'auto', maxHeight: '200px' }}>
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  );
+}
+
 export default function TraceModal({ runId, backendPort, backendToken, onClose }: TraceModalProps) {
   const [trace, setTrace] = useState<RunTrace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,15 +191,11 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
                   <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <strong>Inputs:</strong>
-                      <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                        {JSON.stringify(node.inputs, null, 2)}
-                      </pre>
+                      {renderPayload(node.inputs)}
                     </div>
                     <div style={{ flex: 1 }}>
                       <strong>Outputs:</strong>
-                      <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                        {JSON.stringify(node.outputs, null, 2)}
-                      </pre>
+                      {renderPayload(node.outputs)}
                     </div>
                   </div>
                 </div>
@@ -159,15 +228,11 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
                       <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
                         <div style={{ flex: 1 }}>
                           <strong>Inputs:</strong>
-                          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                            {JSON.stringify(loop.inputs, null, 2)}
-                          </pre>
+                          {renderPayload(loop.inputs)}
                         </div>
                         <div style={{ flex: 1 }}>
                           <strong>Outputs:</strong>
-                          <pre style={{ backgroundColor: '#111', padding: '8px', borderRadius: '4px', overflowX: 'auto', maxHeight: '200px' }}>
-                            {JSON.stringify(loop.outputs, null, 2)}
-                          </pre>
+                          {renderPayload(loop.outputs)}
                         </div>
                       </div>
                       {diffElements && (

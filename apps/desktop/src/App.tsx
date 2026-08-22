@@ -60,7 +60,7 @@ export default function App() {
   const { nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange, selectedNodeIds, setSelectedNodeIds, nodesRef, edgesRef, onConnect, updateNodeData, updateNodeDataSilent, deleteNodes, handleBeforeDelete, handleUndo, handleRedo, handleDuplicate, takeSnapshot, canUndo, canRedo } = usePipelineStore(showToast);
   const { runId, setRunId, startTime, setStartTime, nodeStats, setNodeStats, runTotals, setRunTotals, showTrace, setShowTrace, isRunning, setIsRunning, animatedEdgeIds, setAnimatedEdgeIds } = useRunStore();
   const { handleWsEvent, wsRef } = useRunSocket({ updateNodeDataSilent, setNodeStats, setRunTotals, setAnimatedEdgeIds, setIsRunning, edgesRef });
-  const { profiles, active, refreshProfiles, liveDecisions, prompts, dismissPrompt, expiredPromptIds } = useGovernance({ apiBase: API_BASE, token: backendToken || '', connected: !!backendConnected, wsRef });
+  const { profiles, active, refreshProfiles, liveDecisions, prompts, dismissPrompt, expiredPromptIds, liveScreenshot } = useGovernance({ apiBase: API_BASE, token: backendToken || '', connected: !!backendConnected, wsRef });
 
   const selectedNode = nodes.find(n => selectedNodeIds.includes(n.id)) || null;
 
@@ -208,7 +208,7 @@ export default function App() {
           {appMode === 'edit' ? <Canvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} setNodes={setNodes} onSelectionChange={(ids) => setSelectedNodeIds(ids)} onBeforeDelete={handleBeforeDelete} onUndo={handleUndo} onRedo={handleRedo} onDuplicate={handleDuplicate} animatedEdgeIds={animatedEdgeIds} /> : <ChatPanel nodes={nodes} edges={edges} backendPort={backendPort} backendToken={backendToken} apiBase={API_BASE} isRunning={isRunning} onRunStateChange={handleChatRunStateChange} updateNodeData={updateNodeDataSilent} resetNodes={resetAllNodes} onWsEvent={handleWsEvent} messages={chatMessages} setMessages={setChatMessages} inputValues={chatInputValues} setInputValues={setChatInputValues} />}
           {appMode === 'edit' && <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}><button onClick={handleClearWorkspace} title="Clear Workspace" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F', background: 'var(--surface)' }}>🗑 Clear</button></div>}
         </div>
-        {(runId || isRunning) && <div style={{ height: 250, position: 'relative' }}><MonitorPanel runId={runId} isRunning={isRunning} nodeStats={nodeStats} runTotals={runTotals} startTime={startTime} onStop={stopRun} /></div>}
+        {(runId || isRunning) && <div style={{ height: 250, position: 'relative' }}><MonitorPanel runId={runId} isRunning={isRunning} nodeStats={nodeStats} runTotals={runTotals} startTime={startTime} onStop={stopRun} liveScreenshot={liveScreenshot} /></div>}
       </div>
       <RightPanel selectedNode={selectedNode} updateNodeData={updateNodeData} availableModels={availableModels} onDeleteNode={(id) => deleteNodes([id])} onManageApis={() => setShowSettingsModal(true)} />
       {showTrace && runId && <TraceModal runId={runId} backendPort={backendPort} backendToken={backendToken} onClose={() => setShowTrace(false)} />}

@@ -444,13 +444,15 @@ class PipelineRunner:
                 allow_for_run_effect=d.get("allow_for_run_effect", ""),
                 deny_effect=d.get("deny_effect", ""),
                 timeout_seconds=float(d.get("timeout_seconds", 0.0)),
+                screenshot=d.get("screenshot"),
             )
         if event.kind == EventKind.TOKEN:
             return WsTokenEvent(
                 run_id=self.run_id,
                 node_id=node_id,
-                text=d.get("text", ""),
+                text=d.get("text", d.get("token", "")),
                 index=d.get("index", 0),
+                screenshot=d.get("screenshot"),
             )
         if event.kind == EventKind.LOOP_ITERATION:
             return WsLoopIterationEvent(

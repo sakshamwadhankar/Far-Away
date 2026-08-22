@@ -37,6 +37,7 @@ class WsTokenEvent(BaseModel):
     node_id: str
     text: str
     index: int
+    screenshot: str | None = None
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
@@ -150,6 +151,7 @@ class WsApprovalPendingEvent(BaseModel):
     allow_for_run_effect: str
     deny_effect: str
     timeout_seconds: float
+    screenshot: str | None = None
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 

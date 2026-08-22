@@ -195,8 +195,18 @@ def annotate_screenshot(
             )
 
         annotated_img = pil_image.alpha_composite(img, overlay).convert("RGB")
+        max_width = 1024
+        if width > max_width:
+            scale = max_width / width
+            new_height = max(1, int(height * scale))
+            export_img = annotated_img.resize(
+                (max_width, new_height), pil_image.Resampling.LANCZOS
+            )
+        else:
+            export_img = annotated_img
+
         buf = io.BytesIO()
-        annotated_img.save(buf, format="JPEG", quality=85)
+        export_img.save(buf, format="JPEG", quality=75, optimize=True)
         b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         return MarkedScreen(

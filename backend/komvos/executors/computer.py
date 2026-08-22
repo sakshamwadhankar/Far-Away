@@ -45,7 +45,11 @@ logger = logging.getLogger(__name__)
 
 
 def _approval_notifier(
-    ctx: ExecutorContext, domain: str, capability: str, reason: str
+    ctx: ExecutorContext,
+    domain: str,
+    capability: str,
+    reason: str,
+    screenshot: str | None = None,
 ) -> Any:
     """Emits approval_pending event over the scheduler when posture asks a human."""
 
@@ -64,6 +68,7 @@ def _approval_notifier(
                     "allow_for_run_effect": effects["allow_for_run"],
                     "deny_effect": effects["deny"],
                     "timeout_seconds": APPROVAL_TIMEOUT_SECONDS,
+                    "screenshot": screenshot,
                 },
             )
         )
@@ -145,6 +150,19 @@ class ComputerExecutor(BaseExecutor):
                 screen_bytes, a11y_tree=a11y_tree, active_window=active_window
             )
             last_screenshot_b64 = marked_screen.image_base64
+
+            if last_screenshot_b64:
+                await ctx.emit(
+                    SchedulerEvent(
+                        kind=EventKind.TOKEN,
+                        node_id=ctx.node.id,
+                        data={
+                            "text": f"[Vision: Screen grounded with {len(marked_screen.elements)} marks]",
+                            "screenshot": last_screenshot_b64,
+                            "index": steps_taken,
+                        },
+                    )
+                )
 
             # Step C: DECIDE
             action = await self._decide_action(
@@ -406,7 +424,11 @@ class ComputerExecutor(BaseExecutor):
                 governed_by=ctx.policy_sources,
                 cancel_token=ctx.cancel_token,
                 notify=_approval_notifier(
-                    ctx, "desktop", "allow_desktop", pipeline_reason
+                    ctx,
+                    "desktop",
+                    "allow_desktop",
+                    pipeline_reason,
+                    screenshot=marked_screen.image_base64,
                 ),
             )
             if not posture_outcome.allowed:
@@ -439,7 +461,11 @@ class ComputerExecutor(BaseExecutor):
                     governed_by=ctx.policy_sources,
                     cancel_token=ctx.cancel_token,
                     notify=_approval_notifier(
-                        ctx, "desktop", f"app:{active_app}", pipeline_reason
+                        ctx,
+                        "desktop",
+                        f"app:{active_app}",
+                        pipeline_reason,
+                        screenshot=marked_screen.image_base64,
                     ),
                 )
                 if not posture_outcome.allowed:
@@ -468,6 +494,7 @@ class ComputerExecutor(BaseExecutor):
                     "desktop",
                     f"destructive:{action.action_type.value}",
                     pipeline_reason,
+                    screenshot=marked_screen.image_base64,
                 ),
             )
             if not posture_outcome.allowed:

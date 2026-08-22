@@ -49,6 +49,7 @@ export function useGovernance({ apiBase, token, connected, wsRef }: UseGovernanc
   const [active, setActive] = useState<ActiveProfileResponse | null>(null);
   const [liveDecisions, setLiveDecisions] = useState<DecisionRecord[]>([]);
   const [prompts, setPrompts] = useState<GovernancePrompt[]>([]);
+  const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const decisionBuffer = useRef<DecisionFrame[]>([]);
@@ -74,7 +75,7 @@ export function useGovernance({ apiBase, token, connected, wsRef }: UseGovernanc
     return () => clearInterval(id);
   }, [refreshProfiles]);
 
-  // -- WS tap: decisions + pending approvals ------------------------------
+  // -- WS tap: decisions + pending approvals + live vision -----------------
   useEffect(() => {
     if (!wsRef) return;
     let attachedTo: WebSocket | null = null;
@@ -82,7 +83,17 @@ export function useGovernance({ apiBase, token, connected, wsRef }: UseGovernanc
     const onMessage = (ev: MessageEvent<string>) => {
       let data: Record<string, unknown>;
       try { data = JSON.parse(ev.data); } catch { return; }
-      const kind = data.event as string | undefined;
+      const kind = (data.event || data.kind) as string | undefined;
+
+      // Extract live screenshot if present
+      if (typeof data.screenshot === 'string' && data.screenshot) {
+        setLiveScreenshot(data.screenshot);
+      } else if (typeof data.last_screenshot === 'string' && data.last_screenshot) {
+        setLiveScreenshot(data.last_screenshot);
+      } else if (data.outputs && typeof (data.outputs as Record<string, unknown>).last_screenshot === 'string') {
+        setLiveScreenshot((data.outputs as Record<string, unknown>).last_screenshot as string);
+      }
+
       if (kind === 'governance_decision') {
         decisionBuffer.current.push(data as unknown as DecisionFrame);
         const now = Date.now();
@@ -162,6 +173,8 @@ export function useGovernance({ apiBase, token, connected, wsRef }: UseGovernanc
     prompts,
     dismissPrompt,
     expiredPromptIds,
+    liveScreenshot,
+    setLiveScreenshot,
   };
 }
 

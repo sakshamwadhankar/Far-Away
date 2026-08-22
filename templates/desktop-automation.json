@@ -55,6 +55,10 @@
         {
           "name": "result",
           "type": "text"
+        },
+        {
+          "name": "last_screenshot",
+          "type": "image"
         }
       ]
     },
@@ -65,6 +69,10 @@
         {
           "name": "result",
           "type": "text"
+        },
+        {
+          "name": "screenshot",
+          "type": "image"
         }
       ],
       "outputs": []
@@ -82,6 +90,10 @@
     {
       "from": "computer_agent.result",
       "to": "out.result"
+    },
+    {
+      "from": "computer_agent.last_screenshot",
+      "to": "out.screenshot"
     }
   ]
 }
