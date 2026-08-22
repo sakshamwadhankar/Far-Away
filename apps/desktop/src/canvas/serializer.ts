@@ -102,8 +102,15 @@ export function toPipelineSchema(
     if (isEndpointBearingNode(n.type) && n.endpoint_ref) {
       if (!endpoints[n.endpoint_ref]) {
         const parts = n.endpoint_ref.split(':');
-        const provider = parts[0];
-        const modelName = parts.slice(1).join(':') || 'default';
+        let provider = parts[0];
+        let modelName = parts.slice(1).join(':') || 'default';
+
+        if (parts.length === 1) {
+          if (n.endpoint_ref.startsWith('nvidia/')) {
+            provider = 'nvidia';
+            modelName = n.endpoint_ref;
+          }
+        }
 
         if (provider === 'mock') {
           endpoints[n.endpoint_ref] = {

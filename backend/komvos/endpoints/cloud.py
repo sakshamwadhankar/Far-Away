@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -81,6 +82,37 @@ def _get_cached_client(
     return client
 
 
+def _provider_retry_delay(exc: BaseException) -> float | None:
+    """
+    How long the provider asked us to wait, in seconds, if it said so.
+
+    Providers that rate-limit usually tell you when to come back: a
+    ``Retry-After`` header, or google-genai's RetryInfo ``"retryDelay": "57s"``
+    inside the error body. Ignoring that and applying our own sub-second
+    backoff means every retry is spent before the window the provider named,
+    so all of them fail and the request is billed several times over for one
+    useful attempt. Returns None when the provider gave no guidance.
+    """
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        raw = None
+        try:
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+        except Exception:  # noqa: BLE001 - header bag shapes vary by SDK
+            raw = None
+        if raw:
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                pass
+
+    match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s?"', str(exc))
+    if match:
+        return float(match.group(1))
+    return None
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """
     True for rate-limit and server-error responses worth retrying.
@@ -104,9 +136,28 @@ async def _retry_with_backoff(attempt_fn: Any, what: str) -> Any:
         except Exception as exc:  # noqa: BLE001 - classified below
             if not _is_retryable(exc) or attempt == RETRY_ATTEMPTS:
                 raise
+
+            # The provider may name a wait longer than we are willing to sit
+            # on. A daily quota is the common case: it reports a delay of a
+            # minute or more and will not clear inside our budget, so retrying
+            # cannot succeed and only spends the quota further. Surface the
+            # original error now instead.
+            requested = _provider_retry_delay(exc)
+            if requested is not None and requested > RETRY_MAX_DELAY_S:
+                logger.warning(
+                    "%s rate-limited and asked for %.0fs, beyond the %.0fs "
+                    "retry budget; failing fast instead of retrying.",
+                    what,
+                    requested,
+                    RETRY_MAX_DELAY_S,
+                )
+                raise
+
             delay = min(
                 RETRY_MAX_DELAY_S, RETRY_BASE_DELAY_S * (2 ** (attempt - 1))
             )
+            if requested is not None:
+                delay = max(delay, requested)
             delay *= random.uniform(0.8, 1.2)
             logger.warning(
                 "%s failed (%s: %s); retrying in %.2fs (attempt %d/%d)",

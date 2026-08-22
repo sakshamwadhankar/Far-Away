@@ -26,19 +26,26 @@
       "type": "access",
       "config": {
         "access_policy": {
-          "providers": ["google", "openai"],
+          "providers": [
+            "google",
+            "openai"
+          ],
           "allow_local_models": true,
           "allow_network": true,
-          "allowed_domains": [],
+          "allowed_domains": [
+            "generativelanguage.googleapis.com"
+          ],
           "allow_desktop": true,
           "allowed_applications": [
+            "Komvos",
+            "Start",
+            "Search",
+            "Google Chrome",
+            "Chrome",
             "Settings",
             "Calculator",
             "Notepad",
-            "Visual Studio Code",
-            "Komvos",
-            "Google Chrome",
-            "Chrome"
+            "Visual Studio Code"
           ],
           "allow_destructive": false
         }

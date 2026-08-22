@@ -223,6 +223,16 @@ export default function RightPanel({ selectedNode, updateNodeData, availableMode
                 </optgroup>
               </select>
             </div>
+            <div className="nf-field-group">
+              <label className="nf-label">Custom Model ID / Ref (paste directly)</label>
+              <input
+                type="text"
+                placeholder="e.g. nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+                value={data.endpoint_ref || ''}
+                onChange={(e) => handleBaseChange('endpoint_ref', e.target.value.trim())}
+                className="nf-input nf-input--mono"
+              />
+            </div>
             {data.type === 'model' && (
               <>
                 <div className="nf-field-group">

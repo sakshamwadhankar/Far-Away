@@ -738,6 +738,7 @@ async def list_models() -> ModelsResponse:
         # 7. Nvidia
         nvidia_key = get_secret("nvidia")
         if nvidia_key:
+            nvidia_added = False
             try:
                 resp = await client.get(
                     "https://integrate.api.nvidia.com/v1/models",
@@ -758,8 +759,27 @@ async def list_models() -> ModelsResponse:
                                     vision=True,
                                 )
                             )
+                            nvidia_added = True
             except Exception:
                 pass
+            if not nvidia_added:
+                for name in [
+                    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+                    "meta/llama-3.2-11b-vision-instruct",
+                    "meta/llama-3.1-70b-instruct",
+                    "nvidia/llama-3.1-nemotron-70b-instruct",
+                ]:
+                    infos.append(
+                        ModelInfo(
+                            endpoint_id=f"nvidia:{name}",
+                            provider="nvidia",
+                            model_name=name,
+                            max_context=128000,
+                            json_mode=True,
+                            tools=True,
+                            vision=True,
+                        )
+                    )
 
         # 8. Zhipu (GLM)
         zhipu_key = get_secret("zhipu")
