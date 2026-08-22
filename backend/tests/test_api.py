@@ -161,7 +161,7 @@ async def test_auth_rejected_no_header(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_auth_accepted_dev_mode(client: AsyncClient) -> None:
-    saved = os.environ.pop("NEURALFLOW_SESSION_TOKEN", None)
+    saved = os.environ.pop("KOMVOS_SESSION_TOKEN", None)
     try:
         resp = await client.post(
             "/pipelines/run",
@@ -171,12 +171,12 @@ async def test_auth_accepted_dev_mode(client: AsyncClient) -> None:
         assert resp.status_code == 202
     finally:
         if saved is not None:
-            os.environ["NEURALFLOW_SESSION_TOKEN"] = saved
+            os.environ["KOMVOS_SESSION_TOKEN"] = saved
 
 
 @pytest.mark.asyncio
 async def test_auth_rejected_wrong_token(client: AsyncClient) -> None:
-    os.environ["NEURALFLOW_SESSION_TOKEN"] = "correct"
+    os.environ["KOMVOS_SESSION_TOKEN"] = "correct"
     try:
         resp = await client.post(
             "/pipelines/run",
@@ -185,7 +185,7 @@ async def test_auth_rejected_wrong_token(client: AsyncClient) -> None:
         )
         assert resp.status_code == 401
     finally:
-        del os.environ["NEURALFLOW_SESSION_TOKEN"]
+        del os.environ["KOMVOS_SESSION_TOKEN"]
 
 
 @pytest.mark.asyncio

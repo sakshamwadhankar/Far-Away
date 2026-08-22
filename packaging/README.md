@@ -5,7 +5,7 @@
 ## Purpose
 
 Scripts and configuration for building signed, distributable installers of the
-NeuralFlow desktop application.
+Komvos desktop application.
 
 ## Strategy (TRD §1)
 

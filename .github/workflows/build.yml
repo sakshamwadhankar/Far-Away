@@ -55,6 +55,9 @@ jobs:
         fi
       shell: bash
 
+    - name: Smoke-test packaged backend
+      run: python packaging/scripts/smoke_backend.py
+
     - name: Install frontend dependencies
       working-directory: apps/desktop
       run: npm ci

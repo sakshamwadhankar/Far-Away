@@ -26,11 +26,18 @@ export default defineConfig({
       timeout: 120 * 1000,
     },
     {
-      // Start the FastAPI backend
-      command: 'cd ../../backend && .venv\\Scripts\\python.exe -m uvicorn neuralflow.api.main:app --port 8000',
+      // Start the FastAPI backend. Plain-browser runs use the same fallback
+      // credentials as src/hooks/useBackend.ts (port 8000, token 'test-token'),
+      // so the session token must be set — auth fails closed without one.
+      command: 'cd ../../backend && python -m uvicorn komvos.api.main:app --port 8000',
       url: 'http://127.0.0.1:8000/health',
       env: {
-        NEURALFLOW_ALLOW_MOCK_ENDPOINT: '1'
+        KOMVOS_ALLOW_MOCK_ENDPOINT: '1',
+        KOMVOS_SESSION_TOKEN: 'test-token',
+        // Unpackaged dev parity (see src/main.ts): allows the Vite dev server
+        // origin through CORS. Auth remains fail-closed — the session token
+        // above is still required on every request.
+        KOMVOS_DEV: '1'
       },
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,

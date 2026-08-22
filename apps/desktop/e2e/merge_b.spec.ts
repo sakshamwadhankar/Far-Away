@@ -5,6 +5,16 @@ test.describe('MERGE B Integration', () => {
     // Navigate to the Vite dev server
     await page.goto('/');
 
+    // Dismiss the first-run guided tour if it appears — its full-screen
+    // backdrop intercepts pointer events over the rest of the UI.
+    try {
+      const skipTour = page.getByRole('button', { name: 'Skip' });
+      await skipTour.waitFor({ state: 'visible', timeout: 5000 });
+      await skipTour.click();
+    } catch {
+      // Tour already dismissed (e.g. localStorage flag set) — nothing to do.
+    }
+
     // Wait for the React app to mount and the setE2EState function to be available
     await page.waitForFunction(() => typeof (window as any).setE2EState === 'function');
 
@@ -73,11 +83,15 @@ test.describe('MERGE B Integration', () => {
     await expect(runBtn).toBeVisible();
     await runBtn.click();
 
-    // Wait for the pipeline nodes to transition to "done"
-    // Our UI modifies the node title to include "(done)"
-    await expect(page.getByText('(done)', { exact: false }).first()).toBeVisible({ timeout: 10000 });
-    
-    // Check that button is back to "Run Pipeline"
-    await expect(runBtn).toHaveText('Run Pipeline');
+    // Wait for the pipeline nodes to transition to "done". The UI marks a
+    // finished node with a check-mark status icon (PipelineNode STATUS_ICONS),
+    // not a "(done)" title suffix.
+    await expect(
+      page.locator('.react-flow__node').getByText('✓', { exact: true }).first()
+    ).toBeVisible({ timeout: 15000 });
+
+    // Check that button is back to "Run Pipeline" (idle label includes the ▶ glyph)
+    await expect(runBtn).toContainText('Run Pipeline');
+    await expect(runBtn).not.toContainText('Running');
   });
 });

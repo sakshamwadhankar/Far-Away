@@ -498,7 +498,12 @@ async def test_loopback_ollama_is_exempt_from_allow_network(
     """
 
     class _FakeResponse:
+        status_code = 200
+
         def raise_for_status(self) -> None:
+            return None
+
+        async def aclose(self) -> None:
             return None
 
         async def aiter_lines(self) -> Any:
@@ -524,6 +529,14 @@ async def test_loopback_ollama_is_exempt_from_allow_network(
 
         def stream(self, *_a: Any, **_k: Any) -> _FakeStreamCM:
             return _FakeStreamCM()
+
+        # OllamaEndpoint builds a request and sends it with stream=True so the
+        # retry layer can replay it; mirror that surface here.
+        def build_request(self, *_a: Any, **_k: Any) -> object:
+            return object()
+
+        async def send(self, *_a: Any, **_k: Any) -> _FakeResponse:
+            return _FakeResponse()
 
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
 

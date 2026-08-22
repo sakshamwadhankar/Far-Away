@@ -1,4 +1,4 @@
-# neuralflow/state
+# komvos/state
 
 **Owner: P1 — Backend Core**
 

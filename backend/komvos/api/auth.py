@@ -4,13 +4,14 @@ backend/komvos/api/auth.py
 Per-session bearer token authentication for FastAPI (HTTP and WebSocket).
 
 The session token is set by Electron at backend spawn time via the
-NEURALFLOW_SESSION_TOKEN environment variable.
+KOMVOS_SESSION_TOKEN environment variable.
 
 SECURITY — fail closed. There are exactly two ways a request authenticates:
 
-  1. NEURALFLOW_SESSION_TOKEN is set, and the caller presents that exact token.
-  2. NEURALFLOW_SESSION_TOKEN is unset *and* KOMVOS_DEV=1, in which case any
-     non-empty token is accepted so pytest and curl can drive the API.
+  1. KOMVOS_SESSION_TOKEN is set (or its pre-rename alias
+     NEURALFLOW_SESSION_TOKEN), and the caller presents that exact token.
+  2. No token is configured *and* KOMVOS_DEV=1, in which case any non-empty
+     token is accepted so pytest and curl can drive the API.
 
 Anything else is a 401. In particular, an unset session token on its own is
 NOT a bypass: without an explicit KOMVOS_DEV=1 opt-in, a backend started with
@@ -34,7 +35,10 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 #: the tokenless auth fallback, localhost CORS origins, and /docs.
 DEV_MODE_ENV_VAR = "KOMVOS_DEV"
 
-SESSION_TOKEN_ENV_VAR = "NEURALFLOW_SESSION_TOKEN"
+SESSION_TOKEN_ENV_VAR = "KOMVOS_SESSION_TOKEN"
+
+#: Pre-rename alias, accepted for one release with a deprecation warning.
+LEGACY_SESSION_TOKEN_ENV_VAR = "NEURALFLOW_SESSION_TOKEN"
 
 
 def is_dev_mode() -> bool:
@@ -49,7 +53,19 @@ def is_dev_mode() -> bool:
 
 def session_token() -> str | None:
     """The configured session token, or None if the backend started without one."""
-    return os.environ.get(SESSION_TOKEN_ENV_VAR)
+    value = os.environ.get(SESSION_TOKEN_ENV_VAR)
+    if value is not None:
+        return value
+    # One-release compatibility with the pre-rename variable name.
+    legacy = os.environ.get(LEGACY_SESSION_TOKEN_ENV_VAR)
+    if legacy is not None:
+        logger.warning(
+            "Environment variable %s is deprecated and will be removed in a "
+            "future release; set %s instead.",
+            LEGACY_SESSION_TOKEN_ENV_VAR,
+            SESSION_TOKEN_ENV_VAR,
+        )
+    return legacy
 
 
 def check_token(provided: str | None) -> bool:

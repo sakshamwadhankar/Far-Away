@@ -1,4 +1,4 @@
-# neuralflow/executors
+# komvos/executors
 
 **Owner: P2 — Endpoints & API**
 

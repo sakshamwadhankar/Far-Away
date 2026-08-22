@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      CSP: the production policy is served as a strict HTTP header by the
+      komvos:// protocol handler in src/main.ts (script-src 'self', no inline
+      script). This meta copy must additionally tolerate the Vite dev server
+      (inline react-refresh preamble + HMR websocket), which is why script-src
+      carries 'unsafe-inline' here. In packaged builds both policies apply and
+      the stricter header wins.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; object-src 'none'; base-uri 'self'"
+    />
     <title>Komvos</title>
   </head>
   <body>

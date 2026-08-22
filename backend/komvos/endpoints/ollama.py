@@ -6,8 +6,10 @@ OllamaEndpoint implementation for local models using the OpenAI-compatible /v1 A
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -24,6 +26,51 @@ from komvos.endpoints.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Client reuse, explicit timeouts, bounded retries.
+# These mirror the cloud endpoint policy in endpoints/cloud.py so local and
+# remote providers behave identically under failure.
+# ---------------------------------------------------------------------------
+
+CONNECT_TIMEOUT_S = 10.0
+READ_TIMEOUT_S = 120.0
+WRITE_TIMEOUT_S = 30.0
+POOL_TIMEOUT_S = 10.0
+
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY_S = 0.5
+RETRY_MAX_DELAY_S = 8.0
+
+#: One httpx client per base URL for the process lifetime — keeps connections
+#: alive across nodes and loop iterations instead of a fresh pool per call.
+_CLIENTS: dict[str, httpx.AsyncClient] = {}
+
+
+def _get_client(base_url: str) -> httpx.AsyncClient:
+    """Return the cached AsyncClient for this base URL, building once."""
+    client = _CLIENTS.get(base_url)
+    if client is None:
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                READ_TIMEOUT_S,
+                connect=CONNECT_TIMEOUT_S,
+                write=WRITE_TIMEOUT_S,
+                pool=POOL_TIMEOUT_S,
+            )
+        )
+        _CLIENTS[base_url] = client
+    return client
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Exponential backoff with ±20% jitter, capped at RETRY_MAX_DELAY_S."""
+    delay: float = min(RETRY_MAX_DELAY_S, RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
+    return delay * random.uniform(0.8, 1.2)
+
+
+def _retryable_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
 
 
 class OllamaEndpoint:
@@ -73,7 +120,7 @@ class OllamaEndpoint:
             else:
                 formatted_messages.append({"role": msg.role, "content": msg.content})
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self._model,
             "messages": formatted_messages,
             "temperature": req.temperature,
@@ -84,17 +131,53 @@ class OllamaEndpoint:
         if req.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
-        idx = 0
-        async with (
-            httpx.AsyncClient(timeout=120.0) as client,
-            client.stream(
+        client = _get_client(self._base_url)
+
+        # Retryable boundary is stream opening: a 429/5xx status or a
+        # connection-level failure gets bounded exponential backoff. Once the
+        # stream is open and returning bytes, failures surface as-is.
+        attempt = 0
+        while True:
+            attempt += 1
+            request = client.build_request(
                 "POST",
                 f"{self._base_url}/chat/completions",
                 json=payload,
                 headers={"ngrok-skip-browser-warning": "true"},
-            ) as response,
-        ):
+            )
+            try:
+                response = await client.send(request, stream=True)
+            except httpx.TransportError as exc:
+                if attempt >= RETRY_ATTEMPTS:
+                    raise
+                delay = _backoff_delay(attempt)
+                logger.warning(
+                    "Ollama connection failed (%s); retrying in %.2fs "
+                    "(attempt %d/%d)",
+                    exc,
+                    delay,
+                    attempt,
+                    RETRY_ATTEMPTS,
+                )
+                await asyncio.sleep(delay)
+                continue
+            if _retryable_status(response.status_code) and attempt < RETRY_ATTEMPTS:
+                delay = _backoff_delay(attempt)
+                logger.warning(
+                    "Ollama returned %d; retrying in %.2fs (attempt %d/%d)",
+                    response.status_code,
+                    delay,
+                    attempt,
+                    RETRY_ATTEMPTS,
+                )
+                await response.aclose()
+                await asyncio.sleep(delay)
+                continue
+            break
+
+        try:
             response.raise_for_status()
+            idx = 0
             async for line in response.aiter_lines():
                 if not line:
                     continue
@@ -126,15 +209,17 @@ class OllamaEndpoint:
                             idx += 1
                     except json.JSONDecodeError:
                         logger.warning(f"Failed to decode stream line: {data_str}")
+        finally:
+            await response.aclose()
 
     async def health(self) -> Health:
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(f"{self._base_url}/models")
-                if resp.status_code == 200:
-                    models = resp.json().get("data", [])
-                    loaded = any(m.get("id") == self._model for m in models)
-                    return Health(online=True, loaded=loaded, warm=loaded)
+            client = _get_client(self._base_url)
+            resp = await client.get(f"{self._base_url}/models", timeout=2.0)
+            if resp.status_code == 200:
+                models = resp.json().get("data", [])
+                loaded = any(m.get("id") == self._model for m in models)
+                return Health(online=True, loaded=loaded, warm=loaded)
         except httpx.RequestError:
             pass
         return Health(online=False, loaded=False, warm=False)

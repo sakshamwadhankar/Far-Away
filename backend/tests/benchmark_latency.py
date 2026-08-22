@@ -2,7 +2,7 @@
 backend/tests/benchmark_latency.py
 
 Merge D / MVP Requirement: Cloud node overhead < 1.3x raw API latency.
-This script compares raw HTTP request latency against NeuralFlow's full DAG
+This script compares raw HTTP request latency against Komvos' full DAG
 scheduler latency for the exact same mock payload, to prove the engine overhead
 meets the PRD metric.
 """
@@ -56,7 +56,7 @@ async def run_benchmark():
 
     print(f"Raw API Latency: {raw_latency*1000:.2f} ms")
 
-    # 2. Measure NeuralFlow DAG latency
+    # 2. Measure Komvos DAG latency
     pipeline_def = {
         "schema_version": "2.0",
         "id": "benchmark-pipe",
@@ -115,17 +115,17 @@ async def run_benchmark():
     end_nf = time.perf_counter()
     nf_latency = end_nf - start_nf
 
-    print(f"NeuralFlow Full Pipeline Latency: {nf_latency*1000:.2f} ms")
+    print(f"Komvos Full Pipeline Latency: {nf_latency*1000:.2f} ms")
 
     # 3. Assert metric
     ratio = nf_latency / raw_latency
     print(f"Overhead Ratio: {ratio:.2f}x")
 
     if ratio > 1.3:
-        print(f"FAIL: NeuralFlow overhead ({ratio:.2f}x) exceeds PRD limit (1.3x).")
+        print(f"FAIL: Komvos overhead ({ratio:.2f}x) exceeds PRD limit (1.3x).")
         exit(1)
     else:
-        print("PASS: NeuralFlow overhead is within PRD limit.")
+        print("PASS: Komvos overhead is within PRD limit.")
 
 
 def test_benchmark_latency():

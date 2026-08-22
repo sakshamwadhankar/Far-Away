@@ -1,4 +1,4 @@
-# neuralflow/scheduler
+# komvos/scheduler
 
 **Owner: P1 — Backend Core**
 

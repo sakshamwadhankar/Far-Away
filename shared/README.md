@@ -16,13 +16,13 @@ data format.
 
 | File | Description |
 | :--- | :--- |
-| `pipeline.schema.json` | JSON Schema v2 — the canonical definition of a NeuralFlow pipeline file. |
+| `pipeline.schema.json` | JSON Schema v2 — the canonical definition of a Komvos pipeline file. |
 | `types.ts` *(Phase 1)* | TypeScript types matching the JSON Schema (Node, Port, Edge, Loop, Pipeline). |
 
 ## Who imports what
 
 - **P1 (Python):** generates Pydantic models from the schema in
-  `backend/neuralflow/compiler/models.py`.
+  `backend/komvos/compiler/models.py`.
 - **P2 (Python):** imports Pydantic models via P1's `models.py`.
 - **P3 (TypeScript):** imports `types.ts` directly into the canvas
   serialisation code.

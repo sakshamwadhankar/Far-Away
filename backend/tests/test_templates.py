@@ -41,7 +41,9 @@ def test_all_templates_valid() -> None:
             dag = compile_pipeline(data, mode="local")
             assert len(dag.topo_order) > 0
         except Exception as e:
-            raise AssertionError(f"Template {tf.name} failed validation/compilation: {e}") from e
+            raise AssertionError(
+                f"Template {tf.name} failed validation/compilation: {e}"
+            ) from e
 
 
 # ---------------------------------------------------------------------------

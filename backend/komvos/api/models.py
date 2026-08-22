@@ -1,7 +1,7 @@
 """
 backend/komvos/api/models.py
 
-Pydantic request / response models for the NeuralFlow API.
+Pydantic request / response models for the Komvos API.
 
 These are the shapes of JSON bodies the API accepts and returns.
 Do NOT put execution logic here — pure data models only.
