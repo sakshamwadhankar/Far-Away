@@ -44,7 +44,13 @@ from komvos.endpoints.base import (
     Token,
 )
 from komvos.governance.context import RunGovernance, run_context
-from komvos.governance.sinks import InMemoryDecisionSink
+from komvos.governance.sinks import (
+    CompositeDecisionSink,
+    DecisionSink,
+    InMemoryDecisionSink,
+    QueueDecisionSink,
+    SqliteDecisionSink,
+)
 from komvos.scheduler.engine import (
     CancelToken,
     EndpointRegistry,
@@ -192,10 +198,35 @@ class PipelineRunner:
         the run. The registry is dropped when the binding is released, on
         every exit path including error and cancellation, so an ended run
         cannot leak a pending approval.
+
+        The decision sink composes rather than replaces: every run keeps its
+        in-memory sink for in-process queries, and additionally streams each
+        decision onto the run's WsEvent queue (live UI) and — when a
+        StateManager is injected — into the SQLite decision log (history that
+        survives a restart).
+
+        Canvas runs resolve the ACTIVE governance profile here if none was
+        passed: the dial the user sets must govern ordinary canvas runs, not
+        only served deployments. Served runs keep their deployment's snapshot
+        (or None → fail-closed) exactly as G2 defined it.
         """
+        if (
+            self._profile is None
+            and not self._served
+            and self._state_manager is not None
+        ):
+            from komvos.governance.profiles import active_profile
+
+            self._profile = await asyncio.to_thread(
+                active_profile, self._state_manager
+            )
+
         self.decision_sink = InMemoryDecisionSink()
+        sinks: list[DecisionSink] = [QueueDecisionSink(queue), self.decision_sink]
+        if self._state_manager is not None:
+            sinks.append(SqliteDecisionSink(self._state_manager))
         with run_context(
-            self.decision_sink,
+            CompositeDecisionSink(sinks),
             self.run_id,
             profile=self._profile,
             served=self._served,

@@ -14,6 +14,12 @@ Routes (all behind session-token auth, like the rest of the management API):
     PUT    /governance/active                       switch the active profile
     POST   /governance/approvals/{id}/answer        answer a pending approval
 
+P1 additions — the decision log (query, filter, summarize, export):
+
+    GET    /governance/decisions                    filtered list, keyset pages
+    GET    /governance/decisions/summary            counts by outcome and domain
+    GET    /governance/decisions/export             filtered set as JSON or CSV
+
 Deleting a built-in profile fails with a clear message rather than mutating
 shared behaviour, and deleting the ACTIVE profile fails rather than leaving
 the system with no active profile. Built by FACTORY (not importing
@@ -22,12 +28,16 @@ api/main.py) for the same circular-import reason as komvos.serve.routes.
 
 from __future__ import annotations
 
+import asyncio
+import csv
+import io
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from komvos.governance.approvals import (
@@ -35,7 +45,9 @@ from komvos.governance.approvals import (
     ApprovalAnswer,
     find_approval,
 )
-from komvos.governance.decisions import GovernanceDomain
+from komvos.governance.decisions import (
+    GovernanceDomain,
+)
 from komvos.governance.profiles import (
     BUILT_IN_PROFILES,
     GovernanceProfile,
@@ -104,6 +116,104 @@ class ApprovalAnswerResponse(BaseModel):
     accepted_answer: str
     node_id: str
     run_id: str
+
+
+# ---------------------------------------------------------------------------
+# Decision-log response models (P1)
+# ---------------------------------------------------------------------------
+
+
+class GovernanceDecisionResponse(BaseModel):
+    """One stored decision, exactly as it was recorded."""
+
+    seq: int
+    decision_id: str
+    run_id: str
+    node_id: str
+    domain: str
+    capability: str
+    outcome: str
+    origin: str
+    reason: str
+    governed_by: list[str]
+    effective_policy: dict[str, Any]
+    when_utc: str
+    when_ms: int
+
+
+class GovernanceDecisionsPage(BaseModel):
+    """
+    One page of decisions, newest first.
+
+    `next_cursor` feeds straight back as the `cursor` query parameter; None
+    means the end of the (filtered) log.
+    """
+
+    decisions: list[GovernanceDecisionResponse]
+    next_cursor: int | None = None
+
+
+class GovernanceDecisionsSummary(BaseModel):
+    total: int
+    by_outcome: dict[str, int]
+    by_domain: dict[str, int]
+
+
+#: Filterable columns shared by the list and export endpoints. Literal types
+#: make an unknown value a 422 from the framework rather than a silent empty
+#: result set.
+DomainFilter = Literal["providers", "egress", "spend", "retention"]
+OutcomeFilter = Literal["allow", "deny", "timeout"]
+OriginFilter = Literal[
+    "pipeline_policy",
+    "profile",
+    "pipeline_and_profile",
+    "human_allow_once",
+    "human_allow_for_run",
+    "human_deny",
+]
+
+
+def _decision_filters(
+    run_id: str | None = Query(default=None),
+    node_id: str | None = Query(default=None),
+    domain: DomainFilter | None = Query(default=None),
+    outcome: OutcomeFilter | None = Query(default=None),
+    origin: OriginFilter | None = Query(default=None),
+    since_ms: int | None = Query(default=None, ge=0),
+    until_ms: int | None = Query(default=None, ge=0),
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "node_id": node_id,
+        "domain": domain,
+        "outcome": outcome,
+        "origin": origin,
+        "since_ms": since_ms,
+        "until_ms": until_ms,
+    }
+
+
+#: Upper bound on one export's row count. Exports are read from a local
+#: SQLite file, but an unbounded SELECT still turns into unbounded memory
+#: in the response builder; past this many rows, re-export with a narrower
+#: time range.
+EXPORT_ROW_CAP = 50_000
+
+
+def _export_rows(state_manager: Any, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    """All matching rows oldest-first, walking keyset pages."""
+    collected: list[dict[str, Any]] = []
+    cursor: int | None = None
+    while len(collected) < EXPORT_ROW_CAP:
+        rows, next_cursor = state_manager.query_governance_decisions(
+            **filters, cursor=cursor, limit=1000, newest_first=False
+        )
+        collected.extend(rows)
+        if next_cursor is None:
+            break
+        cursor = next_cursor
+    return collected[:EXPORT_ROW_CAP]
 
 
 def _profile_response(
@@ -285,6 +395,124 @@ def create_governance_router(
             accepted_answer=body.answer,
             node_id=question.node_id,
             run_id=question.run_id,
+        )
+
+    # -------------------------------------------------------------------
+    # Decision log (P1): query, summarize, export.
+    #
+    # Every read runs through asyncio.to_thread for the same reason the run
+    # trace does: sqlite3 is a blocking C extension, and a large filtered
+    # scan on the event loop would stall an in-flight run's WebSocket pump.
+    # -------------------------------------------------------------------
+
+    @router.get("/decisions", response_model=GovernanceDecisionsPage)
+    async def list_decisions(
+        filters: dict[str, Any] = Depends(_decision_filters),
+        cursor: int | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> GovernanceDecisionsPage:
+        """
+        Newest-first page of decisions. Pagination is KEYSET over the
+        monotonic `seq`, never OFFSET: page N costs what page 1 costs, on a
+        table that only grows. Feed `next_cursor` back as `cursor`.
+        """
+        state_manager = get_state_manager_fn()
+        rows, next_cursor = await asyncio.to_thread(
+            state_manager.query_governance_decisions,
+            **filters,
+            cursor=cursor,
+            limit=limit,
+            newest_first=True,
+        )
+        return GovernanceDecisionsPage(
+            decisions=[GovernanceDecisionResponse(**row) for row in rows],
+            next_cursor=next_cursor,
+        )
+
+    @router.get(
+        "/decisions/summary", response_model=GovernanceDecisionsSummary
+    )
+    async def decisions_summary(
+        filters: dict[str, Any] = Depends(_decision_filters),
+    ) -> GovernanceDecisionsSummary:
+        """Counts by outcome and by domain for a run, or overall."""
+        state_manager = get_state_manager_fn()
+        # A breakdown BY outcome/domain makes no sense filtered ON them;
+        # only the scope and time-range filters apply here.
+        scope = {
+            key: filters[key]
+            for key in ("run_id", "since_ms", "until_ms")
+            if filters.get(key) is not None
+        }
+        summary = await asyncio.to_thread(
+            state_manager.summarize_governance_decisions, **scope
+        )
+        return GovernanceDecisionsSummary(**summary)
+
+    @router.get("/decisions/export")
+    async def export_decisions(
+        filters: dict[str, Any] = Depends(_decision_filters),
+        format: Literal["json", "csv"] = Query(default="json"),
+    ) -> Response:
+        """
+        The filtered decision set as a download: chronological JSON array or
+        spreadsheet-friendly CSV. Same filters as the list endpoint.
+        """
+        state_manager = get_state_manager_fn()
+        rows = await asyncio.to_thread(_export_rows, state_manager, filters)
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if format == "csv":
+            buffer = io.StringIO(newline="")
+            writer = csv.writer(buffer)
+            writer.writerow(
+                [
+                    "when_utc",
+                    "run_id",
+                    "node_id",
+                    "domain",
+                    "capability",
+                    "outcome",
+                    "origin",
+                    "governed_by",
+                    "reason",
+                    "effective_policy",
+                ]
+            )
+            for row in rows:
+                writer.writerow(
+                    [
+                        row["when_utc"],
+                        row["run_id"],
+                        row["node_id"],
+                        row["domain"],
+                        row["capability"],
+                        row["outcome"],
+                        row["origin"],
+                        ";".join(row.get("governed_by") or []),
+                        row["reason"],
+                        json.dumps(row.get("effective_policy") or {}, sort_keys=True),
+                    ]
+                )
+            payload = buffer.getvalue()
+            return Response(
+                content=payload,
+                media_type="text/csv; charset=utf-8",
+                headers={
+                    "Content-Disposition": (
+                        f'attachment; filename="governance-decisions-{stamp}.csv"'
+                    )
+                },
+            )
+
+        return Response(
+            content=json.dumps(rows, indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="governance-decisions-{stamp}.json"'
+                )
+            },
         )
 
     return router

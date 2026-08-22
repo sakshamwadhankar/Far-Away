@@ -152,21 +152,35 @@ async def consult_posture(
     )
 
     if resolution.outcome is DecisionOutcome.TIMEOUT:
+        # Nobody answered: failed closed on its own, and the origin must not
+        # read as if either the profile or a person decided.
+        origin = DecisionOrigin.PROFILE
         reason = resolution.reason
-    elif resolution.answer in (ApprovalAnswer.ALLOW_ONCE, ApprovalAnswer.ALLOW_FOR_RUN):
-        reason = (
-            f"{resolution.reason} The pipeline itself had withheld this: "
-            f"{pipeline_reason}"
-        )
     else:
-        reason = f"{resolution.reason} Pipeline denial was: {pipeline_reason}"
+        answer = resolution.answer
+        if answer is ApprovalAnswer.ALLOW_ONCE:
+            origin = DecisionOrigin.HUMAN_ALLOW_ONCE
+        elif answer is ApprovalAnswer.ALLOW_FOR_RUN:
+            # Also covers the replay of an earlier allow-for-run grant: the
+            # standing permission IS a human's decision from earlier in the run.
+            origin = DecisionOrigin.HUMAN_ALLOW_FOR_RUN
+        else:
+            origin = DecisionOrigin.HUMAN_DENY
+
+        if answer in (ApprovalAnswer.ALLOW_ONCE, ApprovalAnswer.ALLOW_FOR_RUN):
+            reason = (
+                f"{resolution.reason} The pipeline itself had withheld this: "
+                f"{pipeline_reason}"
+            )
+        else:
+            reason = f"{resolution.reason} Pipeline denial was: {pipeline_reason}"
 
     await _decide(domain, capability, node_id, resolution.outcome,
-                  DecisionOrigin.PROFILE, reason, effective_policy, governed_by)
+                  origin, reason, effective_policy, governed_by)
     return PostureOutcome(
         allowed=resolution.outcome is DecisionOutcome.ALLOWED,
         outcome=resolution.outcome,
-        origin=DecisionOrigin.PROFILE,
+        origin=origin,
         reason=reason,
     )
 

@@ -139,8 +139,66 @@ class StateManager:
                     )
                     """
                 )
+                self._init_governance_decisions(conn)
         finally:
             conn.close()
+
+    def _init_governance_decisions(self, conn: sqlite3.Connection) -> None:
+        """
+        Governance decision log (P1) — purely additive.
+
+        `seq` is an AUTOINCREMENT primary key so every insert is monotonic
+        even under concurrent writers; it doubles as the keyset-pagination
+        cursor, which is why every index leads with its filter column and
+        ends with `seq`. `decision_id` exists so an exported line can be
+        referenced without exposing internal row ids.
+        """
+        with conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS governance_decisions (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    decision_id TEXT NOT NULL UNIQUE,
+                    run_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    capability TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    governed_by_json TEXT NOT NULL DEFAULT '[]',
+                    policy_json TEXT NOT NULL DEFAULT '{}',
+                    when_utc TEXT NOT NULL,
+                    when_ms INTEGER NOT NULL
+                )
+                """
+            )
+            # One index per filterable equality column, each ending in `seq`
+            # so a filtered keyset scan walks the index instead of sorting.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_run "
+                "ON governance_decisions (run_id, seq)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_node "
+                "ON governance_decisions (node_id, seq)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_domain "
+                "ON governance_decisions (domain, seq)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_outcome "
+                "ON governance_decisions (outcome, seq)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_origin "
+                "ON governance_decisions (origin, seq)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_gdec_when "
+                "ON governance_decisions (when_ms)"
+            )
 
     @staticmethod
     def _migrate_runs_deployment_id(conn: sqlite3.Connection) -> None:
@@ -709,3 +767,216 @@ class StateManager:
                 )
         finally:
             conn.close()
+
+    # -------------------------------------------------------------------
+    # Governance decision log (P1)
+    #
+    # Append-only: every enforcement point's ALLOW and DENY alike land
+    # here so history survives a restart. No deletion path on purpose —
+    # retention/recording-level enforcement is a later phase. Reads go
+    # through query_governance_decisions (keyset-paginated) and
+    # summarize_governance_decisions; callers off the event loop wrap them
+    # in asyncio.to_thread exactly like the trace writes.
+    # -------------------------------------------------------------------
+
+    def save_governance_decision(
+        self,
+        *,
+        decision_id: str,
+        run_id: str,
+        node_id: str,
+        domain: str,
+        capability: str,
+        outcome: str,
+        origin: str,
+        reason: str,
+        governed_by_json: str,
+        policy_json: str,
+        when_utc: str,
+        when_ms: int,
+    ) -> None:
+        """Append one governance decision. Never updated or deleted."""
+        conn = self._get_conn()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO governance_decisions (
+                        decision_id, run_id, node_id, domain, capability,
+                        outcome, origin, reason, governed_by_json,
+                        policy_json, when_utc, when_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        decision_id,
+                        run_id,
+                        node_id,
+                        domain,
+                        capability,
+                        outcome,
+                        origin,
+                        reason,
+                        governed_by_json,
+                        policy_json,
+                        when_utc,
+                        when_ms,
+                    ),
+                )
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _decision_where(
+        *,
+        run_id: str | None,
+        node_id: str | None,
+        domain: str | None,
+        outcome: str | None,
+        origin: str | None,
+        since_ms: int | None,
+        until_ms: int | None,
+    ) -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_id is not None:
+            clauses.append("run_id = ?")
+            params.append(run_id)
+        if node_id is not None:
+            clauses.append("node_id = ?")
+            params.append(node_id)
+        if domain is not None:
+            clauses.append("domain = ?")
+            params.append(domain)
+        if outcome is not None:
+            clauses.append("outcome = ?")
+            params.append(outcome)
+        if origin is not None:
+            clauses.append("origin = ?")
+            params.append(origin)
+        if since_ms is not None:
+            clauses.append("when_ms >= ?")
+            params.append(since_ms)
+        if until_ms is not None:
+            clauses.append("when_ms <= ?")
+            params.append(until_ms)
+        return (" AND ".join(clauses)) if clauses else "1=1", params
+
+    @staticmethod
+    def _decision_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["governed_by"] = json.loads(d.pop("governed_by_json"))
+        except json.JSONDecodeError:
+            d["governed_by"] = []
+            d.pop("governed_by_json", None)
+        try:
+            d["effective_policy"] = json.loads(d.pop("policy_json"))
+        except json.JSONDecodeError:
+            d["effective_policy"] = {}
+            d.pop("policy_json", None)
+        return d
+
+    def query_governance_decisions(
+        self,
+        *,
+        run_id: str | None = None,
+        node_id: str | None = None,
+        domain: str | None = None,
+        outcome: str | None = None,
+        origin: str | None = None,
+        since_ms: int | None = None,
+        until_ms: int | None = None,
+        cursor: int | None = None,
+        limit: int = 50,
+        newest_first: bool = True,
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        """
+        One keyset page of decisions.
+
+        Pagination walks `seq` — monotonic by construction — never OFFSET,
+        so page N costs the same as page 1 no matter how large the log
+        grows. Returns (rows, next_cursor); next_cursor is None when there
+        are no further rows in this order.
+        """
+        where, params = self._decision_where(
+            run_id=run_id,
+            node_id=node_id,
+            domain=domain,
+            outcome=outcome,
+            origin=origin,
+            since_ms=since_ms,
+            until_ms=until_ms,
+        )
+        if newest_first:
+            comparison = "seq < ?"
+            ordering = "DESC"
+        else:
+            comparison = "seq > ?"
+            ordering = "ASC"
+
+        fetch_limit = max(1, min(limit, 1000))
+        sql = (
+            "SELECT seq, decision_id, run_id, node_id, domain, capability, "
+            "outcome, origin, reason, governed_by_json, policy_json, "
+            "when_utc, when_ms FROM governance_decisions "
+            f"WHERE {where}"
+        )
+        query_params = list(params)
+        if cursor is not None:
+            sql += f" AND {comparison}"
+            query_params.append(cursor)
+        sql += f" ORDER BY seq {ordering} LIMIT ?"
+        query_params.append(fetch_limit + 1)
+
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(sql, tuple(query_params)).fetchall()
+        finally:
+            conn.close()
+
+        has_more = len(rows) > fetch_limit
+        rows = rows[:fetch_limit]
+        results = [self._decision_row_to_dict(r) for r in rows]
+        next_cursor: int | None = None
+        if has_more and results:
+            next_cursor = int(results[-1]["seq"])
+        return results, next_cursor
+
+    def summarize_governance_decisions(
+        self,
+        *,
+        run_id: str | None = None,
+        since_ms: int | None = None,
+        until_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Counts by outcome and by domain for a run, or overall."""
+        where, params = self._decision_where(
+            run_id=run_id,
+            node_id=None,
+            domain=None,
+            outcome=None,
+            origin=None,
+            since_ms=since_ms,
+            until_ms=until_ms,
+        )
+        conn = self._get_conn()
+        try:
+            by_outcome_rows = conn.execute(
+                f"SELECT outcome, COUNT(*) AS n FROM governance_decisions "
+                f"WHERE {where} GROUP BY outcome",
+                tuple(params),
+            ).fetchall()
+            by_domain_rows = conn.execute(
+                f"SELECT domain, COUNT(*) AS n FROM governance_decisions "
+                f"WHERE {where} GROUP BY domain",
+                tuple(params),
+            ).fetchall()
+        finally:
+            conn.close()
+        by_outcome = {r["outcome"]: r["n"] for r in by_outcome_rows}
+        by_domain = {r["domain"]: r["n"] for r in by_domain_rows}
+        return {
+            "total": sum(by_outcome.values()),
+            "by_outcome": by_outcome,
+            "by_domain": by_domain,
+        }

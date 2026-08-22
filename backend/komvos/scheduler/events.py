@@ -152,6 +152,31 @@ class WsApprovalPendingEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=_now_ms)
 
 
+class WsGovernanceDecisionEvent(BaseModel):
+    """
+    One governance decision was made — on ALLOW as much as DENY.
+
+    Same shape family as approval_pending: plain string fields so this module
+    stays decoupled from komvos.governance. Emitted by the run's decision
+    sink at the moment of decision, so the UI can show governance happening
+    live; full history comes from the /governance/decisions HTTP API.
+    Added in P1. Not a terminal event.
+    """
+
+    event: Literal["governance_decision"] = "governance_decision"
+    run_id: str
+    node_id: str
+    domain: str
+    """One of the GovernanceDomain values: providers|egress|spend|retention."""
+    capability: str
+    outcome: str
+    """One of: allow | deny | timeout."""
+    origin: str
+    """e.g. pipeline_policy | profile | pipeline_and_profile | human_allow_once."""
+    reason: str
+    timestamp_ms: int = Field(default_factory=_now_ms)
+
+
 WsEvent = (
     WsNodeStartedEvent
     | WsTokenEvent
@@ -159,6 +184,7 @@ WsEvent = (
     | WsNodeErrorEvent
     | WsAccessDeniedEvent
     | WsApprovalPendingEvent
+    | WsGovernanceDecisionEvent
     | WsLoopIterationEvent
     | WsRunHaltedEvent
     | WsRunCompletedEvent

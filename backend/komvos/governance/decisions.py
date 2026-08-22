@@ -58,13 +58,26 @@ class DecisionOrigin(StrEnum):
 
     A decision's outcome can come from the pipeline's own access policy,
     from the user's active profile (which may LOOSEN as well as tighten),
-    or from both agreeing. A grant the pipeline never made must be visible
-    in the log as coming from the profile, not silently mixed in.
+    from both agreeing — or from a HUMAN answering an approval prompt.
+    A grant the pipeline never made must be visible in the log as coming
+    from the profile, not silently mixed in; and "the profile auto-granted
+    this" is a different event from "a person approved this", so human
+    origins are recorded separately, with the exact answer they gave:
+    allow-once and allow-for-run age very differently after the run ends.
     """
 
     PIPELINE_POLICY = "pipeline_policy"
     PROFILE = "profile"
     PIPELINE_AND_PROFILE = "pipeline_and_profile"
+
+    HUMAN_ALLOW_ONCE = "human_allow_once"
+    """A person answered an approval with allow-once: this one action proceeds."""
+
+    HUMAN_ALLOW_FOR_RUN = "human_allow_for_run"
+    """A person granted this exact capability for the remainder of the run."""
+
+    HUMAN_DENY = "human_deny"
+    """A person said no — distinct from policy denying and from timing out."""
 
 
 class GovernanceDecision(BaseModel):
