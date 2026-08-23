@@ -1,0 +1,19 @@
+[
+  {
+    "action_type": "type_text",
+    "text": "DMGT",
+    "thought": "Type-ahead in Explorer selects the DMGT folder.",
+    "expected_outcome": "DMGT is highlighted in the file list."
+  },
+  {
+    "action_type": "press_key",
+    "key": "delete",
+    "thought": "Removing the DMGT folder as instructed.",
+    "expected_outcome": "The folder is deleted."
+  },
+  {
+    "action_type": "done",
+    "thought": "DMGT has been removed; the task is complete.",
+    "expected_outcome": "Task finished."
+  }
+]

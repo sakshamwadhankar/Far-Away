@@ -13,7 +13,7 @@ No application logic here — pure type definitions and the Protocol only.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -72,6 +72,20 @@ class GenRequest(BaseModel):
     'json'  → endpoint uses native JSON mode where available, else
               repair-prompt fallback.
     'text'  → plain streamed text.
+    """
+
+    json_schema: dict[str, Any] | None = None
+    """
+    Optional JSON Schema the reply must satisfy, used only when
+    `response_format` is 'json'.
+
+    Plain JSON mode guarantees only that the reply *parses*, not that it has
+    the fields the caller needs — a small model asked for a desktop action
+    happily returns `{"nextAction": "..."}`, which is valid JSON and useless.
+    Schema-constrained decoding pins the field names and enum values, which is
+    the difference between a 3B model being unusable here and being usable.
+    Endpoints that cannot constrain decoding ignore this and fall back to
+    plain JSON mode.
     """
 
 

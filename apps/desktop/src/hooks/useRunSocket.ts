@@ -65,6 +65,9 @@ export function useRunSocket({
           ...prev,
           costUsd: prev.costUsd + ((data.cost_usd as number) || 0),
           tokensIn: prev.tokensIn + ((data.tokens_in as number) || 0),
+          // tokensOut was omitted here, so the run header reported "0 out"
+          // while the per-node row showed the real count.
+          tokensOut: prev.tokensOut + ((data.tokens_out as number) || 0),
         }));
       }
       // Animate edges TO downstream nodes
@@ -115,6 +118,24 @@ export function useRunSocket({
           tokensOut: data.total_tokens_out !== undefined ? (data.total_tokens_out as number) : prev.tokensOut
         }));
       }
+      // Any node still flagged 'running' when the stream ends never reported a
+      // terminal event of its own. Leaving it as-is stranded the row on
+      // RUNNING under a FINISHED run. A clean completion means it finished;
+      // a halt/stop/budget stop means it did not.
+      const strandedStatus = eventType === 'run_completed' ? 'done' : 'error';
+      setNodeStats(prev => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [nid, stat] of Object.entries(prev)) {
+          if (stat.status === 'running') {
+            next[nid] = { ...stat, status: strandedStatus };
+            updateNodeDataSilent(nid, { status: strandedStatus });
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+
       setIsRunning(false);
       setAnimatedEdgeIds(new Set());
     } else if (eventType === 'token') {

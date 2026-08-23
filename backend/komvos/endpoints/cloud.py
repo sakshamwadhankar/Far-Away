@@ -46,8 +46,12 @@ POOL_TIMEOUT_S = 10.0
 #: 1 initial attempt + 2 retries for rate-limit (429) and server-error (5xx)
 #: responses. Backoff doubles per attempt from RETRY_BASE_DELAY_S, capped at
 #: RETRY_MAX_DELAY_S, with ±20% jitter so concurrent nodes do not sync up.
-RETRY_ATTEMPTS = 3
-RETRY_BASE_DELAY_S = 0.5
+# A 503 "high demand, try again later" does not clear in a few hundred
+# milliseconds. The old 3 attempts at 0.5s/1.0s spent the whole budget inside
+# 1.5s and then failed the run — losing every step an agent had completed so
+# far to a blip. Four attempts from a 1s base rides out ~7s of turbulence.
+RETRY_ATTEMPTS = 4
+RETRY_BASE_DELAY_S = 1.0
 RETRY_MAX_DELAY_S = 8.0
 
 #: One SDK client per (provider kind, resolved base URL, API key) for the

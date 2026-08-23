@@ -41,6 +41,10 @@ def _get_imagegrab() -> Any:
         return None
 
 
+class _ServerCannotActuate(RuntimeError):
+    """Raised internally to divert an action to in-process input."""
+
+
 class DesktopClient:
     """
     Client for the local computer-server action layer.
@@ -51,6 +55,8 @@ class DesktopClient:
         url = base_url or get_computer_server_url()
         self._base_url = url.rstrip("/")
         self._validate_loopback(self._base_url)
+        #: None until probed; see _server_can_actuate.
+        self._server_actuates: bool | None = None
 
     @staticmethod
     def _validate_loopback(url: str) -> None:
@@ -251,11 +257,13 @@ class DesktopClient:
             else ("right_click" if button == "right" else "left_click")
         )
         try:
+            if not await self._server_can_actuate():
+                raise _ServerCannotActuate
             res = await self._send_cmd(cmd, {"x": x, "y": y})
-            return bool(res.get("success", True))
+            return bool(res.get("success", False))
         except Exception as exc:
             logger.debug(
-                "Server click failed (%s), attempting in-process fallback", exc
+                "Server click unavailable (%s), using in-process input", exc
             )
             ag = _get_pyautogui()
             if ag:
@@ -274,11 +282,13 @@ class DesktopClient:
     async def type_text(self, text: str) -> bool:
         """Type text into the focused element."""
         try:
+            if not await self._server_can_actuate():
+                raise _ServerCannotActuate
             res = await self._send_cmd("type_text", {"text": text})
-            return bool(res.get("success", True))
+            return bool(res.get("success", False))
         except Exception as exc:
             logger.debug(
-                "Server typing failed (%s), attempting in-process fallback", exc
+                "Server typing unavailable (%s), using in-process input", exc
             )
             ag = _get_pyautogui()
             if ag:
@@ -292,11 +302,13 @@ class DesktopClient:
     async def press_key(self, key: str) -> bool:
         """Press a single key (e.g. 'enter', 'tab', 'escape')."""
         try:
+            if not await self._server_can_actuate():
+                raise _ServerCannotActuate
             res = await self._send_cmd("press_key", {"key": key})
-            return bool(res.get("success", True))
+            return bool(res.get("success", False))
         except Exception as exc:
             logger.debug(
-                "Server key press failed (%s), attempting in-process fallback", exc
+                "Server key press unavailable (%s), using in-process input", exc
             )
             ag = _get_pyautogui()
             if ag:
@@ -310,11 +322,13 @@ class DesktopClient:
     async def hotkey(self, keys: list[str]) -> bool:
         """Press a keyboard combination (e.g. ['ctrl', 'c'])."""
         try:
+            if not await self._server_can_actuate():
+                raise _ServerCannotActuate
             res = await self._send_cmd("hotkey", {"keys": keys})
-            return bool(res.get("success", True))
+            return bool(res.get("success", False))
         except Exception as exc:
             logger.debug(
-                "Server hotkey failed (%s), attempting in-process fallback", exc
+                "Server hotkey unavailable (%s), using in-process input", exc
             )
             ag = _get_pyautogui()
             if ag:
@@ -330,11 +344,16 @@ class DesktopClient:
     ) -> bool:
         """Scroll at coordinates (x, y)."""
         try:
+            # The server handler is scroll(x, y) where x/y are scroll AMOUNTS,
+            # not a screen position. Sending coordinates plus extra scroll_*
+            # keys raised a TypeError on dispatch, so scrolling never worked.
+            if not await self._server_can_actuate():
+                raise _ServerCannotActuate
             res = await self._send_cmd(
                 "scroll",
-                {"x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
+                {"x": scroll_x, "y": scroll_y},
             )
-            return bool(res.get("success", True))
+            return bool(res.get("success", False))
         except Exception as exc:
             logger.debug(
                 "Server scroll failed (%s), attempting in-process fallback", exc
@@ -348,6 +367,134 @@ class DesktopClient:
                     logger.debug("In-process scroll fallback unavailable: %s", e)
             return False
 
+    async def _server_can_actuate(self) -> bool:
+        """
+        Whether the computer-server can actually drive this desktop.
+
+        On Windows the server frequently runs where it cannot reach the
+        interactive session: `move_cursor` returns {"success": true} and does
+        nothing, and `get_cursor_position` reports (0, 0) forever. Because the
+        in-process fallbacks in this class only fire on an *exception*, that
+        false success meant every action was silently dropped — the agent
+        looked stuck while nothing was ever delivered.
+
+        Detected without moving anything: compare the server's idea of the
+        cursor position against this process's. A server that cannot see the
+        real cursor cannot move it either. The answer is cached per process.
+        """
+        if self._server_actuates is not None:
+            return self._server_actuates
+
+        verdict = False
+        ag = _get_pyautogui()
+        if ag is not None:
+            try:
+                # Active probe: ask the server to move the pointer a few pixels
+                # and check from THIS process whether it actually moved. A
+                # passive position comparison is not enough — a server that
+                # always answers (0, 0) looks correct whenever the pointer
+                # genuinely rests in that corner.
+                origin = ag.position()
+                ox, oy = int(origin[0]), int(origin[1])
+                sw, sh = ag.size()
+                target_x = max(10, min(int(sw) - 11, ox + 7))
+                target_y = max(10, min(int(sh) - 11, oy + 7))
+                if (target_x, target_y) == (ox, oy):
+                    target_x += 7
+
+                await self._send_cmd(
+                    "move_cursor", {"x": target_x, "y": target_y}
+                )
+                moved = ag.position()
+                verdict = (
+                    abs(int(moved[0]) - target_x) <= 2
+                    and abs(int(moved[1]) - target_y) <= 2
+                )
+
+                # Put the pointer back wherever it started, either way.
+                failsafe = ag.FAILSAFE
+                try:
+                    ag.FAILSAFE = False
+                    ag.moveTo(ox, oy)
+                finally:
+                    ag.FAILSAFE = failsafe
+
+                if not verdict:
+                    logger.warning(
+                        "Computer-server accepted move_cursor but the pointer "
+                        "did not move; it cannot drive this desktop. Using "
+                        "in-process input instead."
+                    )
+            except Exception as exc:
+                logger.debug("Server actuation probe failed: %s", exc)
+                verdict = False
+
+        self._server_actuates = verdict
+        return verdict
+
+    async def _ensure_cursor_off_failsafe_corner(self) -> None:
+        """
+        Move the pointer off a screen corner before actuating.
+
+        pyautogui keeps a fail-safe: with the cursor in any screen corner every
+        call raises FailSafeException, so clicks and keystrokes alike silently
+        stop working. A mis-resolved click at (0, 0) parks the cursor there and
+        poisons every later action in the run.
+
+        The fail-safe stays ENABLED — slamming the mouse into a corner mid-run
+        must still abort. This only steps out of the corner the agent is about
+        to act from, and never fights a human who is actively holding it there.
+        """
+        try:
+            use_server = await self._server_can_actuate()
+            ag = _get_pyautogui()
+
+            if use_server:
+                pos = await self._send_cmd("get_cursor_position")
+                point = pos.get("position") or {}
+                x = int(point.get("x", -1))
+                y = int(point.get("y", -1))
+                size = await self._send_cmd("get_screen_size")
+                dims = size.get("size") or {}
+                w = int(dims.get("width", 0))
+                h = int(dims.get("height", 0))
+            elif ag is not None:
+                # The server's cursor readings are not of this desktop; only
+                # this process sees the real pointer.
+                px, py = ag.position()
+                x, y = int(px), int(py)
+                sw, sh = ag.size()
+                w, h = int(sw), int(sh)
+            else:
+                return
+
+            if x < 0 or y < 0 or w <= 0 or h <= 0:
+                return
+
+            margin = 2
+            nudge = 5
+            in_corner = (x <= margin or x >= w - 1 - margin) and (
+                y <= margin or y >= h - 1 - margin
+            )
+            if not in_corner:
+                return
+
+            new_x = nudge if x <= margin else w - 1 - nudge
+            new_y = nudge if y <= margin else h - 1 - nudge
+            logger.info(
+                "Cursor at fail-safe corner (%d, %d); moving to (%d, %d).",
+                x,
+                y,
+                new_x,
+                new_y,
+            )
+            if use_server:
+                await self._send_cmd("move_cursor", {"x": new_x, "y": new_y})
+            elif ag is not None:
+                ag.moveTo(new_x, new_y)
+        except Exception as exc:
+            logger.debug("Could not check/clear fail-safe corner: %s", exc)
+
     async def execute_action(self, action: DesktopAction) -> bool:
         """Execute a validated and governed DesktopAction."""
         if action.action_type in (
@@ -357,20 +504,31 @@ class DesktopClient:
         ):
             return True
 
-        if action.action_type == ActionType.CLICK:
-            x = action.x or 0
-            y = action.y or 0
-            return await self.click(x, y, button="left", double=False)
+        await self._ensure_cursor_off_failsafe_corner()
 
-        if action.action_type == ActionType.DOUBLE_CLICK:
-            x = action.x or 0
-            y = action.y or 0
-            return await self.click(x, y, button="left", double=True)
-
-        if action.action_type == ActionType.RIGHT_CLICK:
-            x = action.x or 0
-            y = action.y or 0
-            return await self.click(x, y, button="right", double=False)
+        if action.action_type in (
+            ActionType.CLICK,
+            ActionType.DOUBLE_CLICK,
+            ActionType.RIGHT_CLICK,
+        ):
+            # No coordinates means the mark never resolved. Defaulting to
+            # (0, 0) clicked the screen corner, which both hit the wrong thing
+            # and armed pyautogui's fail-safe for every action after it.
+            if action.x is None or action.y is None:
+                logger.warning(
+                    "Refusing %s with no resolved coordinates (target_mark=%s).",
+                    action.action_type.value,
+                    action.target_mark,
+                )
+                return False
+            return await self.click(
+                action.x,
+                action.y,
+                button="right"
+                if action.action_type == ActionType.RIGHT_CLICK
+                else "left",
+                double=action.action_type == ActionType.DOUBLE_CLICK,
+            )
 
         if action.action_type == ActionType.TYPE_TEXT:
             return await self.type_text(action.text or "")

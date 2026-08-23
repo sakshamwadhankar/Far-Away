@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import { Node as RFNode, Edge as RFEdge } from 'reactflow';
 import type { PipelineNodeData } from '../canvas/nodes/PipelineNode';
 import { toPipelineSchema, isEndpointBearingNode } from '../canvas/serializer';
+import { summarizeProviderError } from '../utils/providerError';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,22 @@ interface ChatPanelProps {
   resetNodes: () => void;
   /** Callback for WS events — drives monitor panel and node stats */
   onWsEvent: (data: Record<string, unknown>) => void;
+  /**
+   * App's shared run-socket ref. Use mode MUST write the live socket here
+   * rather than into a private ref: useGovernance taps this exact ref to pull
+   * live screenshots, governance decisions and approval prompts off the
+   * stream. A ChatPanel-local ref leaves that tap attached to nothing, so a
+   * Use-mode run renders tokens but no live view and — worse — never shows an
+   * approval prompt, leaving an "Ask" policy to hang until it times out.
+   */
+  wsRef: React.MutableRefObject<WebSocket | null>;
+  /**
+   * Report the run id App assigned to this Use-mode run. App gates both the
+   * MonitorPanel (live screen preview, node stats) and the "View Trace" button
+   * on `runId`; without this the id stayed null for every chat run, so Use
+   * mode got no monitor while running and no trace afterwards.
+   */
+  onRunStarted: (runId: string) => void;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   inputValues: Record<string, string>;
@@ -66,10 +83,11 @@ export default function ChatPanel({
   setMessages,
   inputValues,
   setInputValues,
+  wsRef,
+  onRunStarted,
 }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
   const compatible = isChatCompatible(nodes);
 
@@ -184,6 +202,7 @@ export default function ChatPanel({
       }
 
       const { run_id } = await res.json() as { run_id: string };
+      onRunStarted(run_id);
 
       // Connect WebSocket for streaming
       const wsBase = apiBase.replace(/^http/, 'ws').replace(/\/+$/, '');
@@ -282,10 +301,50 @@ export default function ChatPanel({
           }
           
           if (eventType === 'run_error' || eventType === 'node_error') {
+            // APPEND, never "only if empty". A computer/agent node streams its
+            // reasoning before it fails, so by the time the error arrives the
+            // message is non-empty — the old `!m.content` guard silently threw
+            // the error away and the run just stopped dead with no explanation.
+            const detail = summarizeProviderError((data.error || '') as string);
+            const where = data.node_id ? ` (node '${data.node_id as string}')` : '';
             setMessages(prev =>
               prev.map(m =>
-                m.id === assistantMsgId && !m.content
-                  ? { ...m, content: `❌ Pipeline error: ${(data.error || 'Unknown error') as string}` }
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: `${m.content ? `${m.content}
+
+` : ''}❌ Pipeline error${where}: ${detail}`,
+                    }
+                  : m
+              )
+            );
+          } else if (eventType === 'run_halted') {
+            // A halt is how a governance denial reaches the client. Without
+            // this branch the run ended in silence.
+            const reason = (data.reason || 'no reason given') as string;
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: `${m.content ? `${m.content}
+
+` : ''}⛔ Run halted: ${reason}`,
+                    }
+                  : m
+              )
+            );
+          } else if (eventType === 'budget_exceeded') {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: `${m.content ? `${m.content}
+
+` : ''}💰 Budget exceeded — run stopped.`,
+                    }
                   : m
               )
             );
@@ -341,6 +400,8 @@ export default function ChatPanel({
     onWsEvent,
     setMessages,
     setInputValues,
+    wsRef,
+    onRunStarted,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent, _nodeId: string) => {

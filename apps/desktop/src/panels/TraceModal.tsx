@@ -105,6 +105,15 @@ function renderPayload(data: unknown): JSX.Element {
   );
 }
 
+/** A node that errored before billing has null cost/tokens — say so. */
+function formatCost(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : `$${value.toFixed(4)}`;
+}
+
+function formatCount(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : String(value);
+}
+
 export default function TraceModal({ runId, backendPort, backendToken, onClose }: TraceModalProps) {
   const [trace, setTrace] = useState<RunTrace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -186,7 +195,7 @@ export default function TraceModal({ runId, backendPort, backendToken, onClose }
               {trace.nodes?.map((node: TraceNodeExecution, idx: number) => (
                 <div key={idx} style={{ marginBottom: '16px', border: '1px solid #333', padding: '12px', borderRadius: '4px' }}>
                   <strong>Node ID:</strong> {node.node_id} <br />
-                  <strong>Cost:</strong> ${node.cost} | <strong>Tokens:</strong> {node.tokens_in} in, {node.tokens_out} out <br />
+                  <strong>Cost:</strong> {formatCost(node.cost)} | <strong>Tokens:</strong> {formatCount(node.tokens_in)} in, {formatCount(node.tokens_out)} out <br />
                   {node.error && <div style={{ color: 'red' }}><strong>Error:</strong> {node.error}</div>}
                   <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
                     <div style={{ flex: 1 }}>

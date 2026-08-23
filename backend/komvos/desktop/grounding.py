@@ -96,7 +96,7 @@ def extract_interactive_elements(
             or ""
         )
 
-        if bbox is not None:
+        if bbox is not None and not is_junk_element(role, name):
             x, y, w, h = bbox
             if 0 <= x < screen_width and 0 <= y < screen_height and w >= 8 and h >= 8:
                 box_key = (x, y, w, h)
@@ -168,6 +168,104 @@ def generate_grid_elements(
     return elements
 
 
+#: Plausible range for a display-scaling factor. Outside this, the derived
+#: ratio is more likely a tree that does not span the screen than real DPI.
+_MIN_INPUT_SCALE = 1.0
+_MAX_INPUT_SCALE = 3.0
+
+#: How closely the x and y ratios must agree to be believed as one DPI factor.
+_SCALE_AXIS_TOLERANCE = 0.05
+
+
+#: Window classes and titles Windows keeps around that are not real UI. They
+#: carry a rectangle and so become clickable marks, and a vision model will
+#: happily spend its whole step budget clicking them — observed in the wild as
+#: a run looping on "Non Client Input Sink Window" until it timed out.
+_JUNK_ROLE_FRAGMENTS = (
+    "non client input sink",
+    "msctfime",
+    "default ime",
+    "ime",
+    "tooltips_class32",
+    "gdi+ window",
+    "chrome legacy window",
+    "olddebug",
+    "workerw",
+    "progman",
+)
+
+
+def is_junk_element(role: str, name: str) -> bool:
+    """True for phantom OS windows that are never a useful click target."""
+    haystack = f"{role} {name}".lower()
+    return any(fragment in haystack for fragment in _JUNK_ROLE_FRAGMENTS)
+
+
+def derive_input_scale(
+    elements: list[ScreenElement], image_width: int, image_height: int
+) -> tuple[float, float]:
+    """
+    Factor converting accessibility-tree coordinates to screenshot pixels.
+
+    Windows reports accessibility geometry in LOGICAL units while screenshots
+    and synthetic input use PHYSICAL pixels. At 125% scaling a 1920x1200 screen
+    yields a tree spanning only 1536x960, so an unscaled mark badge is painted
+    a quarter of the way up-and-left of the widget it labels, and the click
+    derived from it misses by the same margin.
+
+    The factor is derived from how far the tree actually extends rather than
+    from any OS call, so it needs no platform branch. It is only trusted when
+    both axes agree and the result looks like real display scaling; anything
+    else returns (1.0, 1.0), leaving behaviour exactly as before.
+    """
+    if not elements or image_width <= 0 or image_height <= 0:
+        return (1.0, 1.0)
+
+    max_x = max(e.bbox[0] + e.bbox[2] for e in elements)
+    max_y = max(e.bbox[1] + e.bbox[3] for e in elements)
+    if max_x <= 0 or max_y <= 0:
+        return (1.0, 1.0)
+
+    scale_x = image_width / max_x
+    scale_y = image_height / max_y
+
+    for value in (scale_x, scale_y):
+        if not _MIN_INPUT_SCALE <= value <= _MAX_INPUT_SCALE:
+            return (1.0, 1.0)
+    if abs(scale_x - scale_y) > _SCALE_AXIS_TOLERANCE * max(scale_x, scale_y):
+        # Axes disagree — the tree probably does not span the screen, so a
+        # derived factor would be guesswork. Leave coordinates untouched.
+        return (1.0, 1.0)
+
+    return (scale_x, scale_y)
+
+
+def scale_elements(
+    elements: list[ScreenElement], scale: tuple[float, float]
+) -> list[ScreenElement]:
+    """Return `elements` with bbox and center mapped into screenshot pixels."""
+    sx, sy = scale
+    if sx == 1.0 and sy == 1.0:
+        return elements
+    scaled: list[ScreenElement] = []
+    for e in elements:
+        x, y, w, h = e.bbox
+        scaled.append(
+            e.model_copy(
+                update={
+                    "bbox": (
+                        round(x * sx),
+                        round(y * sy),
+                        round(w * sx),
+                        round(h * sy),
+                    ),
+                    "center": (round(e.center[0] * sx), round(e.center[1] * sy)),
+                }
+            )
+        )
+    return scaled
+
+
 def annotate_screenshot(
     image_bytes: bytes,
     a11y_tree: dict[str, Any] | list[Any] | None = None,
@@ -196,6 +294,14 @@ def annotate_screenshot(
 
         elements = extract_interactive_elements(a11y_tree, width, height)
         grid_used = False
+
+        # Map accessibility coordinates into screenshot pixels BEFORE badges
+        # are drawn, so the marks the model sees sit on the real widgets and
+        # elem.center is a usable click target. Grid elements are generated in
+        # image space already and need no scaling.
+        elements = scale_elements(
+            elements, derive_input_scale(elements, width, height)
+        )
 
         if not elements:
             elements = generate_grid_elements(width, height)
@@ -270,6 +376,7 @@ def annotate_screenshot(
 
     # Pure Python fallback without PIL
     elements = extract_interactive_elements(a11y_tree, width, height)
+    elements = scale_elements(elements, derive_input_scale(elements, width, height))
     grid_used = False
     if not elements:
         elements = generate_grid_elements(width, height)

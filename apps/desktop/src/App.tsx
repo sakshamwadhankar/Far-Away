@@ -118,6 +118,24 @@ export default function App() {
     const missingEndpoint = nodes.filter(n => isEndpointBearingNode(n.data.type)).filter(n => !n.data.endpoint_ref);
     if (missingEndpoint.length > 0) return showToast(`Please select a model for: ${missingEndpoint.map(n => n.data.role || n.id).join(', ')}`, 'error');
 
+    // An input node with no value seeds the run with "" — the trace shows it as
+    // {"task": ""}. For a model node that is harmless (one call with an empty
+    // prompt), but a computer node with no task flails for its whole step
+    // budget, spending a model call per step. So this refuses only for desktop
+    // agents, where the cost of guessing is high and the result is never
+    // useful. Pipelines that drive everything from a system prompt keep working.
+    const inputNodes = nodes.filter(n => n.data.type === 'input');
+    const hasComputerNode = nodes.some(n => n.data.type === 'computer');
+    const allInputsBlank =
+      inputNodes.length > 0 &&
+      inputNodes.every(n => !String(n.data.config?.default_value ?? '').trim());
+    if (hasComputerNode && allInputsBlank) {
+      return showToast(
+        'The desktop agent has no task. Select the input node and fill in "Default value", or switch to Use mode and type the task.',
+        'error',
+      );
+    }
+
     setIsRunning(true); setRunId(null); setShowTrace(false); setStartTime(Date.now());
     setNodeStats({}); setRunTotals({ costUsd: 0, tokensIn: 0, tokensOut: 0, iterations: 0 }); resetAllNodes();
     const token = backendToken || 'test-token';
@@ -218,7 +236,7 @@ export default function App() {
               selectedNodeIds={selectedNodeIds}
               onSelectNode={(id) => setSelectedNodeIds([id])}
             />
-          ) : <ChatPanel nodes={nodes} edges={edges} backendPort={backendPort} backendToken={backendToken} apiBase={API_BASE} isRunning={isRunning} onRunStateChange={handleChatRunStateChange} updateNodeData={updateNodeDataSilent} resetNodes={resetAllNodes} onWsEvent={handleWsEvent} messages={chatMessages} setMessages={setChatMessages} inputValues={chatInputValues} setInputValues={setChatInputValues} />}
+          ) : <ChatPanel nodes={nodes} edges={edges} backendPort={backendPort} backendToken={backendToken} apiBase={API_BASE} isRunning={isRunning} onRunStateChange={handleChatRunStateChange} updateNodeData={updateNodeDataSilent} resetNodes={resetAllNodes} onWsEvent={handleWsEvent} wsRef={wsRef} onRunStarted={setRunId} messages={chatMessages} setMessages={setChatMessages} inputValues={chatInputValues} setInputValues={setChatInputValues} />}
           {appMode === 'edit' && <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 10 }}><button onClick={handleClearWorkspace} title="Clear Workspace" className="nf-pill-btn" style={{ boxShadow: 'var(--shadow-sm)', color: '#D32F2F', background: 'var(--surface)' }}>🗑 Clear</button></div>}
         </div>
         {(runId || isRunning) && <div style={{ height: 250, position: 'relative' }}><MonitorPanel runId={runId} isRunning={isRunning} nodeStats={nodeStats} runTotals={runTotals} startTime={startTime} onStop={stopRun} liveScreenshot={liveScreenshot} /></div>}

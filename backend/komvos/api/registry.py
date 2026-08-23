@@ -21,6 +21,8 @@ without importing the `app` object itself.
 from __future__ import annotations
 
 import asyncio
+import itertools
+import json
 import logging
 import os
 import time
@@ -232,6 +234,49 @@ async def resolve_ollama_base(model_name: str, descriptor_base: str | None) -> s
     return f"{saved_base.rstrip('/')}/v1"
 
 
+#: Optional file of canned replies for the mock endpoint, one per call, read
+#: only when the mock gate above is already open. Exists so a scripted
+#: walkthrough (a recorded demo, a deterministic reproduction) can drive a
+#: multi-step agent without a live model — the actions still execute for real,
+#: only the choice of action is fixed.
+MOCK_SCRIPT_ENV_VAR = "KOMVOS_MOCK_ACTION_SCRIPT"
+
+
+def _scripted_response_fn() -> Any:
+    """Build a response_fn cycling through the scripted replies, or None."""
+    path = os.environ.get(MOCK_SCRIPT_ENV_VAR)
+    if not path or not _mock_gate_enabled():
+        return None
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "Could not read %s=%s: %s. Mock endpoint will use its default "
+            "response instead.",
+            MOCK_SCRIPT_ENV_VAR,
+            path,
+            exc,
+        )
+        return None
+    if not isinstance(raw, list) or not raw:
+        logger.warning("%s must be a non-empty JSON array.", MOCK_SCRIPT_ENV_VAR)
+        return None
+
+    replies = [r if isinstance(r, str) else json.dumps(r) for r in raw]
+    counter = itertools.count()
+
+    def _next(_req: Any) -> str:
+        index = next(counter)
+        # Hold on the final entry rather than wrapping, so a script that ends
+        # in a "done" action stops the loop instead of replaying forever.
+        return replies[min(index, len(replies) - 1)]
+
+    logger.info(
+        "Mock endpoint scripted from %s (%d steps).", path, len(replies)
+    )
+    return _next
+
+
 async def build_endpoint_registry(
     dag: CompiledDAG, *, enforce_mock_gate: bool = True
 ) -> dict[str, ModelEndpoint]:
@@ -277,7 +322,10 @@ async def build_endpoint_registry(
                 )
             from komvos.endpoints.mock import MockEndpoint
 
-            run_endpoints[ref] = MockEndpoint(id=descriptor.model or "mock-model")
+            run_endpoints[ref] = MockEndpoint(
+                id=descriptor.model or "mock-model",
+                response_fn=_scripted_response_fn(),
+            )
         elif descriptor.kind == "ollama":
             from komvos.endpoints.ollama import OllamaEndpoint
 

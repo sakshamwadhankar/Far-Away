@@ -129,7 +129,21 @@ class OllamaEndpoint:
             "stream_options": {"include_usage": True},
         }
         if req.response_format == "json":
-            payload["response_format"] = {"type": "json_object"}
+            if req.json_schema:
+                # Schema-constrained decoding. Plain json_object only promises
+                # parseable JSON — a small model asked for a desktop action
+                # returns {"nextAction": "..."} and the caller has nothing to
+                # act on. Pinning the schema is what makes local models usable.
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "structured_response",
+                        "schema": req.json_schema,
+                        "strict": True,
+                    },
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
 
         client = _get_client(self._base_url)
 
